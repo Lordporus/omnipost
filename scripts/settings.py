@@ -19,10 +19,18 @@ ROOT = Path(__file__).resolve().parent.parent          # repo root
 CONFIG_PATH = ROOT / "config.json"
 EXAMPLE_PATH = ROOT / "config.example.json"
 
+# Conservative fallback used ONLY until the real ceiling is measured on the
+# account. Deliberately the free-tier minimum: guessing low means a long draft
+# gets trimmed, guessing high means a post fails at publish time. Nothing here
+# assumes what any particular account can do - the limit is a property of THEIR
+# account, so it gets asked for and then measured, never hardcoded.
+ASSUMED_LIMIT = 280
+
 DEFAULTS: dict[str, Any] = {
     "handle": "",                       # set during onboarding
-    "premium": False,                   # False => the 280-character ceiling applies
-    "max_chars": 280,
+    "premium": None,                    # None = unknown. Ask the user, then confirm with measure.
+    "max_chars": None,                  # None = not measured. Fill via: post.py measure --save
+    "max_chars_verified": False,        # True only after a real measurement on the account
     "timezone": "local",                # e.g. "Asia/Kolkata"; "local" = machine tz
     "slots": ["13:00", "16:00", "20:00", "00:00"],
     "jitter_minutes": 45,
@@ -82,7 +90,8 @@ def home() -> Path:
 
 
 def profile_dir(cfg: dict | None = None) -> Path:
-    cfg = cfg or load()
+    if cfg is None:
+        cfg = load()
     raw = (cfg.get("browser") or {}).get("profile_dir") or ""
     p = Path(os.path.expanduser(raw)) if raw else home() / ".tweetytweets" / "chrome-profile"
     p.mkdir(parents=True, exist_ok=True)
@@ -136,6 +145,49 @@ def data_dir(name: str) -> Path:
     p = ROOT / name
     p.mkdir(parents=True, exist_ok=True)
     return p
+
+
+def limit(cfg: dict | None = None) -> dict:
+    """The character ceiling for THIS account, and how much to trust it.
+
+    Never hardcode a limit: it is a property of the user's account (free tiers
+    cap at 280, Premium does not). Ask the user, then MEASURE it with
+    `post.py measure`, which types into the composer and reads the Post button's
+    state without ever clicking it.
+
+    Returns {chars, verified, source, fix} so callers can warn instead of
+    silently assuming.
+    """
+    if cfg is None:
+        cfg = load()
+    raw = cfg.get("max_chars")
+    verified = bool(cfg.get("max_chars_verified"))
+    fix = "run: python scripts/post.py measure --save"
+    if not raw:
+        return {"chars": ASSUMED_LIMIT, "verified": False,
+                "source": f"ASSUMED free-tier minimum ({ASSUMED_LIMIT}), not measured",
+                "fix": fix}
+    if not verified:
+        return {"chars": int(raw), "verified": False,
+                "source": f"from config ({int(raw)}), never measured on this account",
+                "fix": fix}
+    return {"chars": int(raw), "verified": True, "source": "measured on this account",
+            "fix": None}
+
+
+def save_limit(chars: int, premium: bool | None = None) -> dict:
+    """Persist a MEASURED ceiling into config.json (used by post.py measure --save)."""
+    cfg = {}
+    if CONFIG_PATH.exists():
+        cfg = json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
+    cfg["max_chars"] = int(chars)
+    cfg["max_chars_verified"] = True
+    if premium is None:
+        premium = int(chars) > ASSUMED_LIMIT
+    cfg["premium"] = bool(premium)
+    CONFIG_PATH.write_text(json.dumps(cfg, indent=2, ensure_ascii=False), encoding="utf-8")
+    return {"max_chars": cfg["max_chars"], "premium": cfg["premium"],
+            "max_chars_verified": True, "saved_to": str(CONFIG_PATH)}
 
 
 def tzinfo():

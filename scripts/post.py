@@ -77,7 +77,64 @@ def handle() -> str:
 
 
 def max_chars() -> int:
-    return int(cfg().get("max_chars") or 280)
+    """The ceiling for THIS account, from settings.limit() (never hardcoded)."""
+    return settings.limit(cfg())["chars"]
+
+
+async def measure_limit(ladder: tuple[int, ...] = (280, 1000, 5000, 25000, 30000),
+                        max_refine: int = 6) -> dict:
+    """Empirically find this account's character ceiling.
+
+    Never assume a number: free accounts cap at 280 while Premium ones do not,
+    and the ceiling decides what content is even possible. This types n
+    characters into the composer and watches whether the Post button enables.
+    **It never clicks Post, so it cannot publish anything.**
+
+    Probes a ladder first (cheap, and spans free tier through Premium), then
+    refines by binary search between the largest passing and smallest failing
+    rung.
+    """
+    async def fits(n: int) -> bool:
+        page = await _open("https://x.com/compose/post")
+        try:
+            await browser.settle_page(page, 5)
+            await wait_login(page)
+            await _insert_text(page, "y" * (n - 1) + ".")
+            await asyncio.sleep(2.0)
+            st = json.loads(await page.eval(COMPOSE_STATE_JS))
+            return not st.get("btn_disabled")
+        finally:
+            await page.__aexit__(None, None, None)
+
+    lo, hi = 0, None
+    probes: list[dict] = []
+    for n in ladder:
+        ok = await fits(n)
+        probes.append({"chars": n, "accepted": ok})
+        if ok:
+            lo = n
+        else:
+            hi = n
+            break
+
+    if hi is None:                       # every rung passed
+        return {"limit": f">={lo}", "limit_value": lo, "probes": probes,
+                "premium": lo > 280,
+                "note": "the account accepts at least the largest probe; the true ceiling "
+                        "is higher. Raise the ladder to find it."}
+
+    for _ in range(max_refine):          # narrow the gap
+        if lo + 1 >= hi:
+            break
+        mid = (lo + hi) // 2
+        if await fits(mid):
+            lo = mid
+        else:
+            hi = mid
+
+    return {"limit": lo, "limit_value": lo, "refuses": hi, "probes": probes,
+            "premium": lo > 280,
+            "note": f"the Post button accepts {lo} chars and refuses {hi}"}
 
 
 # ------------------------------------------------------------------ session
@@ -432,37 +489,6 @@ async def do_post(text: str, image: Path | None = None, kind: str = "value",
             "profile_head": feed[:1]}
 
 
-async def measure_limit(low: int = 200, high: int = 600) -> dict:
-    """Empirically find this account's character ceiling.
-
-    Do not assume: free accounts are capped at 280 while Premium ones are not,
-    and the number changes what content is even possible. This inserts n
-    characters and watches whether the Post button enables.
-    """
-    async def fits(n: int) -> bool:
-        page = await _open("https://x.com/compose/post")
-        try:
-            await browser.settle_page(page, 5)
-            await wait_login(page)
-            await _insert_text(page, "y" * (n - 1) + ".")
-            await asyncio.sleep(1.5)
-            st = json.loads(await page.eval(COMPOSE_STATE_JS))
-            return not st.get("btn_disabled")
-        finally:
-            await page.__aexit__(None, None, None)
-
-    if await fits(high):
-        return {"limit": f">{high}", "note": "account is not on the free-tier cap"}
-    lo, hi = low, high
-    while lo + 1 < hi:
-        mid = (lo + hi) // 2
-        if await fits(mid):
-            lo = mid
-        else:
-            hi = mid
-    return {"limit": lo, "note": f"the Post button accepts {lo} chars, refuses {hi}"}
-
-
 # ------------------------------------------------------------------ cli
 
 def main() -> None:
@@ -470,7 +496,9 @@ def main() -> None:
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("cmd", nargs="?", default="status",
                     choices=["check", "day", "post", "compose", "verify", "status",
-                             "shot", "measure"])
+                             "shot", "measure", "limits"])
+    ap.add_argument("--save", action="store_true",
+                    help="measure: write the measured ceiling into config.json")
     ap.add_argument("--text", default=None)
     ap.add_argument("--text-file", default=None)
     ap.add_argument("--image", default=None)
@@ -503,8 +531,18 @@ def main() -> None:
     if a.cmd == "shot":
         print(json.dumps(asyncio.run(capture(a.what)), indent=2))
         return
+    if a.cmd == "limits":
+        print(json.dumps(settings.limit(cfg()), indent=2))
+        return
     if a.cmd == "measure":
-        print(json.dumps(asyncio.run(measure_limit()), indent=2))
+        out = asyncio.run(measure_limit())
+        if a.save:
+            out["saved"] = settings.save_limit(out.get("limit_value") or 280,
+                                               out.get("premium"))
+        else:
+            out["hint"] = ("nothing was saved - re-run with --save to write this ceiling "
+                           "into config.json so due.py enforces the right number")
+        print(json.dumps(out, indent=2))
         return
 
     text = a.text

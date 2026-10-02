@@ -52,7 +52,7 @@ Never use engagement bait ("comment X and I'll DM you", "must be following").
 ### Job 2 — publish when due
 
 ```
-name:      x-poster
+name:      x-autopost
 schedule:  every 10m
 monitor:   tweetytweets_due.py        # see the shim below
 deliver:   origin

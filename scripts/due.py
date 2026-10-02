@@ -226,7 +226,13 @@ def main() -> None:
         text = (text or "").strip()
 
         c = settings.load()
-        limit = int(c.get("max_chars") or 280)
+        lim = settings.limit(c)
+        limit = lim["chars"]
+        if not lim["verified"]:
+            print(json.dumps({
+                "warning": "character ceiling is NOT verified on this account",
+                "enforcing": limit, "source": lim["source"], "fix": lim["fix"],
+                "note": "run the measure command before trusting any length decision"}), flush=True)
         if a.cmd == "fill" and text:
             kind = None
             for _p, _pl in _load_plans():

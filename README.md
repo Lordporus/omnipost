@@ -100,7 +100,7 @@ Verify, and measure your real character ceiling:
 
 ```bash
 python scripts/post.py check      # should print your handle
-python scripts/post.py measure    # never assume 280 — measure it
+python scripts/post.py measure --save  # measure THIS account's ceiling, then store it
 ```
 
 **Use a dedicated browser profile.** That is what the launch command gives you.
@@ -130,7 +130,7 @@ which reports, measured rather than guessed:
 ```
 LENGTH
   min 132 | median 138 | mean 161 | max 216 chars
-  within 280 chars: 5/5   -> fits the free-tier 280 ceiling - write short
+  within the account's 25000 -char ceiling: 5/5   -> all posts fit the account's ceiling
 
 STRUCTURE
   beats per post (blank-line separated): median 3
@@ -217,7 +217,7 @@ Two cron jobs:
 
 ```
 x-plan     every day at 11am   (agent): research + write + fill the 4 slots
-x-poster   every 10m, monitor=x_poster_due.py  (agent): publish whatever is due
+x-autopost  every 10m, monitor=x_autopost_due.py  (agent): publish whatever is due
 ```
 
 The monitor shim is ~20 lines: it runs `due.py check` and prints its stdout.
@@ -247,7 +247,7 @@ draft to your agent. Wire it to whatever you use to invoke a model.
 | Key | Meaning |
 |---|---|
 | `handle` | Your handle, no `@`. The publisher refuses to post as anyone else. |
-| `premium` | Whether the account can post above 280 chars. Informational — `post.py measure` is the truth. |
+| `premium` | Whether the account can post above 280 chars. **Ask, never assume** — `post.py measure --save` fills this in from a real measurement. |
 | `max_chars` | Hard ceiling. `due.py fill` rejects drafts over it before the scheduled time. |
 | `timezone` | `"local"` or an IANA name like `"Asia/Kolkata"`. Slots are interpreted here. |
 | `slots` | Anchor times, e.g. `["13:00","16:00","20:00","00:00"]`. A `00:00` slot belongs to the previous day's run. |

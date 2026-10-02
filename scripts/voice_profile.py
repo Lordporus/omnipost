@@ -33,6 +33,8 @@ import sys
 from collections import Counter
 from pathlib import Path
 
+import settings
+
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
 
@@ -120,16 +122,25 @@ def analyse(posts: list[str]) -> dict:
         else:
             opener_kinds["statement / claim"] += 1
 
-    under = sum(1 for n in lengths if n <= 280)
+    # Compare the user's own posts against THEIR account's ceiling, not a
+    # hardcoded one: the limit differs per account and is measured, not assumed.
+    lim = settings.limit()
+    cap = lim["chars"]
+    under = sum(1 for n in lengths if n <= cap)
     return {
         "posts_analysed": len(posts),
         "length": {
             "min": min(lengths), "median": int(statistics.median(lengths)), "max": max(lengths),
             "mean": round(statistics.mean(lengths)),
-            "under_280": f"{under}/{len(lengths)}",
-            "verdict": ("fits the free-tier 280 ceiling - write short"
-                        if max(lengths) <= 280 else
-                        "some posts exceed 280 - this account is on Premium, or trims hard"),
+            f"under_{cap}": f"{under}/{len(lengths)}",
+            "ceiling_used": cap,
+            "ceiling_verified": lim["verified"],
+            "verdict": (f"all posts fit the account's {cap}-char ceiling"
+                        if max(lengths) <= cap else
+                        f"some posts exceed the account's {cap}-char ceiling "
+                        f"(they were posted anyway, so that ceiling is probably wrong)") +
+                       ("" if lim["verified"] else
+                        f" - ceiling NOT verified ({lim['fix']})"),
         },
         "structure": {
             "beats_per_post_median": int(statistics.median(beats)),
@@ -160,7 +171,8 @@ def render(a: dict, path: str) -> str:
         "",
         "LENGTH",
         f"  min {L['min']} | median {L['median']} | mean {L['mean']} | max {L['max']} chars",
-        f"  within 280 chars: {L['under_280']}   -> {L['verdict']}",
+        "  within the account's {}-char ceiling: {}   -> {}".format(
+            L["ceiling_used"], L.get("under_" + str(L["ceiling_used"])), L["verdict"]),
         "",
         "STRUCTURE",
         f"  beats per post (blank-line separated): median {S['beats_per_post_median']}",

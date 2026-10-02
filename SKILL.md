@@ -74,7 +74,7 @@ and ask for the posts again rather than guessing at a voice.
 | Ask | Why it matters | Goes to |
 |---|---|---|
 | "What's your handle?" | the account guard refuses to post as anyone else | `handle` |
-| "Is this account on X Premium, or free?" | free is capped at **280 chars** — it changes what content is possible. **Never trust the answer: verify with `python scripts/post.py measure`** | `premium`, `max_chars` |
+| "Is this account on X Premium, or free? (Not sure is fine.)" | The ceiling decides what content is possible and it **differs per account** — free caps at 280, Premium does not. Ask, then **verify by measuring**: `python scripts/post.py measure --save`. Never hardcode a number. | `premium`, `max_chars`, `max_chars_verified` |
 | "What do you post about, in your own words?" | drives research queries and topics | `x_queries`, `subreddits`, `feeds` |
 | "What timezone are you in, and when do you want to post?" | slots are local time | `timezone`, `slots` |
 | "How many posts a day?" | more is not better — a second post in the same feed only counts 62% | `slots` |
@@ -93,7 +93,8 @@ python scripts/browser.py launch       # starts the automation browser
 #   -> sign in to x.com IN THAT WINDOW. Use "Email or username", not
 #      "Continue with Google", which can silently create a SECOND account.
 python scripts/post.py check           # must print your handle
-python scripts/post.py measure         # real character ceiling - never assume 280
+python scripts/post.py measure --save  # measures THIS account's ceiling and stores it
+python scripts/post.py limits          # confirm: shows the limit + whether it's verified
 ```
 
 Do **one** supervised post before scheduling anything:
@@ -115,9 +116,22 @@ schedule (see README.md → Scheduling).
 These are not style preferences. Breaking them gets posts ignored, or the account
 actioned.
 
-1. **Respect the real character ceiling.** Call it what the account actually has,
-   measured by `post.py measure` — usually 280 for free accounts. `due.py fill`
-   enforces it at planning time, including the space the roundup header eats.
+1. **Never hardcode a character ceiling - it belongs to the user's account.**
+   Free tiers cap at 280; Premium does not. The ceiling decides what content is
+   even possible, so it gets **asked for and then measured**, never assumed:
+   1. ask the user whether the account is on Premium (free / Premium / not sure)
+   2. run `python scripts/post.py measure --save` — it types into the composer and
+      reads the Post button's state; **it never clicks Post, so it cannot publish**
+   3. that writes `max_chars` + `premium` + `max_chars_verified` into config.json
+   `post.py limits` reports what is configured and whether it is verified;
+   `settings.limit()` returns `verified: false` when it is not, and both `due.py`
+   and `doctor.py` will warn rather than quietly assume. Until it is measured the
+   tool falls back to the free-tier minimum, so a long draft gets trimmed instead
+   of a post failing at publish time.
+1b. **A high ceiling is permission, not instruction.** Length is not the goal and
+   never fill the limit: if one sharp idea fits in two sentences, ship two
+   sentences - that is a finished post. Vary length deliberately across posts.
+   Longer is justified by more substance, never more words.
 2. **No engagement bait.** No "like + comment X and I'll DM you", no "must be
    following", no follow-for-follow. X's own ranking notes single out engagement
    bait as the one category where even big accounts get no pass. If the user asks

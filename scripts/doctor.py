@@ -46,7 +46,9 @@ def check_config() -> tuple[str, str]:
     c = settings.load()
     if not (c.get("handle") or "").strip():
         return WARN, "config.json exists but handle is empty - finish the onboarding interview"
-    return OK, f"config.json ok - handle @{c['handle'].lstrip('@')}, cap {c.get('max_chars')} chars"
+    lim = settings.limit(c)
+    cap = f"{lim['chars']} chars" + ("" if lim["verified"] else "  (NOT verified)")
+    return OK, f"config.json ok - handle @{c['handle'].lstrip('@')}, cap {cap}"
 
 
 def check_chrome() -> tuple[str, str]:
