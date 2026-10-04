@@ -15,6 +15,8 @@ references/voice-profile.local.md
 # browser profile (cookies live here - never commit)
 .chrome-profile/
 chrome-profile/
+.edge-profile/
+edge-profile/
 
 # python
 __pycache__/
@@ -22,6 +24,9 @@ __pycache__/
 .venv/
 venv/
 .env
+*.log
+.pytest_cache/
+.coverage
 
 # os noise
 .DS_Store

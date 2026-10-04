@@ -1,0 +1,3 @@
+@echo off
+echo Starting Edge with Twitter Automation Profile...
+start "" "C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe" --remote-debugging-port=9444 --remote-allow-origins=* --user-data-dir="%USERPROFILE%\.omnipost\edge-profile" --disable-background-mode "https://x.com/login"

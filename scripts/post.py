@@ -242,7 +242,7 @@ COMPOSE_STATE_JS = r"""
     toast: toast ? (toast.innerText || '').replace(/\n/g,' ').slice(0,160) : null,
     modal_open: !!document.querySelector('[aria-labelledby="modal-header"]'),
     sent: /Your post was sent/i.test(txt),
-    error: ((txt.match(/(Something went wrong|Whoops|Try again|exceeded|too long)[^\n]{0,90}/i)||[''])[0]||'').trim(),
+    error: (((toast ? toast.innerText : '') + ' ' + (document.querySelector('[aria-labelledby="modal-header"]')?.innerText || '')).match(/(Something went wrong|Whoops|Try again|exceeded|too long)[^\n]{0,90}/i)||[''])[0].trim(),
     url: location.href,
   });
 })()

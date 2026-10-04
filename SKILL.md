@@ -1,5 +1,5 @@
 ---
-name: tweetytweets
+name: omnipost
 description: Use when automating posts to X/Twitter end to end.
 version: 1.0.0
 license: MIT
@@ -9,7 +9,7 @@ metadata:
     related_skills: [humanizer]
 ---
 
-# tweetytweets
+# OmniPost
 
 An autonomous X/Twitter posting pipeline: it finds the day's material itself,
 writes posts in **your** voice, publishes them through a real logged-in browser,

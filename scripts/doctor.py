@@ -130,7 +130,7 @@ def main() -> None:
         return
 
     icon = {OK: "OK     ", WARN: "WARN   ", BAD: "MISSING"}
-    print("\ntweetytweets - readiness\n" + "=" * 60)
+    print("\nOmniPost - readiness\n" + "=" * 60)
     worst = OK
     for name, (status, detail) in results:
         print(f"[{icon[status]}] {name:<14} {detail}")

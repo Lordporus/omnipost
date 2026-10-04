@@ -12,12 +12,12 @@ shim uses, with a shell-friendly shape:
 Typical wiring - run every 10 minutes, and only wake your agent when there is
 work:
 
-  */10 * * * * cd /path/to/tweetytweets && python scripts/cron_gate.py --wake
+  */10 * * * * cd /path/to/omnipost && python scripts/cron_gate.py --wake
 
 With --wake it prints a complete instruction block (draft + the exact commands to
 publish and verify it), so an agent can consume it directly:
 
-  */10 * * * * cd /path/to/tweetytweets && \
+  */10 * * * * cd /path/to/omnipost && \
       python scripts/cron_gate.py --wake | your-agent --stdin
 
 Without --wake it just prints the draft JSON.

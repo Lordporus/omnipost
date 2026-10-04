@@ -4,7 +4,7 @@ Two ways to wire the daily loop. Both use the same rule: **a plain script decide
 what's due, and the model is only woken when there is work.** That is what makes
 idle time free.
 
-Replace `/path/to/tweetytweets` with your install path.
+Replace `/path/to/omnipost` with your install path.
 
 ---
 
@@ -19,14 +19,14 @@ agent run: unchanged output suppresses it entirely.
 name:      x-plan
 schedule:  every day at 11am
 deliver:   origin
-skills:    ["tweetytweets"]
+skills:    ["omnipost"]
 
-Daily planning run for the tweetytweets pipeline at /path/to/tweetytweets.
+Daily planning run for the OmniPost pipeline at /path/to/omnipost.
 
-Follow the preloaded tweetytweets skill, and write every post against
+Follow the preloaded omnipost skill, and write every post against
 references/voice-profile.local.md.
 
-1. cd /path/to/tweetytweets
+1. cd /path/to/omnipost
 2. python scripts/research.py collect --hours 36
 3. python scripts/due.py make-plan
 4. Read the top ~30 items of today's swipe file with python (do NOT dump the
@@ -54,9 +54,9 @@ Never use engagement bait ("comment X and I'll DM you", "must be following").
 ```
 name:      x-autopost
 schedule:  every 10m
-monitor:   tweetytweets_due.py        # see the shim below
+monitor:   omnipost_due.py            # see the shim below
 deliver:   origin
-skills:    ["tweetytweets"]
+skills:    ["omnipost"]
 
 A post may be DUE. The monitor output above is either the literal string "IDLE"
 or a draft as JSON {date, slot, kind, due_at, text, image, minutes_late, tick}.
@@ -65,7 +65,7 @@ IF IT IS "IDLE" (or has no "slot" field): nothing is due. Reply exactly
 "nothing due" and STOP. Do not run any other command.
 
 Otherwise publish exactly that draft:
-1. cd /path/to/tweetytweets
+1. cd /path/to/omnipost
 2. python scripts/post.py check     # must show YOUR handle; if not logged in,
                                     # DO NOT POST - report it and stop
 3. Write the "text" verbatim to scratch/post.txt (no edits, no added hashtags)
@@ -85,15 +85,15 @@ Otherwise publish exactly that draft:
    Never retry more than twice - a duplicate post is worse than a missed one.
 ```
 
-**The monitor shim** (Hermes monitors must live in its scripts directory):
+# The monitor shim (Hermes monitors must live in its scripts directory):
 
 ```python
 #!/usr/bin/env python
-"""Cron monitor for tweetytweets. Prints IDLE (identical every tick) or the draft."""
+"""Cron monitor for OmniPost. Prints IDLE (identical every tick) or the draft."""
 import subprocess, sys
 from pathlib import Path
 
-PROJECT = Path(r"/path/to/tweetytweets")
+PROJECT = Path(r"/path/to/omnipost")
 try:
     out = subprocess.run([sys.executable, str(PROJECT / "scripts" / "due.py"), "check"],
                          cwd=str(PROJECT), capture_output=True, text=True, timeout=120)
@@ -110,10 +110,10 @@ except Exception as err:
 
 ```cron
 # 11:00 - research. Then have your agent write and fill the four slots.
-0 11 * * *   cd /path/to/tweetytweets && python scripts/research.py collect --hours 36
+0 11 * * *   cd /path/to/omnipost && python scripts/research.py collect --hours 36
 
 # every 10 minutes - check for work. Silent and free when nothing is due.
-*/10 * * * * cd /path/to/tweetytweets && python scripts/cron_gate.py --wake \
+*/10 * * * * cd /path/to/omnipost && python scripts/cron_gate.py --wake \
                  | /path/to/your-agent --stdin
 ```
 
@@ -124,7 +124,7 @@ whatever runs your agent.
 If your agent can't read stdin, have it poll instead:
 
 ```cron
-*/10 * * * * cd /path/to/tweetytweets && python scripts/cron_gate.py >> /var/log/tweetytweets.log
+*/10 * * * * cd /path/to/omnipost && python scripts/cron_gate.py >> /var/log/omnipost.log
 ```
 
 and let the agent read that log on its own schedule.
@@ -133,23 +133,23 @@ and let the agent read that log on its own schedule.
 
 ## systemd timer (Linux)
 
-`~/.config/systemd/user/tweetytweets-gate.service`
+`~/.config/systemd/user/omnipost-gate.service`
 
 ```ini
 [Unit]
-Description=tweetytweets schedule gate
+Description=OmniPost schedule gate
 
 [Service]
 Type=oneshot
-WorkingDirectory=/path/to/tweetytweets
+WorkingDirectory=/path/to/omnipost
 ExecStart=/usr/bin/python3 scripts/cron_gate.py --wake
 ```
 
-`~/.config/systemd/user/tweetytweets-gate.timer`
+`~/.config/systemd/user/omnipost-gate.timer`
 
 ```ini
 [Unit]
-Description=Check tweetytweets for due posts
+Description=Check OmniPost for due posts
 
 [Timer]
 OnBootSec=2min
@@ -160,7 +160,7 @@ WantedBy=timers.target
 ```
 
 ```bash
-systemctl --user enable --now tweetytweets-gate.timer
+systemctl --user enable --now omnipost-gate.timer
 ```
 
 ---
@@ -169,8 +169,8 @@ systemctl --user enable --now tweetytweets-gate.timer
 
 ```powershell
 # run every 10 minutes
-schtasks /Create /SC MINUTE /MO 10 /TN "tweetytweets gate" ^
-  /TR "cmd /c cd /d C:\path\to\tweetytweets && python scripts\cron_gate.py --wake"
+schtasks /Create /SC MINUTE /MO 10 /TN "OmniPost gate" ^
+  /TR "cmd /c cd /d C:\path\to\omnipost && python scripts\cron_gate.py --wake"
 ```
 
 ---

@@ -1,4 +1,4 @@
-"""Shared settings for tweetytweets.
+"""Shared settings for OmniPost.
 
 Everything install-specific lives in config.json (git-ignored). Scripts never
 hardcode a handle, a path, or a character limit: they read it from here, or fall
@@ -50,7 +50,7 @@ DEFAULTS: dict[str, Any] = {
     "require_verified_source": True,    # refuse to write claims it hasn't read
     "browser": {
         "port": 9222,
-        "profile_dir": "",              # empty => <home>/.tweetytweets/chrome-profile
+        "profile_dir": "",              # empty => <home>/.omnipost/chrome-profile
         "chrome_path": "",              # empty => auto-detect
         "headless": False,
     },
@@ -93,7 +93,13 @@ def profile_dir(cfg: dict | None = None) -> Path:
     if cfg is None:
         cfg = load()
     raw = (cfg.get("browser") or {}).get("profile_dir") or ""
-    p = Path(os.path.expanduser(raw)) if raw else home() / ".tweetytweets" / "chrome-profile"
+    if raw:
+        p = Path(os.path.expanduser(raw))
+    else:
+        # Preserve legacy .tweetytweets profile if it already exists, otherwise default to .omnipost
+        legacy = home() / ".tweetytweets" / "chrome-profile"
+        default = home() / ".omnipost" / "chrome-profile"
+        p = legacy if (legacy.exists() and not default.exists()) else default
     p.mkdir(parents=True, exist_ok=True)
     return p
 

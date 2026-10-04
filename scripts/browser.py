@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""Minimal Chrome DevTools Protocol driver for tweetytweets.
+"""Minimal Chrome DevTools Protocol driver for OmniPost.
 
 Talks straight to a Chrome/Chromium debugging port, against a dedicated profile
 directory that only this tool uses. No browser-automation framework, no
@@ -86,9 +86,11 @@ def ensure_chrome(wait: float = 25, url: str = "about:blank") -> bool:
     flags = [
         str(chrome),
         f"--remote-debugging-port={_port()}",
+        "--remote-allow-origins=*",
         f"--user-data-dir={prof}",
         "--no-first-run",
         "--no-default-browser-check",
+        "--disable-background-mode",
         "--disable-background-timer-throttling",
         "--disable-renderer-backgrounding",
         "--disable-backgrounding-occluded-windows",
@@ -96,7 +98,7 @@ def ensure_chrome(wait: float = 25, url: str = "about:blank") -> bool:
     ]
     if bcfg.get("headless"):
         flags.append("--headless=new")
-    DETACHED = 0x00000008 | 0x00000200           # Windows: DETACHED_PROCESS|NEW_GROUP
+    DETACHED = 0x00000200                        # Windows: CREATE_NEW_PROCESS_GROUP
     kwargs: dict[str, Any] = {"stdout": subprocess.DEVNULL,
                               "stderr": subprocess.DEVNULL,
                               "stdin": subprocess.DEVNULL}
