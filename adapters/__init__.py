@@ -9,6 +9,7 @@ from adapters.base import (
 from adapters.linkedin import LinkedInAdapter
 from adapters.x import XAdapter
 from adapters.bluesky import BlueskyAdapter
+from adapters.threads import ThreadsAdapter
 
 __all__ = [
     "PlatformAdapter",
@@ -18,4 +19,5 @@ __all__ = [
     "XAdapter",
     "BlueskyAdapter",
     "LinkedInAdapter",
+    "ThreadsAdapter",
 ]

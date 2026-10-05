@@ -24,6 +24,10 @@
       "enabled": false,
       "profile_url": "https://www.linkedin.com/in/your-profile",
       "min_gap_hours": 4
+    },
+    "threads": {
+      "enabled": false,
+      "handle": "your_threads_handle"
     }
   },
 

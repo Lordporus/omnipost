@@ -9,7 +9,7 @@ OmniPost evolves from a proven single-platform X autonomous publishing engine in
 - [x] **Phase 1: Adapter Foundation & Bluesky Integration** - Modularize `PlatformAdapter` abstraction, extract X adapter, and implement native ATProto Bluesky adapter with rich text facets.
 - [x] **Phase 2: Zero-Dependency Visual Pipeline** - Programmatic Pillow infocards and HTML + CDP `Page.printToPDF` multi-slide PDF carousels.
 - [x] **Phase 3: LinkedIn CDP Adapter** - Stealth browser automation for LinkedIn posts and multi-page PDF document carousels.
-- [ ] **Phase 4: Meta Threads API & Content Repurposer** - Official Graph API publishing and polymorphic 1-insight-to-4-channel drafting.
+- [x] **Phase 4: Meta Threads CDP Adapter & Content Repurposer** - Browser CDP automation for Threads and polymorphic 1-insight-to-4-channel drafting.
 - [ ] **Phase 5: Unified Ledger & Cross-Platform Engagement** - Atomic multi-platform ledger in `state.json` v2.0, partial-failure isolation, and closed-loop feedback.
 
 ## Phase Details
@@ -59,18 +59,18 @@ Plans:
 - [x] 03-01: LinkedIn CDP Session & ProseMirror Injection Driver
 - [x] 03-02: Document Carousel Upload & Activity Timeline Verification
 
-### Phase 4: Meta Threads API & Content Repurposer
-**Goal**: Implement Meta Threads official Graph API integration and build the polymorphic prompt matrix that converts 1 research insight into 4 distinct channel formats.
+### Phase 4: Meta Threads CDP Adapter & Content Repurposer
+**Goal**: Implement Meta Threads browser automation via CDP and build the polymorphic prompt matrix that converts 1 research insight into 4 distinct channel formats.
 **Depends on**: Phase 3
 **Requirements**: REQ-THRD-01, REQ-THRD-02, REQ-REPURP-01
 **Success Criteria** (what must be TRUE):
-  1. `adapters/threads.py` creates and publishes containers via Meta Graph API.
+  1. `adapters/threads.py` creates and publishes threads via browser CDP automation without cloud hosting.
   2. Content Repurposer generates platform-tailored drafts in `drafts/YYYY-MM-DD.json`.
 **Plans**: 2 plans
 
 Plans:
-- [ ] 04-01: Threads Official API Container Adapter
-- [ ] 04-02: Multi-Channel Content Repurposer Prompt Matrix
+- [x] 04-01: Meta Threads CDP Adapter
+- [x] 04-02: Polymorphic Content Repurposer Engine & Multi-Draft Dispatch
 
 ### Phase 5: Unified Ledger & Cross-Platform Engagement
 **Goal**: Implement atomic per-platform tracking in `state.json` v2.0, support isolated retries on partial publishing failures, and close the loop with analytics.

@@ -92,28 +92,49 @@ def main() -> int:
         print(f"[{datetime.now().strftime('%H:%M:%S')}] [ERROR] No active publishing adapters enabled in settings.")
         return 1
 
-    media_paths = []
-    if due_item.get("image"):
-        img_path = ROOT / due_item["image"] if not Path(due_item["image"]).is_absolute() else Path(due_item["image"])
-        if img_path.exists():
-            media_paths.append(img_path)
-
+    poly_platforms = due_item.get("platforms", {})
     all_successful = True
     verified_urls: list[str] = []
 
     for adapter in adapters:
+        plat_key = adapter.platform_name.lower()
         p_name = adapter.platform_name.upper()
+
+        # Check polymorphic platform configuration
+        plat_draft = poly_platforms.get(plat_key, {})
+        if poly_platforms and plat_key in poly_platforms:
+            if not plat_draft.get("enabled", True):
+                print(f"[{datetime.now().strftime('%H:%M:%S')}] [{p_name}] Platform disabled in draft slot. Skipping.")
+                continue
+            adapted_text = plat_draft.get("text") or text
+            media_list = plat_draft.get("media") or (due_item.get("image") and [due_item.get("image")]) or []
+            media_type = plat_draft.get("media_type", "image")
+        else:
+            adapted_text = text
+            media_list = [due_item["image"]] if due_item.get("image") else []
+            media_type = "image"
+
+        # Resolve media paths
+        resolved_media: list[Path] = []
+        for m in media_list:
+            mp = ROOT / m if not Path(m).is_absolute() else Path(m)
+            if mp.exists():
+                resolved_media.append(mp)
+
         # Enforce platform character limits
         caps = adapter.capabilities
-        adapted_text = text
         if len(adapted_text) > caps.max_characters:
             print(f"[{datetime.now().strftime('%H:%M:%S')}] [{p_name}] Text ({len(adapted_text)}c) exceeds limit ({caps.max_characters}c). Trimming.")
             adapted_text = adapted_text[: caps.max_characters - 3].rstrip() + "..."
 
         payload = PublishPayload(
             text=adapted_text,
-            media_paths=media_paths,
-            extra_metadata={"kind": kind},
+            media_paths=resolved_media,
+            media_type=media_type,
+            extra_metadata={
+                "kind": kind,
+                "document_title": plat_draft.get("document_title") or due_item.get("headline", ""),
+            },
         )
 
         print(f"[{datetime.now().strftime('%H:%M:%S')}] [{p_name}] Publishing slot {slot}...")

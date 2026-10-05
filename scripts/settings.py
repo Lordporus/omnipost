@@ -71,6 +71,10 @@ DEFAULTS: dict[str, Any] = {
             "profile_url": "",
             "min_gap_hours": 4,
         },
+        "threads": {
+            "enabled": False,
+            "handle": "",
+        },
     },
 }
 
@@ -276,6 +280,12 @@ def get_active_adapters(cfg: dict | None = None) -> list[Any]:
     if link_cfg.get("enabled", False):
         from adapters.linkedin import LinkedInAdapter
         adapters.append(LinkedInAdapter())
+
+    # 4. Meta Threads
+    threads_cfg = platforms.get("threads", {})
+    if threads_cfg.get("enabled", False):
+        from adapters.threads import ThreadsAdapter
+        adapters.append(ThreadsAdapter())
 
     return adapters
 
