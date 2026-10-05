@@ -28,9 +28,11 @@ sys.path.insert(0, str(SCRIPTS))
 try:
     from scripts import settings
     from scripts import ledger
+    from scripts import pipeline
 except ImportError:
     import settings
     import ledger
+    import pipeline
 
 from adapters.base import PublishPayload
 
@@ -77,6 +79,20 @@ def main() -> int:
     slot = due_item.get("slot")
     kind = due_item.get("kind", "value")
     text = due_item.get("text")
+
+    if slot and not text:
+        print(f"[{datetime.now().strftime('%H:%M:%S')}] Slot {slot} has empty draft text. Triggering daily pipeline...")
+        try:
+            target_date = due_item.get("date") or datetime.now().strftime("%Y-%m-%d")
+            pipeline.run_daily_pipeline(target_date)
+            code, out = run_cmd([str(SCRIPTS / "due.py"), "check"])
+            if code == 0 and out and out != "IDLE":
+                due_item = json.loads(out)
+                slot = due_item.get("slot")
+                kind = due_item.get("kind", kind)
+                text = due_item.get("text")
+        except Exception as exc:
+            print(f"[{datetime.now().strftime('%H:%M:%S')}] Pipeline generation failed: {exc}", file=sys.stderr)
 
     if not slot or not text:
         print(f"[{datetime.now().strftime('%H:%M:%S')}] Slot {slot} has empty draft text. Skipping.")
