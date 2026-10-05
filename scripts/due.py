@@ -27,12 +27,20 @@ import sys
 from datetime import datetime, timedelta
 from pathlib import Path
 
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+sys.path.insert(0, str(ROOT / "scripts"))
+
 import settings
+
+try:
+    import ledger
+except ImportError:
+    from scripts import ledger
 
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
 
-ROOT = Path(__file__).resolve().parent.parent
 PLANS = ROOT / "drafts"
 STATE = ROOT / "state.json"
 TICK_FILE = ROOT / ".tick"
@@ -50,9 +58,7 @@ def plan_path(date: str) -> Path:
 
 
 def load_state() -> dict:
-    if STATE.exists():
-        return json.loads(STATE.read_text(encoding="utf-8"))
-    return {"handle": settings.load().get("handle", ""), "ai_update_day": 0, "posts": []}
+    return ledger.load_state()
 
 
 def make_plan(date: str | None = None) -> dict:
@@ -111,14 +117,29 @@ def _load_plans() -> list[tuple[Path, dict]]:
 def _posted_slots(st: dict, date: str) -> set[str]:
     """Slots already published on `date` per the ledger (the ground truth)."""
     tz = settings.tzinfo()
+    c = settings.load()
+    platforms_cfg = settings.get_platforms(c)
+    enabled_platforms = [p for p, data in platforms_cfg.items() if data.get("enabled", True)]
+
     done = set()
     for p in st.get("posts", []):
         try:
-            at = datetime.fromisoformat(p["at"]).astimezone(tz).strftime("%Y-%m-%d")
+            at = datetime.fromisoformat(str(p["at"]).replace("Z", "+00:00")).astimezone(tz).strftime("%Y-%m-%d")
         except Exception:
             continue
-        if at == date and p.get("tweet_url") and p.get("verified"):
-            done.add(p.get("slot"))
+        if at == date:
+            p_platforms = p.get("platforms")
+            if p_platforms:
+                # If target platforms are known or any enabled platform is in p_platforms:
+                target_keys = [k for k in enabled_platforms if k in p_platforms] or list(p_platforms.keys())
+                all_done = bool(target_keys) and all(
+                    p_platforms.get(k, {}).get("status") == "published"
+                    for k in target_keys
+                )
+                if all_done:
+                    done.add(p.get("slot"))
+            elif p.get("tweet_url") and p.get("verified"):
+                done.add(p.get("slot"))
     return done
 
 
@@ -196,6 +217,7 @@ def main() -> None:
             print(json.dumps(json.loads(plan_path(a.date).read_text(encoding="utf-8")),
                              indent=2, ensure_ascii=False)[:4000])
             return
+        st = load_state()
         for path, plan in _load_plans():
             print(f"# {path.name}")
             for s in plan["slots"]:
@@ -205,7 +227,12 @@ def main() -> None:
                     mark = "ready"
                 else:
                     mark = "empty"
-                print(f"  {s['slot']:>5} {s['kind']:<9} due {s['due_at'][11:16]}  {mark}")
+                entry = ledger.get_slot_entry(st, plan.get("date", ""), s["slot"])
+                plat_info = ""
+                if entry and "platforms" in entry and entry["platforms"]:
+                    statuses = [f"{p.upper()}:{data.get('status')}" for p, data in entry["platforms"].items()]
+                    plat_info = f" [{', '.join(statuses)}]"
+                print(f"  {s['slot']:>5} {s['kind']:<9} due {s['due_at'][11:16]}  {mark}{plat_info}")
         return
 
     if a.cmd == "check":

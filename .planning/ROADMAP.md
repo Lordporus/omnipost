@@ -10,7 +10,7 @@ OmniPost evolves from a proven single-platform X autonomous publishing engine in
 - [x] **Phase 2: Zero-Dependency Visual Pipeline** - Programmatic Pillow infocards and HTML + CDP `Page.printToPDF` multi-slide PDF carousels.
 - [x] **Phase 3: LinkedIn CDP Adapter** - Stealth browser automation for LinkedIn posts and multi-page PDF document carousels.
 - [x] **Phase 4: Meta Threads CDP Adapter & Content Repurposer** - Browser CDP automation for Threads and polymorphic 1-insight-to-4-channel drafting.
-- [ ] **Phase 5: Unified Ledger & Cross-Platform Engagement** - Atomic multi-platform ledger in `state.json` v2.0, partial-failure isolation, and closed-loop feedback.
+- [x] **Phase 5: Unified Ledger & Cross-Platform Engagement** - Atomic multi-platform ledger in `state.json` v2.0, partial-failure isolation, and closed-loop feedback.
 
 ## Phase Details
 
@@ -83,5 +83,5 @@ Plans:
 **Plans**: 2 plans
 
 Plans:
-- [ ] 05-01: Multi-Platform State Ledger & Partial-Failure Retry Engine
-- [ ] 05-02: Cross-Platform Metrics Aggregation & Feedback Loop
+- [x] 05-01: Multi-Platform State Ledger & Partial-Failure Retry Engine
+- [x] 05-02: Cross-Platform Metrics Aggregation & Feedback Loop

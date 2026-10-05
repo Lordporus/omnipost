@@ -27,8 +27,10 @@ sys.path.insert(0, str(SCRIPTS))
 
 try:
     from scripts import settings
+    from scripts import ledger
 except ImportError:
     import settings
+    import ledger
 
 from adapters.base import PublishPayload
 
@@ -92,20 +94,42 @@ def main() -> int:
         print(f"[{datetime.now().strftime('%H:%M:%S')}] [ERROR] No active publishing adapters enabled in settings.")
         return 1
 
+    st = ledger.load_state()
+    date = due_item.get("date") or datetime.now().strftime("%Y-%m-%d")
     poly_platforms = due_item.get("platforms", {})
     all_successful = True
     verified_urls: list[str] = []
+
+    # Determine targeted platforms
+    target_platforms: list[str] = []
+    for adapter in adapters:
+        plat_key = adapter.platform_name.lower()
+        plat_draft = poly_platforms.get(plat_key, {})
+        if poly_platforms and plat_key in poly_platforms and not plat_draft.get("enabled", True):
+            continue
+        target_platforms.append(plat_key)
 
     for adapter in adapters:
         plat_key = adapter.platform_name.lower()
         p_name = adapter.platform_name.upper()
 
+        # Check if platform is targeted for this slot
+        if plat_key not in target_platforms:
+            print(f"[{datetime.now().strftime('%H:%M:%S')}] [{p_name}] Platform disabled in draft slot. Skipping.")
+            continue
+
+        # Check if platform was already successfully published and verified in ledger
+        if ledger.is_platform_done(st, date, slot, plat_key):
+            done_info = ledger.get_platform_status(st, date, slot, plat_key) or {}
+            done_url = done_info.get("url") or "verified"
+            print(f"[{datetime.now().strftime('%H:%M:%S')}] [SKIP] [{p_name}] Slot {slot} already published ({done_url}). Skipping to prevent duplicates.")
+            if done_info.get("url"):
+                verified_urls.append(done_info["url"])
+            continue
+
         # Check polymorphic platform configuration
         plat_draft = poly_platforms.get(plat_key, {})
         if poly_platforms and plat_key in poly_platforms:
-            if not plat_draft.get("enabled", True):
-                print(f"[{datetime.now().strftime('%H:%M:%S')}] [{p_name}] Platform disabled in draft slot. Skipping.")
-                continue
             adapted_text = plat_draft.get("text") or text
             media_list = plat_draft.get("media") or (due_item.get("image") and [due_item.get("image")]) or []
             media_type = plat_draft.get("media_type", "image")
@@ -140,6 +164,7 @@ def main() -> int:
         print(f"[{datetime.now().strftime('%H:%M:%S')}] [{p_name}] Publishing slot {slot}...")
         try:
             res = adapter.publish(payload)
+            ledger.record_platform_status(st, date, slot, plat_key, res, text=adapted_text, kind=kind)
             if res.success:
                 print(f"[{datetime.now().strftime('%H:%M:%S')}] [{p_name}] Published! URL: {res.url or 'N/A'} (verified={res.verified})")
                 if res.url:
@@ -149,16 +174,23 @@ def main() -> int:
                 print(f"[{datetime.now().strftime('%H:%M:%S')}] [{p_name}] Publish failed: {res.error}")
         except Exception as exc:
             all_successful = False
+            ledger.record_platform_status(
+                st, date, slot, plat_key,
+                {"success": False, "verified": False, "error": str(exc)},
+                text=adapted_text, kind=kind
+            )
             print(f"[{datetime.now().strftime('%H:%M:%S')}] [{p_name}] Publish exception: {exc}")
 
-    if verified_urls:
-        primary_url = verified_urls[0]
-        print(f"[{datetime.now().strftime('%H:%M:%S')}] [SUCCESS] Marking slot {slot} as published ({primary_url}).")
+    slot_fully_done = ledger.is_slot_fully_published(st, date, slot, target_platforms)
+    if slot_fully_done:
+        primary_url = verified_urls[0] if verified_urls else "https://omnipost.local"
+        print(f"[{datetime.now().strftime('%H:%M:%S')}] [SUCCESS] Marking slot {slot} as fully published ({primary_url}).")
         run_cmd([str(SCRIPTS / "due.py"), "mark", "--slot", slot, "--url", primary_url])
-    elif not all_successful:
-        print(f"[{datetime.now().strftime('%H:%M:%S')}] [WARN] Not all platforms succeeded or verified. Slot remains unfinalized for safety.")
+        return 0
+    else:
+        pending = ledger.get_pending_platforms(st, date, slot, target_platforms)
+        print(f"[{datetime.now().strftime('%H:%M:%S')}] [PARTIAL] Slot {slot} partially published. Remaining channels {pending} will be retried on next tick.")
         return 1
-    return 0
 
 
 if __name__ == "__main__":

@@ -206,10 +206,25 @@ def render(a: dict, path: str) -> str:
 
 def main() -> None:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--in", dest="infile", required=True)
+    ap.add_argument("--in", dest="infile", required=False, default=None)
     ap.add_argument("--out", default=None, help="where to write the report (default: stdout)")
     ap.add_argument("--json", action="store_true", help="raw JSON instead of the report")
+    ap.add_argument("--calibrate", action="store_true", help="calibrate voice profile from ledger engagement metrics")
     a = ap.parse_args()
+
+    if a.calibrate:
+        try:
+            import feedback
+        except ImportError:
+            from scripts import feedback
+        analysis = feedback.analyze_performance()
+        feedback.update_voice_profile(analysis)
+        print("[SUCCESS] Voice profile successfully calibrated from ledger performance.")
+        if not a.infile:
+            return
+
+    if not a.infile:
+        ap.error("--in required unless using --calibrate")
 
     path = Path(a.infile)
     if not path.exists():
