@@ -66,6 +66,11 @@ DEFAULTS: dict[str, Any] = {
             "identifier": "",
             "app_password_env": "BSKY_APP_PASSWORD",
         },
+        "linkedin": {
+            "enabled": False,
+            "profile_url": "",
+            "min_gap_hours": 4,
+        },
     },
 }
 
@@ -265,6 +270,12 @@ def get_active_adapters(cfg: dict | None = None) -> list[Any]:
         pwd_env = bsky_cfg.get("app_password_env", "BSKY_APP_PASSWORD")
         pwd = os.environ.get(pwd_env) or bsky_cfg.get("app_password")
         adapters.append(BlueskyAdapter(identifier=ident, app_password=pwd))
+
+    # 3. LinkedIn
+    link_cfg = platforms.get("linkedin", {})
+    if link_cfg.get("enabled", False):
+        from adapters.linkedin import LinkedInAdapter
+        adapters.append(LinkedInAdapter())
 
     return adapters
 
