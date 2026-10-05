@@ -29,10 +29,12 @@ try:
     from scripts import settings
     from scripts import ledger
     from scripts import pipeline
+    from scripts import notify
 except ImportError:
     import settings
     import ledger
     import pipeline
+    import notify
 
 from adapters.base import PublishPayload
 
@@ -125,6 +127,8 @@ def main() -> int:
             continue
         target_platforms.append(plat_key)
 
+    publish_results: dict[str, dict] = {}
+
     for adapter in adapters:
         plat_key = adapter.platform_name.lower()
         p_name = adapter.platform_name.upper()
@@ -181,6 +185,7 @@ def main() -> int:
         try:
             res = adapter.publish(payload)
             ledger.record_platform_status(st, date, slot, plat_key, res, text=adapted_text, kind=kind)
+            publish_results[plat_key] = {"success": res.success, "url": res.url, "error": res.error}
             if res.success:
                 print(f"[{datetime.now().strftime('%H:%M:%S')}] [{p_name}] Published! URL: {res.url or 'N/A'} (verified={res.verified})")
                 if res.url:
@@ -195,7 +200,14 @@ def main() -> int:
                 {"success": False, "verified": False, "error": str(exc)},
                 text=adapted_text, kind=kind
             )
+            publish_results[plat_key] = {"success": False, "error": str(exc)}
             print(f"[{datetime.now().strftime('%H:%M:%S')}] [{p_name}] Publish exception: {exc}")
+
+    if publish_results:
+        try:
+            notify.notify_publish(slot, publish_results)
+        except Exception as notify_err:
+            print(f"[NOTIFY] Warning: Could not dispatch notification: {notify_err}", file=sys.stderr)
 
     slot_fully_done = ledger.is_slot_fully_published(st, date, slot, target_platforms)
     if slot_fully_done:
