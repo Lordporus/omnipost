@@ -87,8 +87,13 @@ class TestAutoposterMultiPlatform(unittest.TestCase):
 
         mock_get_adapters.return_value = [mock_x, mock_bsky]
 
-        with patch("sys.argv", ["autoposter.py"]):
-            code = autoposter.main()
+        import tempfile
+        with tempfile.TemporaryDirectory() as td:
+            dummy_state = Path(td) / "state.json"
+            with patch("scripts.ledger.STATE_PATH", dummy_state), \
+                 patch("scripts.autoposter.ledger.STATE_PATH", dummy_state), \
+                 patch("sys.argv", ["autoposter.py"]):
+                code = autoposter.main()
 
         self.assertEqual(code, 0)
         self.assertEqual(mock_x.publish.call_count, 1)

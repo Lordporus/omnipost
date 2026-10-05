@@ -18,6 +18,7 @@ from typing import Any
 ROOT = Path(__file__).resolve().parent.parent          # repo root
 CONFIG_PATH = ROOT / "config.json"
 EXAMPLE_PATH = ROOT / "config.example.json"
+STATE_PATH = ROOT / "state.json"
 
 # Conservative fallback used ONLY until the real ceiling is measured on the
 # account. Deliberately the free-tier minimum: guessing low means a long draft
