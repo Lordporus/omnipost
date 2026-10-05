@@ -36,15 +36,17 @@ window.chrome = {
 };
 """
 
+THREADS_BASE_URL = "https://www.threads.com/"
+
 # JavaScript to detect active Threads session
 CHECK_SESSION_JS = r"""
 (() => {
   const url = location.href;
-  const isFeed = url.includes('threads.net');
+  const isFeed = url.includes('threads.net') || url.includes('threads.com');
   // Check for profile icon, user handle link, or write icon in navigation bar
   const profileLink = document.querySelector('a[href*="/@"]');
   const loginBtn = document.querySelector('a[href*="/login"], button[type="button"][aria-label*="Log in"]');
-  const composeBtn = document.querySelector('div[role="button"][aria-label*="New thread"], svg[aria-label*="New thread"]');
+  const composeBtn = document.querySelector('div[role="button"][aria-label*="New thread"], svg[aria-label*="New thread"], button[aria-label*="New thread"]');
 
   let handle = null;
   if (profileLink) {
@@ -68,8 +70,9 @@ TRIGGER_COMPOSER_JS = r"""
 (() => {
   // Find "Start a thread" input prompt or navbar compose button
   const composeBtn = document.querySelector('div[role="button"][aria-label*="New thread"]')
+    || document.querySelector('svg[aria-label*="New thread"]')?.closest('div[role="button"], button')
     || document.querySelector('div.x1i10hfl[role="button"]')
-    || [...document.querySelectorAll('div[role="button"]')].find(d => (d.innerText || '').toLowerCase().includes('start a thread'));
+    || [...document.querySelectorAll('div[role="button"], button')].find(d => (d.innerText || '').toLowerCase().includes('start a thread') || (d.innerText || '').toLowerCase().includes('new thread'));
   if (composeBtn) {
     composeBtn.click();
     return 'clicked';
@@ -168,18 +171,25 @@ class ThreadsAdapter(PlatformAdapter):
 
     async def _async_check_session(self) -> dict[str, Any]:
         browser.ensure_chrome()
-        page = await self._open_stealth("https://www.threads.net/")
+        page = await self._open_stealth(THREADS_BASE_URL)
         try:
-            await browser.settle_page(page, 4.0)
-            res_str = await page.eval(CHECK_SESSION_JS)
-            data = json.loads(res_str or "{}")
-            logged_in = bool(data.get("logged_in"))
-            h = data.get("handle") or self._handle
+            # Poll for hydration up to 8 seconds
+            logged_in = False
+            h = None
+            for _ in range(16):
+                res_str = await page.eval(CHECK_SESSION_JS)
+                data = json.loads(res_str or "{}")
+                if data.get("logged_in"):
+                    logged_in = True
+                    h = data.get("handle") or self._handle
+                    break
+                await asyncio.sleep(0.5)
+
             return {
                 "ok": logged_in,
                 "platform": "threads",
                 "handle": h or ("logged_in_user" if logged_in else None),
-                "error": None if logged_in else "Not logged in to threads.net in automation browser window",
+                "error": None if logged_in else "Not logged in to Threads in automation browser window",
             }
         finally:
             await page.__aexit__(None, None, None)
@@ -198,17 +208,23 @@ class ThreadsAdapter(PlatformAdapter):
 
     async def _async_publish(self, payload: PublishPayload) -> PublishResult:
         browser.ensure_chrome()
-        page = await self._open_stealth("https://www.threads.net/")
+        page = await self._open_stealth(THREADS_BASE_URL)
         try:
             await browser.settle_page(page, 4.0)
 
-            # Trigger composer
-            trig = await page.eval(TRIGGER_COMPOSER_JS)
+            # Trigger composer (retry for hydration)
+            trig = "not_found"
+            for _ in range(10):
+                trig = await page.eval(TRIGGER_COMPOSER_JS)
+                if trig == "clicked":
+                    break
+                await asyncio.sleep(0.5)
+
             if trig != "clicked":
                 return PublishResult(
                     platform="threads",
                     success=False,
-                    error="Could not find 'Start a thread' button on threads.net",
+                    error="Could not find 'Start a thread' button on threads.com",
                 )
 
             await asyncio.sleep(1.5)
@@ -225,8 +241,14 @@ class ThreadsAdapter(PlatformAdapter):
                     )
                 await asyncio.sleep(1.5)
 
-            # Focus editor
-            foc = await page.eval(FOCUS_EDITOR_JS)
+            # Focus editor with retry loop for animation
+            foc = "no_editor"
+            for _ in range(15):
+                foc = await page.eval(FOCUS_EDITOR_JS)
+                if foc == "focused":
+                    break
+                await asyncio.sleep(0.5)
+
             if foc != "focused":
                 return PublishResult(
                     platform="threads",
@@ -254,7 +276,8 @@ class ThreadsAdapter(PlatformAdapter):
             # Read back verification
             verified = await self._async_verify(None, payload.text)
 
-            post_url = f"https://www.threads.net/@{self._handle}" if self._handle else "https://www.threads.net"
+            clean_h = self._handle.lstrip("@") if self._handle else ""
+            post_url = f"https://www.threads.com/@{clean_h}" if clean_h else THREADS_BASE_URL
 
             return PublishResult(
                 platform="threads",
@@ -279,10 +302,11 @@ class ThreadsAdapter(PlatformAdapter):
 
     async def _async_verify(self, post_id: str | None, text_snippet: str) -> bool:
         """Read-back verification on user profile timeline."""
+        clean_h = self._handle.lstrip("@") if self._handle else ""
         target_url = (
-            f"https://www.threads.net/@{self._handle}"
-            if self._handle
-            else "https://www.threads.net"
+            f"https://www.threads.com/@{clean_h}"
+            if clean_h
+            else THREADS_BASE_URL
         )
         try:
             page = await self._open_stealth(target_url)
