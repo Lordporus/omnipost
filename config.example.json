@@ -19,6 +19,11 @@
       "enabled": false,
       "identifier": "yourhandle.bsky.social",
       "app_password_env": "BSKY_APP_PASSWORD"
+    },
+    "linkedin": {
+      "enabled": false,
+      "profile_url": "https://www.linkedin.com/in/your-profile",
+      "min_gap_hours": 4
     }
   },
 

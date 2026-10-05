@@ -8,7 +8,7 @@ OmniPost evolves from a proven single-platform X autonomous publishing engine in
 
 - [x] **Phase 1: Adapter Foundation & Bluesky Integration** - Modularize `PlatformAdapter` abstraction, extract X adapter, and implement native ATProto Bluesky adapter with rich text facets.
 - [x] **Phase 2: Zero-Dependency Visual Pipeline** - Programmatic Pillow infocards and HTML + CDP `Page.printToPDF` multi-slide PDF carousels.
-- [ ] **Phase 3: LinkedIn CDP Adapter** - Stealth browser automation for LinkedIn posts and multi-page PDF document carousels.
+- [x] **Phase 3: LinkedIn CDP Adapter** - Stealth browser automation for LinkedIn posts and multi-page PDF document carousels.
 - [ ] **Phase 4: Meta Threads API & Content Repurposer** - Official Graph API publishing and polymorphic 1-insight-to-4-channel drafting.
 - [ ] **Phase 5: Unified Ledger & Cross-Platform Engagement** - Atomic multi-platform ledger in `state.json` v2.0, partial-failure isolation, and closed-loop feedback.
 
@@ -53,11 +53,11 @@ Plans:
   1. `adapters/linkedin.py` successfully injects text into LinkedIn's ProseMirror editor via CDP.
   2. PDF carousels created in Phase 2 upload seamlessly to LinkedIn document shares.
   3. Verification reads back published posts from the LinkedIn activity feed.
-**Plans**: 2 plans
+**Plans**: 2 plans (Completed)
 
 Plans:
-- [ ] 03-01: LinkedIn CDP Session & ProseMirror Injection Driver
-- [ ] 03-02: Document Carousel Upload & Activity Timeline Verification
+- [x] 03-01: LinkedIn CDP Session & ProseMirror Injection Driver
+- [x] 03-02: Document Carousel Upload & Activity Timeline Verification
 
 ### Phase 4: Meta Threads API & Content Repurposer
 **Goal**: Implement Meta Threads official Graph API integration and build the polymorphic prompt matrix that converts 1 research insight into 4 distinct channel formats.
