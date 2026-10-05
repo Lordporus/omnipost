@@ -2,7 +2,8 @@
 
 ## Current Position
 - Milestone: V2.0 Multi-Platform Syndicate
-- Active Phase: Phase 1 — Adapter Foundation & Bluesky Integration
+- Completed Phases: Phase 1 (Adapters & Bluesky), Phase 2 (Visual Pipeline)
+- Active Phase: Phase 3 — LinkedIn CDP Adapter
 - Status: Ready for planning
 
 ## Key Decisions

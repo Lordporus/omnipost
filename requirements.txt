@@ -1,6 +1,7 @@
-# OmniPost — one dependency.
+# OmniPost dependencies.
 #
-# The whole pipeline is stdlib + this. No Playwright, no Selenium, no browser
-# automation framework: the CDP driver in scripts/browser.py talks to Chrome's
-# debugging port directly.
+# Lean cross-platform toolchain:
+# 1. websockets: talks directly to Chrome/Edge CDP debugging port
+# 2. Pillow: generates programmatic dark-mode 16:9 infocards offline
 websockets>=12.0
+Pillow>=10.0.0

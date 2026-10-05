@@ -6,8 +6,8 @@ OmniPost evolves from a proven single-platform X autonomous publishing engine in
 
 ## Phases
 
-- [ ] **Phase 1: Adapter Foundation & Bluesky Integration** - Modularize `PlatformAdapter` abstraction, extract X adapter, and implement native ATProto Bluesky adapter with rich text facets.
-- [ ] **Phase 2: Zero-Dependency Visual Pipeline** - Programmatic Pillow infocards and HTML + CDP `Page.printToPDF` multi-slide PDF carousels.
+- [x] **Phase 1: Adapter Foundation & Bluesky Integration** - Modularize `PlatformAdapter` abstraction, extract X adapter, and implement native ATProto Bluesky adapter with rich text facets.
+- [x] **Phase 2: Zero-Dependency Visual Pipeline** - Programmatic Pillow infocards and HTML + CDP `Page.printToPDF` multi-slide PDF carousels.
 - [ ] **Phase 3: LinkedIn CDP Adapter** - Stealth browser automation for LinkedIn posts and multi-page PDF document carousels.
 - [ ] **Phase 4: Meta Threads API & Content Repurposer** - Official Graph API publishing and polymorphic 1-insight-to-4-channel drafting.
 - [ ] **Phase 5: Unified Ledger & Cross-Platform Engagement** - Atomic multi-platform ledger in `state.json` v2.0, partial-failure isolation, and closed-loop feedback.
@@ -24,12 +24,12 @@ OmniPost evolves from a proven single-platform X autonomous publishing engine in
   3. `adapters/bluesky.py` successfully creates sessions, formats UTF-8 byte facets for links/mentions, and publishes text records to ATProto.
   4. `config.json` allows enabling/disabling platforms independently via `platforms.x` and `platforms.bluesky`.
   5. Full unit test suite passes with zero regressions on existing X functionality.
-**Plans**: 3 plans
+**Plans**: 3 plans (Completed)
 
 Plans:
-- [ ] 01-01: Abstract Adapter Interface & X Adapter Extraction
-- [ ] 01-02: Bluesky ATProto XRPC Adapter with Rich Text Byte Facets
-- [ ] 01-03: Multi-Platform Configuration & Orchestrator CLI Integration
+- [x] 01-01: Abstract Adapter Interface & X Adapter Extraction
+- [x] 01-02: Bluesky ATProto XRPC Adapter with Rich Text Byte Facets
+- [x] 01-03: Multi-Platform Configuration & Orchestrator CLI Integration
 
 ### Phase 2: Zero-Dependency Visual Pipeline
 **Goal**: Build automated graphic generation for dark-mode 16:9 infocards (Pillow) and 1080x1080 vector PDF carousels (HTML + CDP `Page.printToPDF`) without heavy C-library dependencies.
@@ -39,11 +39,11 @@ Plans:
   1. `render/infocard.py` generates 16:9 dark-mode PNG cards from structured text.
   2. `render/carousel.py` generates clean multi-slide vector PDF carousels using CDP `Page.printToPDF`.
   3. Media payloads cleanly attach to X and Bluesky posts.
-**Plans**: 2 plans
+**Plans**: 2 plans (Completed)
 
 Plans:
-- [ ] 02-01: Programmatic Infocard Renderer with Pillow
-- [ ] 02-02: CDP HTML-to-PDF Carousel Builder & Media Attachment Flow
+- [x] 02-01: Programmatic Infocard Renderer with Pillow
+- [x] 02-02: CDP HTML-to-PDF Carousel Builder & Media Attachment Flow
 
 ### Phase 3: LinkedIn CDP Adapter
 **Goal**: Build a dedicated LinkedIn browser automation adapter that supports long-form text, multi-page PDF carousel uploads, and profile activity read-back verification.

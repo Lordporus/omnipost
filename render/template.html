@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>{{MAIN_TITLE}}</title>
+  <style>
+    @page {
+      size: 1080px 1080px;
+      margin: 0;
+    }
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+    body {
+      background-color: #060911;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      color: #f8fafc;
+      -webkit-font-smoothing: antialiased;
+    }
+    .slide {
+      width: 1080px;
+      height: 1080px;
+      page-break-after: always;
+      break-after: page;
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      padding: 80px;
+      background: radial-gradient(circle at 80% 20%, #1e293b 0%, #090d16 65%);
+      border: 1px solid #1e293b;
+      overflow: hidden;
+    }
+    /* Subtle glowing grid background effect */
+    .slide::before {
+      content: "";
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background-image: linear-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+                        linear-gradient(90deg, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+      background-size: 60px 60px;
+      pointer-events: none;
+    }
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      z-index: 10;
+    }
+    .badge {
+      font-size: 20px;
+      font-weight: 700;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: #38bdf8;
+      background: rgba(56, 189, 248, 0.12);
+      border: 1px solid rgba(56, 189, 248, 0.3);
+      padding: 10px 20px;
+      border-radius: 999px;
+    }
+    .slide-counter {
+      font-size: 22px;
+      font-weight: 600;
+      color: #64748b;
+      font-variant-numeric: tabular-nums;
+    }
+    .content-container {
+      z-index: 10;
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      margin: 40px 0;
+    }
+    .slide-title {
+      font-size: 52px;
+      font-weight: 800;
+      line-height: 1.18;
+      color: #ffffff;
+      margin-bottom: 32px;
+      letter-spacing: -0.02em;
+    }
+    .slide-body {
+      font-size: 28px;
+      font-weight: 400;
+      line-height: 1.5;
+      color: #cbd5e1;
+      margin-bottom: 24px;
+    }
+    .bullets {
+      list-style: none;
+      margin-top: 16px;
+    }
+    .bullet-item {
+      font-size: 26px;
+      line-height: 1.45;
+      color: #e2e8f0;
+      margin-bottom: 18px;
+      display: flex;
+      align-items: flex-start;
+    }
+    .bullet-icon {
+      color: #38bdf8;
+      margin-right: 16px;
+      font-weight: bold;
+      flex-shrink: 0;
+    }
+    .footer {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding-top: 32px;
+      border-top: 2px solid rgba(51, 65, 85, 0.5);
+      z-index: 10;
+    }
+    .author-handle {
+      font-size: 22px;
+      font-weight: 600;
+      color: #94a3b8;
+    }
+    .swipe-cta {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 22px;
+      font-weight: 700;
+      color: #38bdf8;
+      letter-spacing: 0.05em;
+    }
+  </style>
+</head>
+<body>
+  {{SLIDES_HTML}}
+</body>
+</html>
