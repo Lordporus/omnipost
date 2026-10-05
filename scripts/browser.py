@@ -25,7 +25,10 @@ import urllib.request
 from pathlib import Path
 from typing import Any
 
-import settings
+try:
+    from scripts import settings
+except ImportError:
+    import settings
 
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")

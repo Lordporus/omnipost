@@ -54,6 +54,19 @@ DEFAULTS: dict[str, Any] = {
         "chrome_path": "",              # empty => auto-detect
         "headless": False,
     },
+    "platforms": {
+        "x": {
+            "enabled": True,
+            "handle": "",
+            "premium": None,
+            "max_chars": None,
+        },
+        "bluesky": {
+            "enabled": False,
+            "identifier": "",
+            "app_password_env": "BSKY_APP_PASSWORD",
+        },
+    },
 }
 
 
@@ -207,3 +220,51 @@ def tzinfo():
         except Exception:
             pass
     return datetime.now().astimezone().tzinfo or timezone(timedelta(0))
+
+
+def get_platforms(cfg: dict | None = None) -> dict[str, Any]:
+    """Return configured platforms mapping with backwards compatibility.
+    
+    If legacy top-level keys ('handle', 'premium', 'max_chars') are present,
+    they are automatically synced into the 'platforms.x' structure.
+    """
+    if cfg is None:
+        cfg = load()
+    platforms = cfg.get("platforms", {})
+    x_cfg = platforms.get("x", {})
+
+    # Backward compatibility: populate x fields from root if missing
+    if not x_cfg.get("handle") and cfg.get("handle"):
+        x_cfg["handle"] = cfg["handle"]
+    if x_cfg.get("premium") is None and cfg.get("premium") is not None:
+        x_cfg["premium"] = cfg["premium"]
+    if x_cfg.get("max_chars") is None and cfg.get("max_chars") is not None:
+        x_cfg["max_chars"] = cfg["max_chars"]
+    if "enabled" not in x_cfg:
+        x_cfg["enabled"] = True
+
+    platforms["x"] = x_cfg
+    return platforms
+
+
+def get_active_adapters(cfg: dict | None = None) -> list[Any]:
+    """Instantiate and return PlatformAdapter objects for all enabled platforms."""
+    platforms = get_platforms(cfg)
+    adapters = []
+
+    # 1. X (Twitter)
+    if platforms.get("x", {}).get("enabled", True):
+        from adapters.x import XAdapter
+        adapters.append(XAdapter())
+
+    # 2. Bluesky
+    bsky_cfg = platforms.get("bluesky", {})
+    if bsky_cfg.get("enabled", False):
+        from adapters.bluesky import BlueskyAdapter
+        ident = bsky_cfg.get("identifier")
+        pwd_env = bsky_cfg.get("app_password_env", "BSKY_APP_PASSWORD")
+        pwd = os.environ.get(pwd_env) or bsky_cfg.get("app_password")
+        adapters.append(BlueskyAdapter(identifier=ident, app_password=pwd))
+
+    return adapters
+

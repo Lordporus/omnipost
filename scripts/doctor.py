@@ -44,11 +44,22 @@ def check_config() -> tuple[str, str]:
     if not settings.CONFIG_PATH.exists():
         return BAD, f"no config.json - run:  cp {settings.EXAMPLE_PATH.name} config.json"
     c = settings.load()
-    if not (c.get("handle") or "").strip():
-        return WARN, "config.json exists but handle is empty - finish the onboarding interview"
-    lim = settings.limit(c)
-    cap = f"{lim['chars']} chars" + ("" if lim["verified"] else "  (NOT verified)")
-    return OK, f"config.json ok - handle @{c['handle'].lstrip('@')}, cap {cap}"
+    platforms = settings.get_platforms(c)
+    active = [p for p, data in platforms.items() if data.get("enabled", True)]
+    
+    parts = []
+    if "x" in active:
+        x_handle = platforms["x"].get("handle") or c.get("handle") or ""
+        lim = settings.limit(c)
+        cap = f"{lim['chars']}c" + ("" if lim["verified"] else " (unverified)")
+        parts.append(f"x: @{x_handle.lstrip('@') or 'unset'} [{cap}]")
+    if "bluesky" in active:
+        b_ident = platforms["bluesky"].get("identifier") or "unset"
+        parts.append(f"bluesky: @{b_ident}")
+
+    if not parts:
+        return WARN, "config.json ok, but no publishing platforms enabled"
+    return OK, f"config.json ok - active: {', '.join(parts)}"
 
 
 def check_chrome() -> tuple[str, str]:
@@ -99,16 +110,18 @@ def check_live() -> list[tuple[str, str]]:
                           f"- it starts on demand, so this is only a problem if it persists"))
         return out
 
-    try:
-        import post
-        info = post.asyncio.run(post.session_info())
-        if info.get("logged_in"):
-            out.append((OK, f"X session live as @{info['handle']}"))
-        else:
-            out.append((WARN, "X session is NOT logged in - sign in to x.com in the "
-                              "automation browser window"))
-    except Exception as err:
-        out.append((WARN, f"could not check the X session: {str(err)[:80]}"))
+    # Check active platform sessions
+    adapters = settings.get_active_adapters()
+    for adapter in adapters:
+        try:
+            sess = adapter.check_session()
+            if sess.get("ok"):
+                h = sess.get("handle") or "logged in"
+                out.append((OK, f"{adapter.platform_name.upper()} session live as @{h}"))
+            else:
+                out.append((WARN, f"{adapter.platform_name.upper()} session check failed: {sess.get('error', 'not logged in')}"))
+        except Exception as err:
+            out.append((WARN, f"could not check {adapter.platform_name} session: {str(err)[:80]}"))
     return out
 
 

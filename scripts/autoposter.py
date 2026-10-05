@@ -22,6 +22,16 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 SCRIPTS = ROOT / "scripts"
+sys.path.insert(0, str(ROOT))
+sys.path.insert(0, str(SCRIPTS))
+
+try:
+    from scripts import settings
+except ImportError:
+    import settings
+
+from adapters.base import PublishPayload
+
 
 
 def run_cmd(args: list[str]) -> tuple[int, str]:
@@ -76,58 +86,57 @@ def main() -> int:
         print(f"[{datetime.now().strftime('%H:%M:%S')}] Dry-run requested. Skipping real publishing.")
         return 0
 
-    # Save draft text to scratch buffer
-    tmp_text = ROOT / "scratch" / f"due_{slot.replace(':', '')}.txt"
-    tmp_text.parent.mkdir(exist_ok=True)
-    tmp_text.write_text(text, encoding="utf-8")
+    # Publish across all active adapters
+    adapters = settings.get_active_adapters()
+    if not adapters:
+        print(f"[{datetime.now().strftime('%H:%M:%S')}] [ERROR] No active publishing adapters enabled in settings.")
+        return 1
 
-    post_args = [str(SCRIPTS / "post.py"), "post", "--text-file", str(tmp_text)]
-    if kind == "ai_update":
-        post_args.extend(["--kind", "ai_update"])
+    media_paths = []
     if due_item.get("image"):
         img_path = ROOT / due_item["image"] if not Path(due_item["image"]).is_absolute() else Path(due_item["image"])
         if img_path.exists():
-            post_args.extend(["--image", str(img_path)])
+            media_paths.append(img_path)
 
-    print(f"[{datetime.now().strftime('%H:%M:%S')}] Publishing slot {slot}...")
-    pcode, pout = run_cmd(post_args)
-    if pcode != 0:
-        print(f"[{datetime.now().strftime('%H:%M:%S')}] [ERROR] Post command failed (exit code {pcode}): {pout}")
-        # Guardrail: Never mark a failed slot as posted
-        return 1
+    all_successful = True
+    verified_urls: list[str] = []
 
-    print(f"Publish output: {pout}")
+    for adapter in adapters:
+        p_name = adapter.platform_name.upper()
+        # Enforce platform character limits
+        caps = adapter.capabilities
+        adapted_text = text
+        if len(adapted_text) > caps.max_characters:
+            print(f"[{datetime.now().strftime('%H:%M:%S')}] [{p_name}] Text ({len(adapted_text)}c) exceeds limit ({caps.max_characters}c). Trimming.")
+            adapted_text = adapted_text[: caps.max_characters - 3].rstrip() + "..."
 
-    # Check post verification results
-    tweet_url = None
-    try:
-        post_res = json.loads(pout)
-        if post_res.get("verified") and post_res.get("tweet_url"):
-            tweet_url = post_res["tweet_url"]
-    except Exception:
-        pass
+        payload = PublishPayload(
+            text=adapted_text,
+            media_paths=media_paths,
+            extra_metadata={"kind": kind},
+        )
 
-    # If post.py did not confirm immediately, do a fallback profile read-back
-    if not tweet_url:
-        print(f"[{datetime.now().strftime('%H:%M:%S')}] Polling profile read-back verification...")
-        vcode, vout = run_cmd([str(SCRIPTS / "post.py"), "verify"])
+        print(f"[{datetime.now().strftime('%H:%M:%S')}] [{p_name}] Publishing slot {slot}...")
         try:
-            posts = json.loads(vout)
-            head = text[:40].replace("\n", " ").strip().lower()
-            matched = next((p for p in posts if head in p.get("text", "").replace("\n", " ").lower()), None)
-            if matched and matched.get("url"):
-                tweet_url = matched["url"]
-        except Exception as e:
-            print(f"[{datetime.now().strftime('%H:%M:%S')}] Verification parsing error: {e}")
+            res = adapter.publish(payload)
+            if res.success:
+                print(f"[{datetime.now().strftime('%H:%M:%S')}] [{p_name}] Published! URL: {res.url or 'N/A'} (verified={res.verified})")
+                if res.url:
+                    verified_urls.append(res.url)
+            else:
+                all_successful = False
+                print(f"[{datetime.now().strftime('%H:%M:%S')}] [{p_name}] Publish failed: {res.error}")
+        except Exception as exc:
+            all_successful = False
+            print(f"[{datetime.now().strftime('%H:%M:%S')}] [{p_name}] Publish exception: {exc}")
 
-    if tweet_url:
-        print(f"[{datetime.now().strftime('%H:%M:%S')}] [SUCCESS] Post verified live at: {tweet_url}")
-        run_cmd([str(SCRIPTS / "due.py"), "mark", "--slot", slot, "--url", tweet_url])
-        run_cmd([str(SCRIPTS / "post.py"), "shot", "--what", "profile"])
-    else:
-        print(f"[{datetime.now().strftime('%H:%M:%S')}] [WARN] Post sent but exact match not immediately verified on profile timeline.")
-        print("Leaving slot unmarked for safety retry or manual review.")
-
+    if verified_urls:
+        primary_url = verified_urls[0]
+        print(f"[{datetime.now().strftime('%H:%M:%S')}] [SUCCESS] Marking slot {slot} as published ({primary_url}).")
+        run_cmd([str(SCRIPTS / "due.py"), "mark", "--slot", slot, "--url", primary_url])
+    elif not all_successful:
+        print(f"[{datetime.now().strftime('%H:%M:%S')}] [WARN] Not all platforms succeeded or verified. Slot remains unfinalized for safety.")
+        return 1
     return 0
 
 

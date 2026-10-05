@@ -8,6 +8,20 @@
   "max_chars": null,
   "max_chars_verified": false,
 
+  "platforms": {
+    "x": {
+      "enabled": true,
+      "handle": "yourhandle_without_the_at",
+      "premium": false,
+      "max_chars": 280
+    },
+    "bluesky": {
+      "enabled": false,
+      "identifier": "yourhandle.bsky.social",
+      "app_password_env": "BSKY_APP_PASSWORD"
+    }
+  },
+
   "timezone": "local",
   "_timezone_hint": "e.g. 'Asia/Kolkata', 'America/New_York', or 'local' for the machine's timezone",
 

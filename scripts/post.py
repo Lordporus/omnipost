@@ -30,9 +30,13 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
-import browser
-import settings
-from browser import CDPError, Session
+try:
+    from scripts import browser, settings
+    from scripts.browser import CDPError, Session
+except ImportError:
+    import browser
+    import settings
+    from browser import CDPError, Session
 
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
