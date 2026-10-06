@@ -45,8 +45,14 @@ def generate_topic_from_items(kind: str, items: list[dict[str, Any]]) -> dict[st
     # Sort items by score/relevance
     sorted_items = sorted(items, key=lambda x: int(x.get("score") or 0), reverse=True)
     top_item = sorted_items[0]
-    title = top_item.get("title", "Engineering Update")
-    summary = top_item.get("extra") or top_item.get("title", "")
+    title = str(top_item.get("title") or "Engineering Update")
+    raw_extra = top_item.get("extra")
+    if isinstance(raw_extra, str):
+        summary = raw_extra
+    elif isinstance(raw_extra, dict):
+        summary = str(raw_extra.get("summary") or raw_extra.get("text") or raw_extra.get("title") or title)
+    else:
+        summary = str(top_item.get("summary") or title)
     points = extract_key_takeaways(summary)
 
     category = "AI UPDATE" if kind == "ai_update" else "TECH INSIGHT"
