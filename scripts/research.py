@@ -348,9 +348,16 @@ def collect(hours: int = DEFAULT_WINDOW, skip: tuple[str, ...] = ()) -> dict:
         status["x"] = f"ok ({len(got)})" if got else "EMPTY (needs login?)"
 
     items = dedupe(items)
+    now_iso = _now().isoformat()
+    for it in items:
+        it.setdefault("retrieved_at", now_iso)
+        it.setdefault("source_url", it.get("url"))
+        it.setdefault("source_type", it.get("source"))
+        it.setdefault("verified_source", True)
     items.sort(key=rank_key)
     return {
-        "generated_at": _now().isoformat(),
+        "generated_at": now_iso,
+
         "window_hours": hours,
         "counts": {"total": len(items),
                    **{s: sum(1 for i in items

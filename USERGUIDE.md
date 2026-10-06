@@ -17,14 +17,16 @@ Welcome to the definitive user handbook for **OmniPost V2.0**. This guide walks 
 5. [The Daily Autonomous Pipeline](#5-the-daily-autonomous-pipeline)
 6. [Visual Engine: 4-Slide Vector Carousels & Infocards](#6-visual-engine-4-slide-vector-carousels--infocards)
 7. [Operating Modes: Dry-Run vs Autonomous Dispatch](#7-operating-modes-dry-run-vs-autonomous-dispatch)
-8. [On-Demand Broadcasts (`publish_now.py`)](#8-on-demand-broadcasts-publish_nowpy)
-9. [Production Deployment Guides](#9-production-deployment-guides)
+8. [Account Safety: The Warm-Up First Protocol](#8-account-safety-the-warm-up-first-protocol)
+9. [On-Demand Broadcasts (`publish_now.py`)](#9-on-demand-broadcasts-publish_nowpy)
+10. [Production Deployment Guides](#10-production-deployment-guides)
    - [A. Windows Task Scheduler](#a-windows-task-scheduler)
    - [B. Docker Compose](#b-docker-compose)
    - [C. Headless Linux VPS (Systemd)](#c-headless-linux-vps-systemd)
-10. [Remote Webhook Monitoring (Telegram & Discord)](#10-remote-webhook-monitoring-telegram--discord)
-11. [Diagnostics, Healthchecks & Auto-Healing](#11-diagnostics-healthchecks--auto-healing)
-12. [Troubleshooting & FAQ](#12-troubleshooting--faq)
+11. [Remote Webhook Monitoring (Telegram & Discord)](#11-remote-webhook-monitoring-telegram--discord)
+12. [Vision Model Limits & Trust Boundaries](#12-vision-model-limits--trust-boundaries)
+13. [Diagnostics, Healthchecks & Auto-Healing](#13-diagnostics-healthchecks--auto-healing)
+14. [Troubleshooting & FAQ](#14-troubleshooting--faq)
 
 ---
 
@@ -214,7 +216,22 @@ The daemon runs continuously:
 
 ---
 
-## 8. On-Demand Broadcasts (`publish_now.py`)
+## 8. Account Safety: The Warm-Up First Protocol
+
+> [!WARNING]
+> New social accounts posting high-frequency automated content look identical to botnet spam rings. Starting automation too aggressively triggers automated shadowbans or account suspension on X and LinkedIn.
+
+Follow this strict **14-day warm-up sequence** for all fresh accounts before enabling full multi-slot automation:
+
+1. **Complete Profile Identity:** Set an avatar, bio, banner, and verify your email/phone.
+2. **Manual Seeding (Days 1–3):** Publish 3–5 thoughts manually using your browser or phone app.
+3. **Conversational Replies (Days 3–7):** Reply manually to 2–3 relevant posts per day. Platforms heavily weight bidirectional conversation before trusting programmatic publishers.
+4. **Initial Low-Volume Automation (Days 7–14):** Configure OmniPost with a single daily slot (`"time_slots": ["14:00"]`). Run automation at **1 post/day maximum**.
+5. **Scale to Full Schedule (Day 15+):** Once the account exhibits normal organic reach, enable your desired multi-slot schedule (e.g. 2–4 slots per day).
+
+---
+
+## 9. On-Demand Broadcasts (`publish_now.py`)
 
 Need to announce an urgent release, incident post-mortem, or unscheduled insight immediately? Use `scripts/publish_now.py`:
 
@@ -236,7 +253,7 @@ python scripts/publish_now.py --platforms x,linkedin --text "System architecture
 
 ---
 
-## 9. Production Deployment Guides
+## 10. Production Deployment Guides
 
 ### A. Windows Task Scheduler
 Run OmniPost unattended on your Windows desktop or workstation:
@@ -287,7 +304,7 @@ sudo journalctl -u omnipost -f
 
 ---
 
-## 10. Remote Webhook Monitoring (Telegram & Discord)
+## 11. Remote Webhook Monitoring (Telegram & Discord)
 
 Keep track of your publishing syndicate from your phone or team chat:
 
@@ -313,7 +330,21 @@ If browser cookies expire for X, LinkedIn, or Threads, OmniPost dispatches an im
 
 ---
 
-## 11. Diagnostics, Healthchecks & Auto-Healing
+## 12. Vision Model Limits & Trust Boundaries
+
+OmniPost supports screenshot capture and vision model visual proofing (via `scripts/post.py shot --what profile` and `shots/compose.png`). However, operators and AI agents must observe strict trust boundaries:
+
+| Capability | Trust Level | Operational Guidance |
+| :--- | :---: | :--- |
+| **Visual Framing & Layout** | ✅ High | Vision reliably confirms whether the composer loaded, cards rendered, and text line-breaks look clean. |
+| **Card & Image Appearance** | ✅ High | Vision accurately identifies whether infocard PNGs or carousel PDFs uploaded without rendering glitches. |
+| **Numeric Count & Metrics** | ❌ Zero | **Never trust vision for numbers.** Vision models frequently hallucinate follower counts, impression tallies, and like metrics. |
+| **Timestamps & Dates** | ❌ Low | Vision struggles with fine-grained relative timestamps ("3m ago" vs "3h ago"). Rely strictly on DOM `datetime` attributes or XRPC response timestamps. |
+| **State Ledger Status** | ❌ Prohibited | Never use vision model output to mutate or confirm `state.json`. OmniPost relies solely on atomic HTTP responses, DOM selectors, and author feed scraping. |
+
+---
+
+## 13. Diagnostics, Healthchecks & Auto-Healing
 
 ### Comprehensive Health Audit
 Run a complete live audit testing feeds, CDP sockets, and session validity:
@@ -335,7 +366,7 @@ If Chrome or Edge terminates unexpectedly, `scripts/browser_daemon.py`:
 
 ---
 
-## 12. Troubleshooting & FAQ
+## 14. Troubleshooting & FAQ
 
 ### Q1: What happens if LinkedIn or X logs me out?
 **A:** OmniPost's partial-failure retry engine isolates each platform. If LinkedIn fails due to an expired cookie, posts to X, Bluesky, and Threads will still publish normally. OmniPost marks LinkedIn as `pending` in `state.json` and alerts you via Discord/Telegram.

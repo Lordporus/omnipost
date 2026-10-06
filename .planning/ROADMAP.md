@@ -11,6 +11,7 @@ OmniPost evolves from a proven single-platform X autonomous publishing engine in
 - [x] **Phase 3: LinkedIn CDP Adapter** - Stealth browser automation for LinkedIn posts and multi-page PDF document carousels.
 - [x] **Phase 4: Meta Threads CDP Adapter & Content Repurposer** - Browser CDP automation for Threads and polymorphic 1-insight-to-4-channel drafting.
 - [x] **Phase 5: Unified Ledger & Cross-Platform Engagement** - Atomic multi-platform ledger in `state.json` v2.0, partial-failure isolation, and closed-loop feedback.
+- [ ] **Phase 6: Production Wisdom & Enforcement-First Hardening** - Port TweetyTweets production rigor: risk transparency, code guardrails, voice measurement ritual, $0-cost schedule gate, and E2E integration tests.
 
 ## Phase Details
 
@@ -85,3 +86,24 @@ Plans:
 Plans:
 - [x] 05-01: Multi-Platform State Ledger & Partial-Failure Retry Engine
 - [x] 05-02: Cross-Platform Metrics Aggregation & Feedback Loop
+
+### Phase 6: Production Wisdom & Enforcement-First Hardening
+**Goal**: Hardening OmniPost with battle-tested production wisdom from TweetyTweets: explicit risk honesty, code-level guardrails against bad posts, voice authenticity measurement rituals, $0-cost idle schedule gating, E2E multi-platform validation tests, and full onboarding ceremonies.
+**Depends on**: Phase 5
+**Requirements**: REQ-RISK-01, REQ-GUARD-01, REQ-VOICE-01, REQ-GATE-01, REQ-TEST-02, REQ-DOCS-01, REQ-DEP-01, REQ-WARM-01, REQ-SRC-01, REQ-WIZARD-01
+**Success Criteria** (what must be TRUE):
+  1. `README.md` and `USERGUIDE.md` explicitly detail account automation risks, anti-spam warm-up protocols, DOM fragility realities, and trust boundaries on vision models.
+  2. `validator.py`, `due.py`, and `post.py` enforce hard guardrails: rejecting unmeasured character ceilings, duplicate text, unverified handles, engagement bait, and unverified factual claims.
+  3. `scripts/voice_profile.py` implements a structured measurement ritual using top posts and enforces mandatory "do-not" style rules.
+  4. `scripts/gate.py` provides a byte-identical `IDLE` stdout contract to eliminate idle LLM invocation costs in cron/systemd setups.
+  5. An E2E test suite (`tests/test_integration_e2e.py`, `tests/test_carousel_rendering.py`, `tests/test_multiplatform_adaptation.py`) verifies full lifecycle behavior without flaky network dependencies.
+  6. `setup.py` and `wizard.py` run a complete onboarding ceremony with character ceiling measurement and supervised first-post verification.
+**Plans**: 3 plans
+
+Plans:
+- [x] 06-01: Hard Rules, Guardrails & Source Verification Engine
+- [x] 06-02: Zero-Cost Idle Gate, Voice Measurement Ritual & Onboarding Ceremony
+- [x] 06-03: Real-World E2E Test Suite, Risk Transparency & Authoritative Documentation
+
+
+

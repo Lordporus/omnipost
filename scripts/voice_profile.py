@@ -201,7 +201,139 @@ def render(a: dict, path: str) -> str:
               "NEXT: your agent turns this into references/voice-profile.local.md, and every",
               "draft is written against it. This file is git-ignored - it is your voice, not",
               "part of the shared skill."]
+ROOT = Path(__file__).resolve().parent.parent
+VOICE_PROFILE_DEFAULT_PATH = ROOT / "references" / "voice-profile.local.md"
+
+DEFAULT_DO_NOT_RULES = [
+    "Never use corporate buzzwords: 'In today's fast-paced world', 'Game changer', 'Dive into', 'Excited to announce'.",
+    "Never use hashtags in the post body.",
+    "Never use exclamation marks in technical statements or analysis.",
+    "Never use engagement bait questions ('Agree?', 'What do you think?', 'Comment below').",
+    "Never end on preachy or moralizing wrap-up conclusions.",
+    "Never use bulleted lists inside short-form X posts (use blank lines instead).",
+    "Never post emojis as decorative padding or filler.",
+]
+
+
+def validate_voice_profile_exists(base: Path | None = None) -> bool:
+    """Checks whether references/voice-profile.local.md exists and has substantive content."""
+    p = (base or ROOT) / "references" / "voice-profile.local.md"
+    if not p.exists() or not p.is_file():
+        return False
+    try:
+        content = p.read_text(encoding="utf-8").strip()
+        return len(content) > 50
+    except Exception:
+        return False
+
+
+def enforce_do_not_list(profile_text: str | None = None, base: Path | None = None) -> tuple[bool, list[str]]:
+    """Checks that voice profile has an explicit, non-empty DO-NOT list to prevent AI voice drift."""
+    text = profile_text
+    if text is None:
+        p = (base or ROOT) / "references" / "voice-profile.local.md"
+        if not p.exists():
+            return False, []
+        text = p.read_text(encoding="utf-8", errors="replace")
+
+    # Look for DO NOT section
+    m = re.search(r"##\s+(?:DO\s+NOT|Do-Not|Do\s+Not)[^\n]*\n(.*?)(?=\n##|\Z)", text, flags=re.S | re.I)
+    if not m:
+        return False, []
+
+    section_body = m.group(1).strip()
+    rules = [line.strip().lstrip("-* ").strip() for line in section_body.splitlines() if line.strip().startswith(("-", "*"))]
+    if not rules:
+        return False, []
+    return True, rules
+
+
+def generate_voice_profile_markdown(
+    analysis: dict,
+    do_not_list: list[str] | None = None,
+    handle: str = "",
+) -> str:
+    """Generates a structured references/voice-profile.local.md document."""
+    do_nots = do_not_list if (do_not_list and len(do_not_list) > 0) else DEFAULT_DO_NOT_RULES
+    handle_str = f"@{handle.lstrip('@')}" if handle else "Your Account"
+    D = analysis.get("devices", {})
+    L = analysis.get("length", {})
+    S = analysis.get("structure", {})
+    n = analysis.get("posts_analysed", 0)
+
+    lines = [
+        f"# Voice Profile: {handle_str}",
+        "",
+        "> Measured empirically from your top-performing posts. Every draft is checked",
+        "> against this profile. If this file is modified or removed, rerun the voice ritual.",
+        "",
+        "## Quantitative Habits",
+        f"- **Median character count**: {L.get('median', 0)} characters",
+        f"- **Max character length**: {L.get('max', 0)} characters",
+        f"- **Median paragraph beats**: {S.get('beats_per_post_median', 0)} beats per post",
+        f"- **Number usage**: {D.get('number_posts', 0)}/{n} posts lead or include concrete metrics",
+        f"- **Question usage**: {D.get('question_posts', 0)}/{n} posts use rhetorical questions",
+        f"- **Hashtag usage**: {D.get('hashtag_posts', 0)}/{n} posts (banned in body copy)",
+        f"- **Emoji usage**: {D.get('emoji_posts', 0)}/{n} posts",
+        "",
+        "## Hook Patterns (First 6 Words)",
+    ]
+
+    for i, h in enumerate(analysis.get("hook_first_words", [])[:8], 1):
+        lines.append(f"{i}. \"{h}\"")
+
+    lines.extend([
+        "",
+        "## Recurring Core Topics",
+    ])
+    for t in analysis.get("recurring_topics", [])[:10]:
+        lines.append(f"- **{t['term']}** ({t['posts']} posts)")
+
+    lines.extend([
+        "",
+        "## DO NOT LIST (Enforced Hard Boundaries)",
+        "The following styles and words are strictly forbidden to prevent synthetic AI drift:",
+    ])
+    for rule in do_nots:
+        lines.append(f"- {rule}")
+
+    lines.append("")
     return "\n".join(lines)
+
+
+def run_voice_ritual(
+    posts_input: list[str] | str | Path,
+    do_not_input: list[str] | None = None,
+    base: Path | None = None,
+    handle: str = "",
+) -> tuple[dict, Path]:
+    """Runs the full voice ritual from top posts and writes references/voice-profile.local.md."""
+    if isinstance(posts_input, Path):
+        posts = parse(posts_input)
+    elif isinstance(posts_input, str):
+        # Plain text
+        if re.search(r"^\s*-{3,}\s*$", posts_input, re.M):
+            parts = re.split(r"^\s*-{3,}\s*$", posts_input, flags=re.M)
+        else:
+            parts = re.split(r"\n\s*\n\s*\n+", posts_input)
+        posts = [p.strip() for p in parts if len(p.strip()) > 15]
+    else:
+        posts = [p.strip() for p in posts_input if isinstance(p, str) and len(p.strip()) > 15]
+
+    if len(posts) < 3:
+        raise ValueError(
+            f"Voice ritual requires at least 3 sample posts (provided {len(posts)}). "
+            "Provide 5-20 of your best-performing posts."
+        )
+
+    res = analyse(posts)
+    target_dir = (base or ROOT) / "references"
+    target_dir.mkdir(parents=True, exist_ok=True)
+    out_file = target_dir / "voice-profile.local.md"
+
+    md = generate_voice_profile_markdown(res, do_not_list=do_not_input, handle=handle)
+    out_file.write_text(md, encoding="utf-8")
+    return res, out_file
 
 
 def main() -> None:
@@ -210,7 +342,17 @@ def main() -> None:
     ap.add_argument("--out", default=None, help="where to write the report (default: stdout)")
     ap.add_argument("--json", action="store_true", help="raw JSON instead of the report")
     ap.add_argument("--calibrate", action="store_true", help="calibrate voice profile from ledger engagement metrics")
+    ap.add_argument("--ritual", action="store_true", help="run ritual and write references/voice-profile.local.md")
+    ap.add_argument("--check-do-not", action="store_true", help="verify that DO-NOT list exists and is non-empty")
     a = ap.parse_args()
+
+    if a.check_do_not:
+        ok, rules = enforce_do_not_list()
+        if not ok:
+            print("[FAILURE] No DO-NOT list found in references/voice-profile.local.md")
+            sys.exit(1)
+        print(f"[SUCCESS] DO-NOT list verified with {len(rules)} rules.")
+        sys.exit(0)
 
     if a.calibrate:
         try:
@@ -224,7 +366,7 @@ def main() -> None:
             return
 
     if not a.infile:
-        ap.error("--in required unless using --calibrate")
+        ap.error("--in required unless using --calibrate or --check-do-not")
 
     path = Path(a.infile)
     if not path.exists():
@@ -234,12 +376,19 @@ def main() -> None:
         raise SystemExit(f"only found {len(posts)} posts - give me at least 3, ideally 10-20 "
                          "of your best. Separate them with a line of --- or a blank line.")
     result = analyse(posts)
+
+    if a.ritual:
+        _, profile_p = run_voice_ritual(posts)
+        print(f"[SUCCESS] Voice profile ritual complete. Saved to {profile_p}")
+        return
+
     text = json.dumps(result, indent=2, ensure_ascii=False) if a.json else render(result, path.name)
     if a.out:
         Path(a.out).write_text(text, encoding="utf-8")
         print(f"wrote {a.out}")
     else:
         print(text)
+
 
 
 if __name__ == "__main__":

@@ -32,3 +32,18 @@
 - [x] **REQ-LEDGER-01:** Upgrade `state.json` to schema v2.0 with per-platform status dictionary.
 - [x] **REQ-RETRY-01:** Independent platform retry on partial failure without double-posting to successful channels.
 - [x] **REQ-FEEDBACK-01:** Metrics scraper and closed-loop feedback into `references/voice-profile.local.md`.
+
+### Phase 6: Production Wisdom & Enforcement-First Hardening
+- [x] **REQ-RISK-01:** Document honest platform automation risks, account danger, DOM breakage scenarios, and vision verification trust boundaries in README and docs.
+- [x] **REQ-GUARD-01:** Implement enforcement-first guard rails in code (`validator.py` / `due.py` / `post.py`) preventing unmeasured limits, duplicate text, wrong handles, engagement bait, and fabricated claims.
+- [x] **REQ-VOICE-01:** Implement voice authenticity measurement ritual in `voice_profile.py` with top post sampling, mandatory "do-not" lists, and hard stops when profiles are missing.
+- [x] **REQ-GATE-01:** Implement lightweight `scripts/gate.py` with byte-identical `IDLE` stdout contract to enable $0-cost cron schedule monitoring.
+- [x] **REQ-TEST-02:** Build comprehensive real-world validation test suite including E2E pipeline dry-run, carousel rendering verification, and polymorphic multi-platform adaptation tests.
+- [x] **REQ-DOCS-01:** Consolidate documentation into an authoritative Step 0->1->2 onboarding journey and document "Pitfalls Already Paid For" (10 hard-won production lessons).
+- [x] **REQ-DEP-01:** Formally document the minimal 3-dependency architecture philosophy and zero-cost adapter expansion model.
+- [x] **REQ-WARM-01:** Document and enforce account safety warm-up protocols (profile completion, manual posts/replies, 1 post/day ramp).
+- [x] **REQ-SRC-01:** Implement Hard Rule 3b ("Read Before You Write") verifying that post claims trace directly to scraped research sources.
+- [x] **REQ-WIZARD-01:** Expand onboarding wizard ceremony with live character limit measurement (`post.py measure --save`) and mandatory supervised first-post verification.
+
+
+

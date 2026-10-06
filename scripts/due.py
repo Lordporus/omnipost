@@ -35,8 +35,9 @@ import settings
 
 try:
     import ledger
+    import validator
 except ImportError:
-    from scripts import ledger
+    from scripts import ledger, validator
 
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
@@ -168,7 +169,21 @@ def due(max_lag: float = MAX_LAG_HOURS) -> dict | None:
                 slot["skipped"] = f"overdue by {now - when}"
                 path.write_text(json.dumps(plan, indent=2, ensure_ascii=False), encoding="utf-8")
                 continue
+
+            # Guardrail check: do not queue posts that violate hard rules or warmup caps
+            valid, errs = validator.validate_draft_guardrails(
+                draft=slot,
+                cfg=settings.load(),
+                state=st,
+                raise_on_error=False,
+                check_warmup=True,
+            )
+            if not valid:
+                slot["guardrail_blocked"] = errs
+                continue
+
             key = (when, path, slot)
+
             if best is None or key[0] < best[0]:
                 best = key
     if not best:
@@ -261,7 +276,22 @@ def main() -> None:
                 "enforcing": limit, "source": lim["source"], "fix": lim["fix"],
                 "note": "run the measure command before trusting any length decision"}), flush=True)
         if a.cmd == "fill" and text:
+            # Enforce guardrails on filled text
+            st = load_state()
+            valid, errs = validator.validate_draft_guardrails(
+                draft={"text": text},
+                cfg=c,
+                state=st,
+                raise_on_error=False,
+            )
+            if not valid:
+                raise SystemExit(json.dumps({
+                    "error": "draft rejected by guardrails",
+                    "violations": errs,
+                }, indent=2))
+
             kind = None
+
             for _p, _pl in _load_plans():
                 for s0 in _pl.get("slots", []):
                     if s0["slot"] == a.slot:

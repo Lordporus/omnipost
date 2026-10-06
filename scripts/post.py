@@ -31,12 +31,29 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 try:
-    from scripts import browser, settings
+    from scripts import browser, settings, validator
     from scripts.browser import CDPError, Session
+    from scripts.validator import (
+        GuardRailError,
+        CharacterLimitNotMeasuredError,
+        EngagementBaitError,
+        DuplicatePostError,
+        HandleMismatchError,
+        validate_draft_guardrails,
+    )
 except ImportError:
     import browser
     import settings
+    import validator
     from browser import CDPError, Session
+    from validator import (
+        GuardRailError,
+        CharacterLimitNotMeasuredError,
+        EngagementBaitError,
+        DuplicatePostError,
+        HandleMismatchError,
+        validate_draft_guardrails,
+    )
 
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
@@ -208,12 +225,11 @@ def require_session(expect: str | None = None) -> dict:
             "fix": "sign in to x.com in the automation browser window, then re-run",
             **info}, indent=2))
     if expect and info["handle"].lower() != expect:
-        raise SystemExit(json.dumps({
-            "error": "WRONG ACCOUNT",
-            "expected": expect, "found": info["handle"],
-            "why": "refusing to post; the automation profile is signed into a different account"},
-            indent=2))
+        raise HandleMismatchError(
+            f"WRONG ACCOUNT: expected @{expect}, found @{info['handle']}. Refusing to post."
+        )
     return info
+
 
 
 # ------------------------------------------------------------------ composer
@@ -395,12 +411,16 @@ async def do_post(text: str, image: Path | None = None, kind: str = "value",
         header = (c.get("ai_update_header") or "Daily AI updates | Day {day}").replace("{day}", str(day))
     body = f"{header}\n\n{text}" if header else text
 
-    limit = max_chars()
-    if len(body) > limit:
-        raise SystemExit(json.dumps({
-            "error": "text too long", "chars": len(body), "limit": limit,
-            "hint": "trim the draft; for an ai_update slot the header already eats "
-                    f"{len(header) + 2 if header else 0} chars"}, indent=2))
+    # Guard Rails Enforcement
+    validate_draft_guardrails(
+        draft={"text": body},
+        cfg=c,
+        state=st,
+        platform="x",
+        raise_on_error=True,
+        swipe_dir=ROOT / "swipe",
+        check_warmup=not dry_run,
+    )
 
     page = await _open("https://x.com/compose/post")
     try:
@@ -409,8 +429,10 @@ async def do_post(text: str, image: Path | None = None, kind: str = "value",
         if not info.get("logged_in"):
             raise SystemExit(json.dumps({"error": "session expired mid-flow", **info}, indent=2))
         if handle() and info.get("handle", "").lower() != handle().lower():
-            raise SystemExit(json.dumps({"error": "WRONG ACCOUNT", "found": info.get("handle")},
-                                        indent=2))
+            raise HandleMismatchError(
+                f"WRONG ACCOUNT: expected @{handle()}, found @{info.get('handle')}. Refusing to post."
+            )
+
 
         got = await _insert_text(page, body)
         if header and header[:20] not in got:

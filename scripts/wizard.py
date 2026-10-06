@@ -317,6 +317,53 @@ def run_wizard(
     tone_choice = ask(f"  [3/6] Voice tone style [default: {tone_default}]: ", tone_default)
     config["voice_tone"] = tone_choice
 
+    # Voice Profile Ritual Check
+    voice_file_path = base / "references" / "voice-profile.local.md"
+    top_tweets_path = base / "scratch" / "my_top_tweets.txt"
+    if not (voice_file_path.exists() and voice_file_path.stat().st_size > 50):
+        if inputs is None and not test_mode and not non_interactive:
+            voice_choice = ask(
+                "  [3/6] Calibrate authentic voice profile from top posts now? (y/n) [default: y]: ",
+                "y",
+            ).lower()
+            if voice_choice in ("y", "yes"):
+                if top_tweets_path.exists():
+                    try:
+                        from scripts.voice_profile import run_voice_ritual
+                        _, saved_p = run_voice_ritual(top_tweets_path, base=base, handle=config.get("handle", ""))
+                        print(f"    [+] Voice profile calibrated and saved to {saved_p}.")
+                    except Exception as exc:
+                        print(f"    [!] Voice calibration error: {exc}")
+                else:
+                    print("    [*] Tip: paste 5-20 top posts into scratch/my_top_tweets.txt separated by ---")
+                    print("        and run: python scripts/voice_profile.py --in scratch/my_top_tweets.txt --ritual")
+
+    # Step 3.5: Live Character Ceiling Measurement
+    if platforms.get("x", {}).get("enabled"):
+        if inputs is None and not test_mode and not non_interactive:
+            measure_choice = ask(
+                "  [3.5/6] Empirically measure account character ceiling now? (runs post.py measure --save) (y/n) [default: y]: ",
+                "y",
+            ).lower()
+
+            if measure_choice in ("y", "yes"):
+                try:
+                    import subprocess
+                    print("    [*] Probing character limit ladder live via Chrome CDP...")
+                    res = subprocess.run(
+                        [sys.executable, str(ROOT / "scripts" / "post.py"), "measure", "--save"],
+                        cwd=str(ROOT),
+                        capture_output=True,
+                        text=True,
+                        timeout=60,
+                    )
+                    if res.returncode == 0:
+                        print("    [+] Empirical character limit measured and saved to config.")
+                    else:
+                        print(f"    [!] Note: browser not open or measurement skipped: {res.stderr[:160]}")
+                except Exception as exc:
+                    print(f"    [!] Measurement note: {exc}")
+
     existing_slots = config.get("slots", ["13:00", "16:00", "20:00", "00:00"])
     slots_default = ", ".join(existing_slots) if isinstance(existing_slots, list) else str(existing_slots)
     raw_slots = ask(
@@ -324,6 +371,7 @@ def run_wizard(
         slots_default,
     )
     config["slots"] = [s.strip() for s in raw_slots.split(",") if s.strip()]
+
 
     # =========================================================================
     # Step 4: Timezone Auto-Detection
@@ -394,8 +442,53 @@ def run_wizard(
     config["dry_run"] = dry_choice in ("y", "yes", "true", "1")
 
     # =========================================================================
+    # Step 6.5: One Supervised Post Ceremony
+    # =========================================================================
+    if inputs is None and not test_mode and not non_interactive and not config.get("dry_run", False):
+        supervised_choice = ask(
+
+            "  [6.5/6] Run ONE supervised test post before turning on automation? (y/n) [default: y]: ",
+            "y",
+        ).lower()
+        if supervised_choice in ("y", "yes"):
+            test_post_text = ask(
+                "    Enter test post text [default: Building autonomous multi-platform pipelines with OmniPost.]: ",
+                "Building autonomous multi-platform pipelines with OmniPost.",
+            )
+            print("    [*] Composing test post in dry-run mode...")
+            try:
+                import subprocess
+                comp_res = subprocess.run(
+                    [sys.executable, str(ROOT / "scripts" / "post.py"), "compose", "--text", test_post_text, "--dry-run"],
+                    cwd=str(ROOT),
+                    capture_output=True,
+                    text=True,
+                    timeout=45,
+                )
+                if comp_res.returncode == 0:
+                    print("    [+] Dry-run screenshot captured to shots/compose.png.")
+                    confirm_live = ask("    Confirm live publish to enabled channels? (y/n) [default: n]: ", "n").lower()
+                    if confirm_live in ("y", "yes"):
+                        post_res = subprocess.run(
+                            [sys.executable, str(ROOT / "scripts" / "post.py"), "post", "--text", test_post_text],
+                            cwd=str(ROOT),
+                            capture_output=True,
+                            text=True,
+                            timeout=90,
+                        )
+                        if post_res.returncode == 0:
+                            print("    [+] Supervised post verified and live!")
+                        else:
+                            print(f"    [!] Live publish note: {post_res.stderr[:200]}")
+                else:
+                    print(f"    [!] Compose note: {comp_res.stderr[:200]}")
+            except Exception as exc:
+                print(f"    [!] Supervised post note: {exc}")
+
+    # =========================================================================
     # Persistence & State Guarantees
     # =========================================================================
+
     guarantee_state_files(base)
 
     # Save config.json

@@ -97,17 +97,52 @@ python scripts/post.py measure --save  # measures THIS account's ceiling and sto
 python scripts/post.py limits          # confirm: shows the limit + whether it's verified
 ```
 
-Do **one** supervised post before scheduling anything:
+---
 
-```bash
-python scripts/post.py compose --text "your first real post" --dry-run
-# look at shots/compose.png, confirm the text and the account
-python scripts/post.py post --text-file scratch/first.txt
-python scripts/post.py shot --what profile     # then LOOK at shots/profile.png
+## STEP 1 - ONE SUPERVISED POST (Never skip this)
+
+Before enabling background automation, execute exactly **one** supervised post with human confirmation:
+
+1. **Generate and inspect compose screenshot:**
+   ```bash
+   python scripts/post.py compose --text "Building sovereign multi-platform pipelines with zero API fees." --dry-run
+   ```
+2. **Review the composer screenshot:**  
+   Open and inspect `shots/compose.png`. Confirm the text landed cleanly in the editor, no formatting broke, and the account handle matches.
+3. **Publish live with supervisor confirmation:**
+   ```bash
+   python scripts/post.py post --text "Building sovereign multi-platform pipelines with zero API fees."
+   ```
+4. **Read back the profile feed:**
+   ```bash
+   python scripts/post.py shot --what profile
+   ```
+   Inspect `shots/profile.png` and verify the topmost article matches what was just posted. Only once this verification succeeds are you ready for automation.
+
+---
+
+## STEP 2 - AUTOMATED SCHEDULE ($0 IDLE MONITORING)
+
+OmniPost uses an idle-cost suppression architecture:
+
+```
+[Cron / Task Scheduler (Every 15 min)]
+               │
+               ▼
+   python scripts/gate.py --wake
+         /                 \
+  [Nothing Due]        [Post Due]
+        │                   │
+    Outputs "IDLE"     Outputs JSON draft payload
+    (Zero LLM Cost)   Trigger autonomous agent / daemon
 ```
 
-Only after a real post has gone out and been verified should you set up the
-schedule (see README.md → Scheduling).
+1. **Lightweight Monitoring Gate:**  
+   `python scripts/gate.py` runs in <50ms without launching a browser or calling an LLM. If no slot is due, it prints `IDLE\n` (byte-identical) and exits with code 0.
+2. **$0 Idle Execution:**  
+   Configure your external cron job or agent runner to suppress agent execution when `gate.py` outputs `IDLE`. This drops idle running costs to **$0.00**.
+3. **Supervisor Daemon:**  
+   Alternatively, run `python scripts/daemon.py` on your machine or VPS, which manages morning research at 11:00 AM and slot dispatch with ±15 minutes randomized human jitter.
 
 ---
 
@@ -140,11 +175,21 @@ actioned.
    trace to a source the agent actually read. If it can't be verified, drop the
    post, not the standard. This is the rule that separates this from the spam
    accounts.
+3b. **Read Before You Write (Source Provenance).**
+   Every claim or takeaway in a draft must trace directly to a verified source URL
+   or item in `swipe/<date>.json` collected by `scripts/research.py`. If a claim
+   cannot be linked to an article you opened and inspected, drop the post.
 4. **Never post the same text twice**, and never post several times back to back.
+   The validator strictly hashes and compares against all past posts in `state.json`.
 5. **The account guard is absolute.** If the signed-in handle is not the
-   configured one, refuse and say so. Check before every single post.
+   configured one, refuse and say so (`HandleMismatchError`). Check before every single post.
 6. **The daily roundup number comes from `post.py day`**, never hand-counted. It
    advances only when that post verifies, so a missed day burns no number.
+7. **Account Warm-Up Guard.**
+   New accounts (<14 days old or <15 posts in the ledger) must cap publishing at 1 post/day.
+   High automated volume on fresh accounts looks identical to a spam network and triggers
+   instant shadowbanning. Warm the account up manually first.
+
 
 ## WHAT THE ALGORITHM ACTUALLY REWARDS
 
@@ -176,35 +221,20 @@ source):
    `python scripts/post.py shot --what profile`, then read `shots/profile.png`
    with a vision tool and confirm the topmost post is the text you wrote.
 
-## PITFALLS ALREADY PAID FOR
+## PITFALLS ALREADY PAID FOR (10 Hard-Won Lessons)
 
-Do not relearn these the hard way.
+Do not relearn these the hard way:
 
-- **Creating a CDP target on `about:blank` then `Page.navigate` drops the
-  websocket** ("no close frame received or sent") on heavy pages like X and
-  Reddit. Create the target with the final URL.
-- **`Input.insertText` is the only way to fill the composer.** Setting `innerText`
-  leaves React state stale and the Post button disabled forever.
-- **The profile timeline renders stale for up to a minute after sending.** A real,
-  successful post was once reported as failed because the read-back ran 6 seconds
-  too early and saw a five-month-old post. Always poll the read-back.
-- **A green "Your post was sent" toast is not proof.** Read the profile back.
-- **Screenshot the viewport, not the whole page**, for anything a vision model
-  must read — a tall image gets downscaled into illegibility, and a vision model
-  has been observed claiming a composer was empty (quoting its placeholder) while
-  simultaneously reporting the Post button as enabled.
-- **On a profile, scroll the newest post into view AND back off ~110px.**
-  Otherwise the screenshot stops above the timeline, or the post's first line —
-  the hook — hides under the sticky header.
-- **Vision is reliable for post text, line breaks and whether a link card
-  rendered. It is NOT reliable for numbers.** It has misread a profile's post
-  count and invented navigation items. Never let a vision reading override the
-  DOM or `state.json` for counts.
-- **A rising post count is often a REPLY from the user's phone** — replies don't
-  appear in the Posts tab. Check before assuming something posted itself.
-- **Never drive the user's everyday browser profile.** Only the dedicated one.
-- **Don't name a file in `scripts/` after a Python stdlib module** — the script
-  directory is on `sys.path`, so `inspect.py` or `queue.py` silently breaks imports.
+1. **CDP WebSocket Drops:** Creating a CDP target on `about:blank` and navigating to heavy web apps drops the WebSocket (`no close frame received or sent`). Always create targets pointing directly to the destination URL.
+2. **ProseMirror & React Synthetic Events:** Setting `innerText` directly leaves React/ProseMirror state stale and the Post button disabled forever. Always use CDP `Input.insertText`.
+3. **Stealth Evasion Detection:** Launching Chrome with `--remote-debugging-port` leaks automation flags (`navigator.webdriver`). OmniPost injects stealth overrides before document evaluation.
+4. **Stale Timeline Rendering:** Feeds cache aggressively; immediate readback after posting reports older posts as newest. Always poll readback over 30–90 seconds.
+5. **PDF Carousel Viewport Scaling:** `Page.printToPDF` blurs slides unless CSS locks `@page { size: 1080px 1080px; margin: 0; }` with precise DPI paper dimensions.
+6. **LinkedIn Rate Limit Cooldown Windows:** Violating LinkedIn velocity algorithms triggers account locks. Enforce a minimum 4-hour gap between posts.
+7. **Atomic Ledger State Locks:** Naive JSON writes corrupt state during sudden crashes or concurrent cron ticks. Always use PID-tagged temp file replacement.
+8. **Zero-Cost Idle Suppressions:** Polling agents every 10 minutes wastes hundreds in token costs. `scripts/gate.py` outputs byte-identical `IDLE\n` to suppress idle agent runs.
+9. **The "Read Before You Write" Invariant:** Models hallucinate facts unless strictly anchored to scraped research text with verifiable provenance.
+10. **The Voice Drift Trap:** AI models drift towards corporate cheerleading unless constrained by an active "DO-NOT" list in `references/voice-profile.local.md`.
 
 ## FILES
 

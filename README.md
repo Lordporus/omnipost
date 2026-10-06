@@ -6,7 +6,7 @@
   <a href="https://github.com/Lordporus/omnipost/releases"><img src="https://img.shields.io/badge/version-2.0.0-00F59B.svg?style=flat-square&labelColor=06090E" alt="Version 2.0.0" /></a>
   <a href="https://python.org"><img src="https://img.shields.io/badge/python-3.12+-06B6D4.svg?style=flat-square&labelColor=06090E" alt="Python 3.12+" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-10B981.svg?style=flat-square&labelColor=06090E" alt="License MIT" /></a>
-  <a href="https://github.com/Lordporus/omnipost/actions"><img src="https://img.shields.io/badge/tests-153%20passed-00F59B.svg?style=flat-square&labelColor=06090E" alt="Tests 153 Passed" /></a>
+  <a href="https://github.com/Lordporus/omnipost/actions"><img src="https://img.shields.io/badge/tests-184%20passed-00F59B.svg?style=flat-square&labelColor=06090E" alt="Tests 184 Passed" /></a>
   <img src="https://img.shields.io/badge/api_cost-$0_forever-F59E0B.svg?style=flat-square&labelColor=06090E" alt="Zero API Cost" />
   <img src="https://img.shields.io/badge/docker-ready-38BDF8.svg?style=flat-square&labelColor=06090E" alt="Docker Ready" />
 </p>
@@ -28,7 +28,36 @@ Technical founders and autonomous AI agents face a broken distribution reality:
 * **Format Fragmentation:** What performs on X (short punchy contrarian hook) fails on LinkedIn (technical case study + document carousel), Bluesky (decentralized ATProto thread), and Meta Threads (conversational builder dialogue).
 
 **OmniPost V2.0 resolves this through local sovereignty:**
-It runs directly on your local workstation, inside a self-contained Docker container, or on a \$5/mo Linux VPS. By automating your own authenticated browser sessions via the **Chrome DevTools Protocol (CDP)** and communicating natively with the **ATProto XRPC protocol**, OmniPost delivers enterprise-grade multi-platform syndication with **\$0 API costs, forever.**
+It runs directly on your local workstation, inside a self-contained Docker container, or on a $5/mo Linux VPS. By automating your own authenticated browser sessions via the **Chrome DevTools Protocol (CDP)** and communicating natively with the **ATProto XRPC protocol**, OmniPost delivers enterprise-grade multi-platform syndication with **$0 API costs, forever.**
+
+---
+
+## ⚠️ Risks & Limitations (Read Before Running)
+
+Production automation requires complete technical honesty. OmniPost does not hide the realities of browser automation:
+
+> [!WARNING]
+> **1. Platform Terms of Service & Account Risk**  
+> Automating web browsers on platforms like X (Twitter), LinkedIn, and Meta Threads operates in an adversarial grey zone and violates their automated browsing policies. If detected or reported, **your account can be rate-limited, shadowbanned, or permanently suspended**. Always use accounts you are willing to risk, or stick to Bluesky where ATProto provides official, sanction-free open APIs.
+
+> [!IMPORTANT]
+> **2. Account Warm-Up Requirement**  
+> New accounts publishing automated technical content at scale look identical to botnet spam operations. **Do not turn on multi-post automation on a fresh account.**  
+> * Manually fill out your avatar, bio, and header banner.  
+> * Post 3–5 manual thoughts and reply to 2–3 community accounts.  
+> * Start automation at **1 post/day** for the first 14 days before ramping to 3–4 daily slots.
+
+> [!CAUTION]
+> **3. Vision Model Trust Boundaries**  
+> Vision models (GPT-4o, Claude 3.5 Sonnet, Gemini 1.5 Flash) are outstanding for high-level semantic layout checks, verifying image/card rendering, and checking text readability. **Vision is NOT reliable for numbers, exact timestamps, or fine-grained UI badges.** Vision models frequently hallucinate impression counts, misread timestamps, and invent navigation items. OmniPost **never** relies on vision output to verify numbers or update `state.json`.
+
+> [!NOTE]
+> **4. DOM Fragility & Selector Drift**  
+> Web frontend teams at X, LinkedIn, and Meta continuously deploy A/B tests and change DOM class names and data attributes. While OmniPost isolates failures per platform and logs exact errors, **human maintenance of DOM selectors is inevitable**. When an adapter breaks due to an upstream UI rewrite, update the selector in `adapters/` or check our issue tracker.
+
+> [!IMPORTANT]
+> **5. Scope Boundaries: Publishing Only**  
+> OmniPost is strictly an **autonomous publishing and syndication engine**. It does not automate replies, direct messages (DMs), likes, or follow/unfollow loops. Automating social interactions is the fastest route to account termination and degrades public discourse.
 
 ---
 
@@ -229,6 +258,37 @@ OmniPost provides instant notifications via Telegram and Discord whenever posts 
 
 ---
 
+## 🛠️ Pitfalls Already Paid For (10 Hard-Won Lessons)
+
+Do not relearn these in production the hard way:
+
+1. **CDP WebSocket Drops:** Creating a CDP target on `about:blank` and navigating to heavy web apps (like X or Reddit) drops the WebSocket (`no close frame received or sent`). Always create targets pointing directly to the final destination URL.
+2. **ProseMirror & React Synthetic Events:** Simply setting `.value = ...` or `innerText = ...` in the browser DOM does not fire framework events. React and ProseMirror composers stay empty and the submit button remains disabled forever. Always use CDP `Input.insertText`.
+3. **Stealth Evasion Detection:** Simply launching Chrome with `--remote-debugging-port` leaks automation flags (`navigator.webdriver == true`). OmniPost injects stealth masking scripts before DOM instantiation to prevent detection.
+4. **Stale Timeline Rendering:** Social feeds cache aggressively. Reading back an author's profile immediately after posting often shows a cached feed with older posts. OmniPost polls profile readback over 30–90 seconds to verify that posts are genuinely live.
+5. **PDF Carousel Viewport Scaling:** Headless `Page.printToPDF` clips or blurs slides unless the page styling locks `@page { size: 1080px 1080px; margin: 0; }` with precise DPI paper dimensions (11.25" square at 96 DPI).
+6. **LinkedIn Rate Limit Cooldown Windows:** Disagreeing with LinkedIn's internal velocity algorithms triggers immediate temporary account locks. Always enforce a minimum 4-hour gap between consecutive posts.
+7. **Atomic Ledger State Locks:** Naive file writes corrupt JSON files during unexpected crashes or parallel cron executions. OmniPost writes to temporary PID-tagged files before performing atomic OS-level file replacement.
+8. **Zero-Cost Idle Suppressions (`scripts/gate.py`):** Un-gated cron scripts that wake LLM agents every 10 minutes waste hundreds of dollars in idle API tokens. Our schedule gate emits byte-identical `IDLE\n` when no slot is due, suppressing agent invocations until work actually exists.
+9. **The "Read Before You Write" Invariant:** AI models hallucinate technical details unless strictly anchored to source materials. OmniPost requires verifiable source provenance for all generated claims.
+10. **The Voice Drift Trap:** Autonomous generation naturally drifts into sycophantic, generic corporate cheerleading ("Delighted to share...", "What are your thoughts?"). OmniPost anchors every draft to an empirically measured voice profile with an active, enforceable "DO-NOT" list.
+
+---
+
+## 📦 Minimal Dependencies Philosophy (3 Dependencies Only)
+
+Sovereign software must be easy to run anywhere without dependency hell:
+
+* `websockets >= 12.0`: Communicates directly with Chrome/Edge over the Chrome DevTools Protocol (CDP). No Selenium, Playwright, or Puppeteer bloat.
+* `Pillow >= 10.0.0`: Generates crisp 16:9 infographic cards locally. No Cairo, Pango, ImageMagick, or native C library compilation errors.
+* `pyyaml >= 6.0`: Validates Docker Compose specs and structured configurations.
+
+**Total external dependencies: 3.** Standard library for everything else (`urllib`, `json`, `sqlite3`, `pathlib`, `hashlib`).  
+* **Cost of adding a new platform adapter:** 0 additional dependencies.  
+* **Risk of installation failure across Windows, Linux, and macOS:** Negligible.
+
+---
+
 ## Test Suite & Verification
 
 OmniPost maintains comprehensive test coverage across all adapters, validators, and rendering subsystems:
@@ -240,34 +300,40 @@ python -m pytest -v
 ```
 ============================= test session starts =============================
 platform win32 -- Python 3.12.10, pytest-8.3.2
-collected 153 items
+collected 184 items
 
-tests/test_adapters.py ...........                                       [  7%]
-tests/test_analytics.py .....                                            [ 10%]
-tests/test_bluesky.py .........                                          [ 16%]
-tests/test_browser_daemon.py ......                                      [ 20%]
-tests/test_carousel.py .......                                           [ 24%]
-tests/test_docker_config.py ...                                          [ 26%]
-tests/test_feedback.py ...                                               [ 28%]
-tests/test_generate.py ....                                              [ 31%]
-tests/test_infocard.py ...                                               [ 33%]
-tests/test_ledger.py ....                                                [ 35%]
-tests/test_linkedin.py ......                                            [ 39%]
-tests/test_linkedin_carousel.py ....                                     [ 42%]
-tests/test_multi_platform.py ....                                        [ 45%]
-tests/test_notify.py ......                                              [ 49%]
-tests/test_notify_webhook.py ......                                      [ 52%]
-tests/test_omnipost.py ............                                      [ 60%]
-tests/test_pipeline.py ....                                              [ 63%]
-tests/test_prereq_check.py ...........                                   [ 70%]
-tests/test_repurposer.py ......                                          [ 74%]
-tests/test_retry_isolation.py .                                          [ 75%]
-tests/test_threads.py ......                                             [ 79%]
-tests/test_validator.py ....................                             [ 92%]
-tests/test_vps_deployment.py ...                                         [ 94%]
+tests/test_adapters.py ...........                                       [  6%]
+tests/test_analytics.py .....                                            [  8%]
+tests/test_bluesky.py .........                                          [ 13%]
+tests/test_browser_daemon.py ......                                      [ 16%]
+tests/test_carousel.py .......                                           [ 20%]
+tests/test_carousel_rendering.py .....                                   [ 23%]
+tests/test_docker_config.py ...                                          [ 25%]
+tests/test_feedback.py ...                                               [ 26%]
+tests/test_gate.py ....                                                  [ 28%]
+tests/test_generate.py ....                                              [ 30%]
+tests/test_guardrails.py ..........                                      [ 36%]
+tests/test_infocard.py ...                                               [ 38%]
+tests/test_integration_e2e.py ...                                        [ 39%]
+tests/test_ledger.py ....                                                [ 41%]
+tests/test_linkedin.py ......                                            [ 45%]
+tests/test_linkedin_carousel.py ....                                     [ 47%]
+tests/test_multi_platform.py ....                                        [ 49%]
+tests/test_multiplatform_adaptation.py ....                              [ 51%]
+tests/test_notify.py ......                                              [ 54%]
+tests/test_notify_webhook.py ......                                      [ 58%]
+tests/test_omnipost.py ............                                      [ 64%]
+tests/test_onboarding_ceremony.py .....                                  [ 67%]
+tests/test_pipeline.py ....                                              [ 69%]
+tests/test_prereq_check.py ...........                                   [ 75%]
+tests/test_repurposer.py ......                                          [ 78%]
+tests/test_retry_isolation.py .                                          [ 79%]
+tests/test_threads.py ......                                             [ 82%]
+tests/test_validator.py ....................                             [ 93%]
+tests/test_vps_deployment.py ...                                         [ 95%]
 tests/test_wizard.py .........                                           [100%]
 
-======================= 153 passed in 135.50s (0:02:15) =======================
+======================= 184 passed in 136.15s (0:02:16) =======================
 ```
 
 ---
