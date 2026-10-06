@@ -70,6 +70,32 @@ class TestCarouselBuilder(unittest.TestCase):
         if fake_pdf.exists():
             fake_pdf.unlink()
 
+    def test_generate_standard_slides_structure(self):
+        from render.carousel import generate_standard_slides
+        topic = {
+            "headline": "Deterministic Agent Architectures",
+            "body": "State machines guarantee zero dual-post bugs.",
+            "points": ["Point 1", "Point 2", "Point 3", "Point 4"],
+            "takeaway": "Never rely on raw prompt loops.",
+            "category": "ARCHITECTURE",
+        }
+        slides = generate_standard_slides(topic, author="@TestAuthor")
+        self.assertEqual(len(slides), 5)
+        self.assertEqual(slides[0]["type"], "hero")
+        self.assertEqual(slides[1]["type"], "context")
+        self.assertEqual(slides[2]["type"], "breakdown")
+        self.assertIn("code", slides[2])
+        self.assertEqual(slides[3]["type"], "checklist")
+        self.assertEqual(slides[4]["type"], "outro")
+
+        html_out = build_carousel_html(slides, title="Test 5-Slide", author="@TestAuthor")
+        self.assertIn("code-panel", html_out)
+        self.assertIn("outro-card", html_out)
+        self.assertIn("Deterministic Agent Architectures", html_out)
+        self.assertIn("1 / 5", html_out)
+        self.assertIn("5 / 5", html_out)
+
 
 if __name__ == "__main__":
     unittest.main()
+

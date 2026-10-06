@@ -4,21 +4,49 @@
   <meta charset="UTF-8">
   <title>{{MAIN_TITLE}}</title>
   <style>
+    :root {
+      --bg-canvas: #0B0F19;
+      --bg-card: #161F30;
+      --bg-card-subtle: #1E293B;
+      --border-card: rgba(255, 255, 255, 0.08);
+      --border-card-highlight: rgba(16, 185, 129, 0.3);
+      --text-primary: #F8FAFC;
+      --text-secondary: #CBD5E1;
+      --text-muted: #64748B;
+      --accent-emerald: #10B981;
+      --accent-cyan: #06B6D4;
+      --accent-gradient: linear-gradient(135deg, #10B981 0%, #06B6D4 100%);
+      --accent-glow: rgba(6, 182, 212, 0.15);
+      --font-sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      --font-mono: "Fira Code", "JetBrains Mono", Consolas, "Courier New", monospace;
+    }
+
     @page {
       size: 1080px 1080px;
       margin: 0;
     }
+
     * {
       box-sizing: border-box;
       margin: 0;
       padding: 0;
     }
+
     body {
-      background-color: #060911;
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-      color: #f8fafc;
+      background-color: var(--bg-canvas);
+      font-family: var(--font-sans);
+      color: var(--text-primary);
       -webkit-font-smoothing: antialiased;
     }
+
+    @media (prefers-reduced-motion: reduce) {
+      * {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+      }
+    }
+
     .slide {
       width: 1080px;
       height: 1080px;
@@ -28,12 +56,13 @@
       display: flex;
       flex-direction: column;
       justify-content: space-between;
-      padding: 80px;
-      background: radial-gradient(circle at 80% 20%, #1e293b 0%, #090d16 65%);
-      border: 1px solid #1e293b;
+      padding: 72px 80px;
+      background: radial-gradient(circle at 85% 15%, #1A263C 0%, var(--bg-canvas) 70%);
+      border: 1px solid var(--border-card);
       overflow: hidden;
     }
-    /* Subtle glowing grid background effect */
+
+    /* Ambient technical grid texture */
     .slide::before {
       content: "";
       position: absolute;
@@ -41,96 +70,226 @@
       left: 0;
       right: 0;
       bottom: 0;
-      background-image: linear-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px),
-                        linear-gradient(90deg, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
-      background-size: 60px 60px;
+      background-image: 
+        linear-gradient(rgba(255, 255, 255, 0.025) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255, 255, 255, 0.025) 1px, transparent 1px);
+      background-size: 48px 48px;
       pointer-events: none;
+      z-index: 1;
     }
+
     .header {
       display: flex;
       justify-content: space-between;
       align-items: center;
       z-index: 10;
     }
+
+    .badge-group {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+
     .badge {
-      font-size: 20px;
+      font-size: 16px;
       font-weight: 700;
-      letter-spacing: 0.1em;
+      letter-spacing: 0.12em;
       text-transform: uppercase;
-      color: #38bdf8;
-      background: rgba(56, 189, 248, 0.12);
-      border: 1px solid rgba(56, 189, 248, 0.3);
-      padding: 10px 20px;
+      color: var(--accent-emerald);
+      background: rgba(16, 185, 129, 0.1);
+      border: 1px solid var(--border-card-highlight);
+      padding: 8px 18px;
       border-radius: 999px;
     }
-    .slide-counter {
-      font-size: 22px;
+
+    .author-badge {
+      font-size: 15px;
       font-weight: 600;
-      color: #64748b;
-      font-variant-numeric: tabular-nums;
+      color: var(--text-muted);
+      letter-spacing: 0.04em;
     }
+
+    .slide-counter {
+      font-size: 20px;
+      font-weight: 700;
+      color: var(--text-muted);
+      font-variant-numeric: tabular-nums;
+      background: rgba(255, 255, 255, 0.04);
+      padding: 6px 16px;
+      border-radius: 8px;
+      border: 1px solid var(--border-card);
+    }
+
     .content-container {
       z-index: 10;
       flex: 1;
       display: flex;
       flex-direction: column;
       justify-content: center;
-      margin: 40px 0;
+      margin: 32px 0;
     }
+
+    .slide-hero-title {
+      font-size: 58px;
+      font-weight: 900;
+      line-height: 1.15;
+      letter-spacing: -0.03em;
+      color: #FFFFFF;
+      margin-bottom: 24px;
+      background: linear-gradient(180deg, #FFFFFF 40%, #94A3B8 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
     .slide-title {
-      font-size: 52px;
+      font-size: 46px;
       font-weight: 800;
-      line-height: 1.18;
-      color: #ffffff;
-      margin-bottom: 32px;
+      line-height: 1.2;
+      color: #FFFFFF;
+      margin-bottom: 24px;
       letter-spacing: -0.02em;
     }
+
     .slide-body {
-      font-size: 28px;
+      font-size: 26px;
       font-weight: 400;
-      line-height: 1.5;
-      color: #cbd5e1;
+      line-height: 1.55;
+      color: var(--text-secondary);
       margin-bottom: 24px;
     }
+
+    /* Modern Card Container */
+    .card-panel {
+      background: var(--bg-card);
+      border: 1px solid var(--border-card);
+      border-radius: 16px;
+      padding: 32px 40px;
+      margin-top: 16px;
+      box-shadow: 0 20px 40px -15px rgba(0, 0, 0, 0.5);
+    }
+
     .bullets {
       list-style: none;
-      margin-top: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
     }
+
     .bullet-item {
-      font-size: 26px;
+      font-size: 24px;
       line-height: 1.45;
-      color: #e2e8f0;
-      margin-bottom: 18px;
+      color: var(--text-primary);
       display: flex;
       align-items: flex-start;
+      gap: 16px;
     }
+
     .bullet-icon {
-      color: #38bdf8;
-      margin-right: 16px;
-      font-weight: bold;
+      color: var(--accent-cyan);
+      font-weight: 800;
+      font-size: 24px;
       flex-shrink: 0;
+      line-height: 1.4;
     }
+
+    /* Technical Code Panel */
+    .code-panel {
+      background: #070B12;
+      border: 1px solid rgba(6, 182, 212, 0.25);
+      border-radius: 12px;
+      padding: 24px 32px;
+      font-family: var(--font-mono);
+      font-size: 20px;
+      line-height: 1.6;
+      color: #38BDF8;
+      margin: 16px 0;
+      white-space: pre-wrap;
+      box-shadow: inset 0 2px 8px rgba(0, 0, 0, 0.6);
+    }
+
+    .code-panel .code-comment {
+      color: var(--text-muted);
+    }
+
+    .code-panel .code-keyword {
+      color: var(--accent-emerald);
+      font-weight: bold;
+    }
+
+    /* Outro & CTA styling */
+    .outro-card {
+      text-align: center;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 24px;
+      background: radial-gradient(circle at 50% 50%, #1A2740 0%, var(--bg-card) 100%);
+      border: 1px solid var(--border-card-highlight);
+      border-radius: 20px;
+      padding: 48px;
+    }
+
+    .outro-title {
+      font-size: 48px;
+      font-weight: 800;
+      color: #FFFFFF;
+      letter-spacing: -0.02em;
+    }
+
+    .outro-desc {
+      font-size: 24px;
+      line-height: 1.5;
+      color: var(--text-secondary);
+      max-width: 800px;
+    }
+
+    .outro-btn {
+      display: inline-block;
+      font-size: 22px;
+      font-weight: 700;
+      color: #0B0F19;
+      background: var(--accent-gradient);
+      padding: 16px 40px;
+      border-radius: 999px;
+      letter-spacing: 0.05em;
+      margin-top: 8px;
+    }
+
     .footer {
       display: flex;
       justify-content: space-between;
       align-items: center;
-      padding-top: 32px;
-      border-top: 2px solid rgba(51, 65, 85, 0.5);
+      padding-top: 24px;
+      border-top: 1px solid var(--border-card);
       z-index: 10;
     }
+
     .author-handle {
-      font-size: 22px;
+      font-size: 20px;
       font-weight: 600;
-      color: #94a3b8;
+      color: var(--text-secondary);
+      display: flex;
+      align-items: center;
+      gap: 12px;
     }
+
+    .author-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--accent-emerald);
+    }
+
     .swipe-cta {
       display: flex;
       align-items: center;
-      gap: 10px;
-      font-size: 22px;
+      gap: 12px;
+      font-size: 20px;
       font-weight: 700;
-      color: #38bdf8;
-      letter-spacing: 0.05em;
+      color: var(--accent-cyan);
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
     }
   </style>
 </head>

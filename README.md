@@ -1,494 +1,176 @@
-# OmniPost
+# OmniPost V2.0
 
-**An autonomous X/Twitter publishing pipeline for AI agents.**
+**Autonomous Cross-Platform Publishing Syndicate for AI Agents (X, Bluesky, LinkedIn, Threads) with Zero-Friction Onboarding and Zero API Costs.**
 
-OmniPost is a lean, cost-efficient publishing and verification engine for X (Twitter). It researches the day's discussions in your domain, drafts posts aligned with your personal writing voice, publishes via a real authenticated browser session, and cryptographically/visually verifies that each post went live on your profile timeline.
-
-- **Zero API Costs:** Bypasses X's \$215+/month developer tier by driving a dedicated, authenticated browser session over Chrome DevTools Protocol (CDP).
-- **Free Intelligence Gathering:** Collects and ranks insights using free, open endpoints (Hacker News Algolia API, RSS/Atom feeds, Reddit rendered DOM, and X search).
-- **Single Core Dependency:** Built with Python standard library plus `websockets`. No Playwright, Puppeteer, or Selenium overhead.
-- **Closed-Loop Verification:** Refuses to trust success toasts. Reads back profile DOM and captures viewport vision screenshots before marking slots complete.
-- **Idle Is Free:** Deterministic schedule gate prevents costly recurring LLM calls when no slot is due.
+OmniPost V2.0 transforms content distribution from a manual, single-platform chore into a sovereign, unattended publishing syndicate. It aggregates daily technical intelligence, synthesizes polymorphic posts aligned with your personal voice, renders high-resolution visual cards and vector PDF document carousels offline, publishes across four major social networks simultaneously, and cryptographically/visually verifies live publications back into an atomic ledger.
 
 ```
-       ┌──────────┐   ┌────────┐   ┌───────────┐   ┌─────────┐   ┌────────┐
- 11:00 │ RESEARCH │ → │  PLAN  │ → │ SCHEDULE  │ → │ PUBLISH │ → │ VERIFY │
-       └──────────┘   └────────┘   └───────────┘   └─────────┘   └────────┘
-        HN, RSS,       agent        cron gate        real          read the
-        Reddit, X      writes 4     wakes only       browser       profile
-        ~150 items     drafts       when due         composer      back
+       ┌──────────┐   ┌────────────┐   ┌─────────────┐   ┌────────────────────────┐   ┌──────────────┐
+ 11:00 │ RESEARCH │ → │ REPURPOSE  │ → │ SCHEDULER   │ → │ AUTONOMOUS DISPATCH    │ → │ VERIFY & LOG │
+       └──────────┘   └────────────┘   └─────────────┘   └────────────────────────┘   └──────────────┘
+        HN, RSS,       1 insight →      Jitter Gate       • X (CDP Stealth)            Read timeline
+        ArXiv, Feeds   4 channels +     Wakes only        • Bluesky (ATProto XRPC)     activity URNs
+        ~150 stories   PDF carousel     when due          • LinkedIn (ProseMirror/PDF) Store in atomic
+                                                          • Threads (Direct DOM upload) state ledger
 ```
 
 ---
 
-## Current V1 Status
+## What Makes OmniPost V2.0 Sovereign
 
-OmniPost **v1.0.0** is focused exclusively on a reliable, autonomous **X (Twitter)** publishing pipeline.
-
-- **Status:** Production-ready for single-account autonomous X publishing.
-- **Scope:** Complete end-to-end flow from research aggregation through profile read-back verification.
-- **Future:** Serves as the foundation for multi-platform OmniPost V2 (Bluesky, LinkedIn, Threads, Reddit). Multi-platform adapters are part of the future roadmap and are **not** active in V1.
-
----
-
-## Table of Contents
-
-- [What It Actually Does](#what-it-actually-does)
-- [Architecture & Workflow](#architecture--workflow)
-- [Verified Feature Set](#verified-feature-set)
-- [Requirements](#requirements)
-- [Installation & Quickstart](#installation--quickstart)
-- [Configuration Reference](#configuration-reference)
-- [First-Time Setup & Onboarding](#first-time-setup--onboarding)
-- [CLI Usage](#cli-usage)
-- [Scheduling & Automation](#scheduling--automation)
-- [Verification & Trust Boundaries](#verification--trust-boundaries)
-- [Guardrails](#guardrails)
-- [Security & Privacy](#security--privacy)
-- [Known Limitations & Risks](#known-limitations--risks)
-- [Troubleshooting](#troubleshooting)
-- [Origin and Attribution](#origin-and-attribution)
-- [What Changed in This Version](#what-changed-in-this-version)
-- [Project Evolution](#project-evolution)
-- [OmniPost V2 Roadmap](#omnipost-v2-roadmap)
-- [License](#license)
+* **Zero Cloud API Subscriptions:** Bypasses costly \$200+/month developer tiers on X, LinkedIn, and Threads by automating local, authenticated browser sessions over Chrome DevTools Protocol (CDP).
+* **Zero-Browser Bluesky Syndication:** Communicates directly with the ATProto XRPC protocol, parsing rich UTF-8 byte slice facets for mentions and links in microseconds.
+* **Polymorphic Repurposing:** Automatically adapts 1 core technical insight into 4 distinct formats:
+  * **X (Twitter):** 280-character contrarian hook + bullet points + 16:9 infographic card.
+  * **Bluesky:** 300-character technical breakdown with rich facets.
+  * **LinkedIn:** 1,500-character case study breakdown + 5-slide 1080x1080 vector PDF carousel.
+  * **Meta Threads:** 500-character conversational builder narrative.
+* **Offline Vector & Infographic Rendering:** Programmatic Pillow cards (1200x675) and headless CDP PDF carousels (1080x1080) rendered locally with zero external image APIs or heavy C-libraries.
+* **Atomic State Ledger with Partial-Failure Isolation:** If one platform encounters a cooldown (e.g. LinkedIn 4-hour gap), successful posts are marked immediately in `state.json` and only pending networks are retried on subsequent ticks. Zero duplicate posts.
+* **Dual-Mode Headless Deployment:** Runs locally on Windows with native desktop toast notifications, in Docker with healthchecks and persistent named volumes, or on a \$5/mo Linux VPS with systemd and non-blocking Xvfb.
 
 ---
 
-## What It Actually Does
+## Feature Comparison Matrix
 
-Every day, unattended:
-
-| Stage | Action |
-|---|---|
-| **Research** | Gathers candidate items from Hacker News (Algolia API), RSS feeds, Reddit rendered DOM, and X search; normalizes, deduplicates, and ranks by engagement. |
-| **Plan** | Your AI agent inspects candidate stories, reviews source links, and produces post drafts strictly tuned to your measured voice profile. |
-| **Schedule** | Generates jittered daily slots (default: 4 slots). A monitor script checks slot eligibility; when idle, it emits `IDLE` so zero LLM tokens are consumed. |
-| **Publish** | Types text into X's contenteditable composer via CDP `Input.insertText` (triggering React state changes), optionally attaches media, and submits. |
-| **Verify** | Polls your public profile timeline to locate the published text, captures a viewport screenshot, and validates the live status URL before closing the slot. |
-
----
-
-## Architecture & Workflow
-
-```
-┌────────────────────────────────────────────────────────────────────────┐
-│                          OMNIPOST V1 CORE ENGINE                       │
-└───────────────────────────────────┬────────────────────────────────────┘
-                                    │
-           ┌────────────────────────┼────────────────────────┐
-           ▼                        ▼                        ▼
-     [RESEARCH.PY]             [DUE.PY]                 [POST.PY]
-  HN / RSS / Reddit DOM      Jitter Gate             CDP WebSocket
-  ~150 candidate items    Randomized minutes     Direct DevTools Protocol
-                                    │                        │
-                                    └───────────┬────────────┘
-                                                ▼
-                                    ┌───────────────────────┐
-                                    │ REAL CHROME / EDGE    │
-                                    │ Port 9222 / 9444 CDP  │
-                                    └───────────┬───────────┘
-                                                ▼
-                                    ┌───────────────────────┐
-                                    │ 1. Focus ContentEd    │
-                                    │ 2. Input.insertText   │
-                                    │ 3. Click Post Button  │
-                                    │ 4. Read Profile Back  │
-                                    │ 5. Vision Screenshot  │
-                                    └───────────────────────┘
-```
-
-1. **Direct DevTools Protocol (`scripts/browser.py`):** Speaks raw JSON-RPC over WebSockets to Chrome/Edge's `/json/version` and `/json/list` endpoints. No third-party browser automation frameworks.
-2. **Synthetic Input Simulation (`scripts/post.py`):** Uses Chrome DevTools Protocol `Input.insertText` rather than `element.innerText`, ensuring Draft.js/React internal state updates and enabling the Post button.
-3. **Double Verification:** Combines DOM timeline parsing (`article[data-testid="tweet"]`) with viewport screenshot capture (`Page.captureScreenshot`).
+| Capability | OmniPost V1 (Legacy) | OmniPost V2.0 |
+| :--- | :---: | :---: |
+| **Supported Networks** | X (Twitter) only | **X, Bluesky, LinkedIn, Threads** |
+| **Publishing Protocol** | CDP Browser only | **Stealth CDP + Native ATProto XRPC** |
+| **Visual Media Generation** | Basic PNG infocards | **Pillow 16:9 Cards + 5-Slide Vector PDF Carousels** |
+| **Content Adaptation** | Monolithic single text | **Polymorphic Per-Channel Engine** |
+| **State Tracking** | Flat single-post JSON | **Atomic Schema V2 with Partial-Failure Retries** |
+| **Onboarding Experience** | Manual JSON editing | **Interactive 6-Step CLI Wizard (`setup.py`)** |
+| **AI Provider Support** | Single provider | **Gemini, OpenAI, Claude, OpenRouter, Local Heuristic** |
+| **Deployment Modes** | Local manual script | **Windows Scheduler, Docker Compose & Linux VPS (Systemd)** |
+| **Alerting & Monitoring** | Console output | **Windows Desktop Toasts, Telegram & Discord Webhooks** |
 
 ---
 
-## Verified Feature Set
+## Quickstart Guide
 
-Every feature listed below is verified in the codebase:
+### Option 1: Local Interactive Onboarding (Windows / macOS / Linux)
 
-- **Hacker News Collector:** Algolia API queries with point thresholds and age filtering.
-- **RSS/Atom Feed Parser:** Zero-dependency standard library parser for arbitrary RSS and Atom feeds.
-- **Reddit DOM Scraper:** Headless browser extraction of top posts from configured subreddits.
-- **X Search Scraper:** DOM extraction of high-engagement discussions across specified search queries.
-- **Jitter Scheduling:** Randomized distribution around anchor slots with minimum spacing constraints.
-- **Idle-is-Free Gate:** Emits byte-identical `IDLE` output during inactive periods to suppress scheduler invocations.
-- **Browser Port Auto-Detection:** Discovers Chrome, Chromium, and Microsoft Edge across Windows, macOS, and Linux.
-- **Dynamic Character Limit Probe:** Empirically probes composer boundaries (280 vs. Premium expanded tiers) without publishing.
-- **Strict Account Guard:** Halts immediately if the signed-in session handle does not match `config.json`.
-- **Length Enforcer:** Validates character count at draft creation and publishing time (reserving space for AI update headers).
-- **Profile Read-Back Verification:** Polls profile feed for exact text match and resolves the live `https://x.com/{handle}/status/{id}` URL.
-- **Readiness Doctor:** Audits Python runtime, dependencies, configuration, browser binaries, writable directories, and live sessions.
-- **Statistical Voice Profiler:** Computes length distribution, beat cadence, devices (emoji, hashtags, links, numbers), and opening hook patterns from sample posts.
-- **Automated Runner (`scripts/autoposter.py`):** CLI orchestrator that checks slots, publishes, verifies, and records outcomes in one atomic pass.
-
----
-
-## Requirements
-
-- **Python:** 3.10 or newer (tested on 3.11).
-- **Browser:** Google Chrome, Chromium, or Microsoft Edge installed.
-- **X Account:** Logged in within the dedicated browser profile.
-- **Dependencies:** Listed in `requirements.txt` (`websockets>=12.0`).
-
----
-
-## Installation & Quickstart
-
-### 1. Clone & Install
-
-```bash
-git clone https://github.com/your-username/omnipost.git
-cd omnipost
-pip install -r requirements.txt
-```
-
-### 2. Configure
-
-```bash
-cp config.example.json config.json
-python scripts/doctor.py
-```
-
-### 3. Launch Automation Browser & Sign In
-
-```bash
-python scripts/browser.py launch
-```
-
-A dedicated browser window will launch. Navigate to `https://x.com/login` and sign into your X account.
-*Note: Use "Email or username", not Google OAuth sign-in, to ensure the correct account profile is maintained.*
-
-### 4. Verify Session & Measure Limits
-
-```bash
-python scripts/post.py check          # verifies active session handle
-python scripts/post.py measure --save # tests composer ceiling and persists it
-python scripts/post.py limits         # inspects verified character limits
-```
-
----
-
-## Configuration Reference
-
-Edit `config.json` (git-ignored for privacy):
-
-```json
-{
-  "handle": "your_x_handle",
-  "premium": false,
-  "max_chars": 280,
-  "max_chars_verified": true,
-  "timezone": "local",
-  "slots": ["13:00", "16:00", "20:00", "00:00"],
-  "jitter_minutes": 45,
-  "min_gap_hours": 3,
-  "ai_update_enabled": true,
-  "ai_update_slot": "16:00",
-  "ai_update_header": "Daily AI updates | Day {day}",
-  "research_hour": 11,
-  "window_hours": 36,
-  "subreddits": ["LocalLLaMA", "artificial", "singularity", "ChatGPTCoding"],
-  "x_queries": ["AI agents", "AI coding", "developer tools"],
-  "feeds": {
-    "techcrunch-ai": "https://techcrunch.com/category/artificial-intelligence/feed/",
-    "hn-frontpage": "https://hnrss.org/frontpage?points=150"
-  },
-  "require_verified_source": true,
-  "browser": {
-    "port": 9222,
-    "profile_dir": "",
-    "chrome_path": "",
-    "headless": false
-  }
-}
-```
-
-| Key | Description |
-|---|---|
-| `handle` | Account handle without `@`. Guard halts if browser session does not match. |
-| `premium` | Boolean indicating X Premium tier. Determined via `post.py measure --save`. |
-| `max_chars` | Character ceiling enforced on all drafts. |
-| `max_chars_verified` | Boolean marker set when character limit is measured live. |
-| `slots` | Daily anchor times in HH:MM format. |
-| `jitter_minutes` | Maximum window offset applied to each slot. |
-| `min_gap_hours` | Minimum spacing enforced between scheduled slots. |
-| `ai_update_enabled` | Enables automated day counter on designated slot. |
-| `browser.port` | Remote debugging port (default: 9222; 9444 supported for Edge). |
-| `browser.profile_dir` | Path to persistent browser profile (default: `~/.omnipost/chrome-profile`). |
-
----
-
-## First-Time Setup & Onboarding
-
-### Voice Profile Extraction
-
-To prevent generic outputs, OmniPost calibrates writing style using your existing posts:
-
-1. Save 5–20 of your top posts into `scratch/my_top_tweets.txt` (separated by `---`).
-2. Run the analyzer:
+1. **Clone the repository:**
    ```bash
-   python scripts/voice_profile.py --in scratch/my_top_tweets.txt
+   git clone https://github.com/Lordporus/omnipost.git
+   cd omnipost
    ```
-3. Copy the output into `references/voice-profile.local.md` (git-ignored).
-4. Every post planned by an agent or script must follow the patterns in this file.
+
+2. **Run the interactive onboarding wizard:**
+   ```bash
+   python setup.py
+   ```
+   * Step 1: Account credentials (X, Bluesky app password, LinkedIn, Threads).
+   * Step 2: Multi-LLM provider selection with immediate 1-token live ping validation.
+   * Step 3: Niche topics, voice tone style, custom author attribution, and time slots.
+   * Step 4: System timezone auto-detection.
+   * Step 5: Telegram or Discord webhook alerts.
+   * Step 6: Initial operating mode (Dry-Run vs Live Autonomous Mode).
+
+3. **Verify system health:**
+   ```bash
+   python scripts/prereq_check.py
+   python scripts/doctor.py --healthcheck
+   ```
+
+4. **Run the autonomous background daemon:**
+   ```bash
+   python scripts/daemon.py
+   ```
 
 ---
 
-## CLI Usage
+### Option 2: Docker Containerized Stack
 
-### Research
+OmniPost provides a production container image packaged with Chromium, Xvfb virtual framebuffer, and font rendering.
+
+1. **Configure environment:**
+   ```bash
+   # Run onboarding in non-interactive mode or copy templates:
+   python setup.py --non-interactive
+   ```
+
+2. **Launch container stack:**
+   ```bash
+   docker compose up -d
+   ```
+
+3. **Inspect logs & health status:**
+   ```bash
+   docker compose logs -f
+   docker compose ps
+   ```
+* *Persistent Storage:* Browser sessions are preserved in the `omnipost_browser_data` Docker volume. `state.json` and `drafts/` are synchronized to your host directory.
+
+---
+
+### Option 3: 1-Click Headless Linux VPS Deployment (Ubuntu 22.04 / 24.04)
+
+Deploy onto a bare-metal server or cloud VPS (Hetzner, DigitalOcean, Linode):
 
 ```bash
-# Gather candidates from all configured sources for the last 36 hours
-python scripts/research.py collect --hours 36
-
-# Inspect feed health
-python scripts/research.py sources
-
-# Test individual sources
-python scripts/research.py hn --points 100 --limit 10
-python scripts/research.py reddit LocalLLaMA --limit 5
-python scripts/research.py x "AI agents" --limit 5
+sudo bash scripts/deploy_vps.sh
 ```
 
-### Planning & Scheduling
+This single command:
+1. Installs system dependencies (`chromium`, `xvfb`, fonts, `python3-venv`).
+2. Configures the isolated application directory at `/opt/omnipost`.
+3. Runs the onboarding configuration wizard.
+4. Registers and starts the non-blocking systemd background service `omnipost.service`.
+
+Check status anytime:
+```bash
+sudo systemctl status omnipost
+sudo journalctl -u omnipost -f
+```
+
+---
+
+## Visual Carousel & Artifact Pipeline
+
+OmniPost automatically produces high-authority visual assets for daily posts:
 
 ```bash
-# Generate today's jittered schedule (saved to drafts/YYYY-MM-DD.json)
-python scripts/due.py make-plan
+# Render HTML preview and 1080x1080 vector PDF carousel from today's draft:
+python -m render.carousel
 
-# View current slots and status
-python scripts/due.py show
-
-# Check if a slot is currently due (emits JSON or IDLE)
-python scripts/due.py check
-
-# Populate a slot with draft text
-python scripts/due.py fill --slot 13:00 --file scratch/draft1.txt
-
-# Manually mark a slot as posted
-python scripts/due.py mark --slot 13:00 --url "https://x.com/yourhandle/status/123"
+# Generate HTML preview only:
+python -m render.carousel --preview-only
 ```
 
-### Publishing & Verification
-
-```bash
-# Dry run: populates the composer and captures shots/compose.png without posting
-python scripts/post.py compose --text "Testing OmniPost" --dry-run
-
-# Publish draft
-python scripts/post.py post --text-file scratch/draft1.txt
-
-# Publish daily roundup (appends dynamic day counter)
-python scripts/post.py post --text-file scratch/draft_ai.txt --kind ai_update
-
-# Read back recent posts from profile
-python scripts/post.py verify
-
-# View ledger status
-python scripts/post.py status
-```
-
-### Autonomous Single-Command Execution
-
-```bash
-# Check due slot, publish, verify, and mark in one atomic pass
-python scripts/autoposter.py
-
-# Dry-run check without publishing
-python scripts/autoposter.py --dry-run
-```
+* **HTML Visual Proofing:** Open `scratch/carousels/preview.html` in any web browser to proof slides locally before they publish.
+* **LinkedIn Vector PDF:** Located at `scratch/carousels/architecture_carousel.pdf` and automatically attached during LinkedIn post dispatch.
+* **16:9 Infocards:** Located at `scratch/infocards/daily_card.png` and attached to X, Bluesky, and Threads.
 
 ---
 
-## Scheduling & Automation
+## CLI & Developer Tool Reference
 
-OmniPost uses a **deterministic gate**: the scheduler runs a lightweight script rather than invoking an LLM.
-
-### 1. Plain Cron
-
-```cron
-# 11:00 AM - Gather research material
-0 11 * * * cd /path/to/omnipost && python scripts/research.py collect --hours 36
-
-# Every 10 minutes - Check for due posts; silent when IDLE
-*/10 * * * * cd /path/to/omnipost && python scripts/autoposter.py >> /var/log/omnipost.log 2>&1
-```
-
-### 2. Hermes Agent / AI Agent Monitor
-
-```
-name:      x-autopost
-schedule:  every 10m
-monitor:   omnipost_due.py
-deliver:   origin
-```
-
-*When `due.py check` emits `IDLE`, unchanged output suppresses the agent invocation entirely. Idle ticks cost \$0.*
-
-### 3. Windows Task Scheduler
-
-```powershell
-schtasks /Create /SC MINUTE /MO 10 /TN "OmniPost Runner" `
-  /TR "cmd /c cd /d C:\path\to\omnipost && python scripts\autoposter.py"
-```
+| Command | Purpose |
+| :--- | :--- |
+| `python setup.py` | Interactive 6-step CLI onboarding wizard. |
+| `python setup.py --non-interactive` | Unattended onboarding reading defaults from environment variables. |
+| `python scripts/prereq_check.py` | Validates Python, Git, Browser, Docker, Port 9444, and ledger permissions. |
+| `python scripts/doctor.py --live` | Comprehensive audit testing network feeds, browser CDP, and platform sessions. |
+| `python scripts/doctor.py --healthcheck` | Fast binary check (exit code 0/1) for Docker/container monitoring. |
+| `python scripts/pipeline.py` | Runs research, generates polymorphic drafts, and populates `drafts/YYYY-MM-DD.json`. |
+| `python scripts/autoposter.py --dry-run` | Evaluates schedule slots and simulates dispatch without live posting. |
+| `python scripts/publish_now.py --text "..."` | On-demand instant broadcast across any combination of platforms. |
+| `python -m render.carousel` | Generates 1080x1080 HTML preview and vector PDF carousel. |
+| `python scripts/daemon.py` | Continuous background supervisor managing morning research and scheduled posting. |
 
 ---
 
-## Verification & Trust Boundaries
+## Architectural Guarantees & Safety Boundaries
 
-OmniPost adheres to a strict verification policy:
-
-1. **Never trust toasts:** Browser UI toasts like *"Your post was sent"* can fire even when backend rate limiting or content filtering drops the post.
-2. **Profile timeline polling:** The script navigates to `https://x.com/{handle}`, parses the DOM for matching text, and resolves the actual tweet status URL.
-3. **Timeline caching tolerance:** Profile timelines can display stale renders for up to 30–60 seconds after submission. The verifier polls with backoff before concluding failure.
-4. **Vision checks:** Viewport screenshots (`shots/profile.png` and `shots/compose.png`) provide visual confirmation of layout, line breaks, and image cards.
-
----
-
-## Guardrails
-
-- **Account Mismatch Guard:** Halts immediately if the browser profile's active handle does not match `config.handle`.
-- **Character Limit Guard:** Blocks drafts exceeding measured ceilings before submission.
-- **Stale Slot Retirement:** Slots more than 6 hours overdue are marked skipped rather than posted late.
-- **Retry Bounds:** Failed attempts are capped at 2 tries to avoid duplicate posts.
-- **Source Verification:** Mandates that every post claim traces back to a verified research link.
-
----
-
-## Security & Privacy
-
-- **No Stored Passwords:** Authentication state remains exclusively within your local browser profile (`~/.omnipost/chrome-profile`).
-- **No Committed Secrets:** `config.json`, `state.json`, `.tick`, and all draft files are excluded via `.gitignore`.
-- **Private Voice Profile:** `references/voice-profile.local.md` is strictly git-ignored so personal writing data is never published.
-- **Sanitized Examples:** `config.example.json` contains no tokens or credentials.
-
----
-
-## Known Limitations & Risks
-
-- **Platform Rules:** Automating actions via browser sessions without the official API carries inherent account risk under X's platform policies. Pacing and jitter are designed to minimize detection.
-- **DOM Fragility:** X periodically updates DOM attributes and class selectors. If posting or verification stalls, run `python scripts/doctor.py --live` to inspect element targeting.
-- **Headless Mode Nuances:** Certain bot protection layers detect `--headless` flags. Running with visible browser windows (`headless: false`) provides maximum reliability.
-
----
-
-## Troubleshooting
-
-| Issue | Cause | Resolution |
-|---|---|---|
-| `not logged in` | Browser profile lacks active session | Run `python scripts/browser.py launch`, log in manually, then rerun `post.py check`. |
-| `WRONG ACCOUNT` | Logged-in handle does not match `config.json` | Log into the intended account or update `config.json`. |
-| Post button remains disabled | Text exceeds limit or React state did not update | Run `python scripts/post.py compose --dry-run` to inspect `shots/compose.png`. |
-| `verified: false` | Profile timeline render delayed | Run `python scripts/post.py verify` manually after 30 seconds. |
-| Browser fails to launch | Incorrect path or conflicting instance | Set `browser.chrome_path` in `config.json` or check task manager for zombie processes. |
-| Port connection refused | Debugging port not open | Ensure browser was started with `--remote-debugging-port=9222` (or 9444). |
-
----
-
-## Origin and Attribution
-
-This project began as a derivative of the MIT-licensed [tweetytweets](https://github.com/vedantdhande04/tweetytweets) project originally authored by Vedant Dhande (`vedantdhande04`).
-
-The original MIT license and copyright notice (`Copyright (c) 2026 tweetytweets contributors`) are preserved in full in [LICENSE](file:///LICENSE).
-
----
-
-## What Changed in This Version
-
-This repository represents the **OmniPost V1.0.0** release, incorporating enhancements, fixes, and architectural preparation:
-
-1. **Windows & Microsoft Edge Compatibility:**
-   - Added `--remote-allow-origins=*` flag to CDP launch parameters for Chromium 111+ compliance.
-   - Added `--disable-background-mode` to prevent background browser processes from intercepting debug ports.
-   - Refined Windows process detachment flags (`CREATE_NEW_PROCESS_GROUP`) for stable detached launches.
-   - Added automated Edge auto-detection and helper launch scripts (`launch_edge.bat`).
-2. **Composer Error Detection Enhancement:**
-   - Replaced broad full-body error text scanning in `post.py` with targeted DOM parsing of modal headers and toast alerts, eliminating false positive errors.
-3. **Autonomous End-to-End Runner:**
-   - Implemented `scripts/autoposter.py` for unattended slot planning, checking, posting, and verification with safety guards.
-4. **Automated Test Suite:**
-   - Added zero-dependency unit tests (`tests/test_omnipost.py`) covering settings, due calculations, research deduplication, and voice profiling.
-5. **Security & Privacy Hardening:**
-   - Sanitized configuration examples and expansion blueprints to ensure no local paths or handles are exposed.
-   - Expanded `.gitignore` coverage to protect Edge profiles, debug logs, and test artifacts.
-6. **Rebranding & V2 Foundations:**
-   - Rebranded public interface to OmniPost while maintaining full backwards compatibility for existing installations.
-   - Authored the comprehensive multi-platform architectural blueprint in `docs/EXPANSION_BLUEPRINT_MULTI_PLATFORM.md`.
-
----
-
-## Project Evolution
-
-### Upstream (tweetytweets)
-Created by Vedant Dhande as an autonomous X publishing pipeline utilizing direct Chrome DevTools Protocol over WebSockets without paid API fees.
-
-### V1 (OmniPost V1.0.0)
-Our current release hardens the X pipeline for production use, resolves Windows/Edge compatibility challenges, adds test coverage, provides autonomous runner tooling, and establishes a clean open-source foundation.
-
-### V2 (OmniPost Multi-Platform)
-The planned next generation will decouple the publishing engine into platform adapters, repurposing a single research discovery across multiple platforms.
-
----
-
-## OmniPost V2 Roadmap
-
-The future multi-platform architecture is documented in [EXPANSION_BLUEPRINT_MULTI_PLATFORM.md](file:///docs/EXPANSION_BLUEPRINT_MULTI_PLATFORM.md).
-
-```
-                       ┌───────────────────────┐
-                       │     RESEARCH ENGINE   │
-                       │  (HN, RSS, Reddit)    │
-                       └───────────┬───────────┘
-                                   │
-                                   ▼
-                       ┌───────────────────────┐
-                       │   CONTENT REPURPOSER  │
-                       │   (LLM Voice Matrix)  │
-                       └───────────┬───────────┘
-                                   │
-            ┌──────────────────────┴──────────────────────┐
-            ▼                      ▼                      ▼
-      [X Formatter]        [LinkedIn Formatter]   [Bluesky Formatter]
-       280c + Hook          1,500c + Carousel        300c + Facets
-            │                      │                      │
-            ▼                      ▼                      ▼
-      ┌───────────┐          ┌───────────┐          ┌───────────┐
-      │ X Adapter │          │ LinkedIn  │          │  Bluesky  │
-      │   (CDP)   │          │  Adapter  │          │  Adapter  │
-      │           │          │   (CDP)   │          │ (ATProto) │
-      └─────┬─────┘          └─────┬─────┘          └─────┬─────┘
-            │                      │                      │
-            └──────────────────────┼──────────────────────┘
-                                   ▼
-                       ┌───────────────────────┐
-                       │   UNIFIED STATE &     │
-                       │  VERIFICATION LEDGER  │
-                       │     (state.json)      │
-                       └───────────────────────┘
-```
-
-### Planned Milestones:
-
-- **Phase 1 — Modularization & Bluesky:**
-  - Decouple `post.py` into `adapters/x.py`.
-  - Implement native AT Protocol integration (`adapters/bluesky.py`) with zero browser overhead.
-  - Add per-platform toggle configuration in `config.json`.
-- **Phase 2 — LinkedIn & Visual Infocards:**
-  - Build `adapters/linkedin.py` driving CDP with Quill/ProseMirror editor compatibility.
-  - Implement programmatic infocard rendering and multi-page PDF carousel generation.
-- **Phase 3 — Threads & Multi-Platform Repurposing:**
-  - Implement Meta Threads official API adapter (`adapters/threads.py`).
-  - Upgrade `due.py` to support synchronized multi-platform publishing schedules.
-- **Phase 4 — Unified Analytics & Feedback Loop:**
-  - Cross-platform engagement aggregation.
-  - Closed-loop optimization feeding top metrics back into voice profiling.
+1. **Zero Cascade Failures:** An authentication challenge or network hiccup on LinkedIn will never prevent your posts from landing on X, Bluesky, or Threads.
+2. **Crash-Safe Atomic Ledger:** Every write to `state.json` uses temporary atomic replacement (`replace_file_content` / atomic rename), preventing corrupted states during sudden power loss or reboots.
+3. **Browser Auto-Healer:** If Edge or Chromium crashes, `scripts/browser_daemon.py` detects the closed port 9444 and automatically respawns the browser with appropriate sandbox and display flags.
+4. **Data Sovereignty:** All cookies, session tokens, drafts, and encryption keys remain strictly on your local disk or private VPS. No 3rd-party SaaS databases.
 
 ---
 
 ## License
 
-MIT License — see [LICENSE](file:///LICENSE).
-Preserves original copyright notice `Copyright (c) 2026 tweetytweets contributors` and `Copyright (c) 2026 OmniPost contributors`.
+MIT License. See [LICENSE](LICENSE) for full details.

@@ -130,26 +130,8 @@ def repurpose_topic(
         carousel_dir.mkdir(parents=True, exist_ok=True)
         pdf_path = carousel_dir / "architecture_carousel.pdf"
         try:
-            slides = [
-                {
-                    "title": headline,
-                    "body": body,
-                    "tag": category,
-                    "bullets": points[:2],
-                },
-                {
-                    "title": "Core Architecture Breakdown",
-                    "body": "System mechanics and constraints:",
-                    "tag": "DEEP DIVE",
-                    "bullets": points[2:] if len(points) > 2 else points,
-                },
-                {
-                    "title": "Summary & Next Steps",
-                    "body": takeaway or "Production takeaways for engineering teams.",
-                    "tag": "CONCLUSION",
-                    "bullets": ["Deterministic execution", "Zero-dependency tools"],
-                },
-            ]
+            from render.carousel import generate_standard_slides
+            slides = generate_standard_slides(topic_data=topic_data, author=author)
             create_carousel_pdf(
                 slides=slides,
                 title=headline,
