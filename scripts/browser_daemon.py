@@ -6,6 +6,7 @@ in headless or background mode using the dedicated automation profile.
 """
 from __future__ import annotations
 
+import os
 import subprocess
 import time
 import urllib.request
@@ -49,8 +50,19 @@ def ensure_browser_running(max_wait_seconds: int = 10) -> bool:
         "--no-first-run",
         "--no-default-browser-check",
     ]
-    if cfg.get("headless", False):
+    is_headless = bool(cfg.get("headless", False) or os.environ.get("HEADLESS") == "1")
+    if is_headless:
         cmd.append("--headless=new")
+
+    is_container_or_linux = (
+        sys.platform.startswith("linux")
+        or os.environ.get("IS_DOCKER") == "1"
+        or is_headless
+    )
+    if is_container_or_linux:
+        for flag in ("--no-sandbox", "--disable-dev-shm-usage", "--disable-gpu"):
+            if flag not in cmd:
+                cmd.append(flag)
 
     try:
         subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)

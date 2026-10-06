@@ -129,6 +129,7 @@ def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--live", action="store_true", help="also test network + browser")
     ap.add_argument("--json", action="store_true")
+    ap.add_argument("--healthcheck", action="store_true", help="exit with code 1 if any check fails, 0 otherwise")
     a = ap.parse_args()
 
     results = [("python", check_python()), ("dependencies", check_deps()),
@@ -140,6 +141,9 @@ def main() -> None:
     if a.json:
         print(json.dumps([{"check": k, "status": s, "detail": d} for k, (s, d) in results],
                          indent=2))
+        if a.healthcheck:
+            blocked = sum(1 for _, (s, _) in results if s == BAD)
+            sys.exit(1 if blocked else 0)
         return
 
     icon = {OK: "OK     ", WARN: "WARN   ", BAD: "MISSING"}
@@ -160,6 +164,9 @@ def main() -> None:
               "then have your agent write and fill the drafts.")
     if not a.live:
         print("(network and browser were not tested - re-run with --live)")
+
+    if a.healthcheck:
+        sys.exit(1 if blocked else 0)
 
 
 if __name__ == "__main__":
