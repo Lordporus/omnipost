@@ -107,10 +107,15 @@ class BlueskyAdapter(PlatformAdapter):
             or os.environ.get("BSKY_IDENTIFIER")
             or bsky_cfg.get("identifier", "")
         )
+        env_var_name = bsky_cfg.get("app_password_env", "")
+        env_pass = os.environ.get(env_var_name) if env_var_name and env_var_name in os.environ else None
+
         self.app_password = (
             app_password
             or os.environ.get("BSKY_APP_PASSWORD")
+            or env_pass
             or bsky_cfg.get("app_password", "")
+            or (env_var_name if env_var_name and not env_pass else "")
         )
 
         self._session_cache: dict[str, Any] | None = None

@@ -172,12 +172,25 @@ class Session:
 
 
 async def open_page(url: str = "about:blank") -> str:
-    """Create a tab already pointed at `url`, return its page websocket url.
+    """Find existing tab with matching domain or create a new one pointing at `url`."""
+    if url and url != "about:blank":
+        import urllib.parse
+        parsed = urllib.parse.urlparse(url)
+        domain = parsed.netloc.replace("www.", "").lower()
+        if domain:
+            for tab in list_tabs():
+                tab_url = tab.get("url", "").lower()
+                if domain in tab_url:
+                    ws = tab["webSocketDebuggerUrl"]
+                    # If target url differs, navigate the existing tab
+                    if url.rstrip("/").lower() not in tab_url:
+                        try:
+                            async with Session(ws) as p:
+                                await p.send("Page.navigate", url=url)
+                        except Exception:
+                            pass
+                    return ws
 
-    Create the target WITH the final URL. Creating it on about:blank and then
-    calling Page.navigate drops the websocket mid-flight ("no close frame
-    received or sent") on heavy pages like Reddit and X.
-    """
     async with Session(browser_ws()) as browser:
         target = await browser.send("Target.createTarget", url=url)
         tid = target["targetId"]

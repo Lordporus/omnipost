@@ -290,3 +290,10 @@ def get_active_adapters(cfg: dict | None = None) -> list[Any]:
 
     return adapters
 
+
+def get_browser_config(cfg: dict | None = None) -> dict[str, Any]:
+    """Return the browser automation configuration."""
+    if cfg is None:
+        cfg = load()
+    return cfg.get("browser", {})
+

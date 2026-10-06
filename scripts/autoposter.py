@@ -28,9 +28,13 @@ sys.path.insert(0, str(SCRIPTS))
 try:
     from scripts import settings
     from scripts import ledger
+    from scripts import pipeline
+    from scripts import notify
 except ImportError:
     import settings
     import ledger
+    import pipeline
+    import notify
 
 from adapters.base import PublishPayload
 
@@ -78,6 +82,20 @@ def main() -> int:
     kind = due_item.get("kind", "value")
     text = due_item.get("text")
 
+    if slot and not text:
+        print(f"[{datetime.now().strftime('%H:%M:%S')}] Slot {slot} has empty draft text. Triggering daily pipeline...")
+        try:
+            target_date = due_item.get("date") or datetime.now().strftime("%Y-%m-%d")
+            pipeline.run_daily_pipeline(target_date)
+            code, out = run_cmd([str(SCRIPTS / "due.py"), "check"])
+            if code == 0 and out and out != "IDLE":
+                due_item = json.loads(out)
+                slot = due_item.get("slot")
+                kind = due_item.get("kind", kind)
+                text = due_item.get("text")
+        except Exception as exc:
+            print(f"[{datetime.now().strftime('%H:%M:%S')}] Pipeline generation failed: {exc}", file=sys.stderr)
+
     if not slot or not text:
         print(f"[{datetime.now().strftime('%H:%M:%S')}] Slot {slot} has empty draft text. Skipping.")
         return 0
@@ -108,6 +126,8 @@ def main() -> int:
         if poly_platforms and plat_key in poly_platforms and not plat_draft.get("enabled", True):
             continue
         target_platforms.append(plat_key)
+
+    publish_results: dict[str, dict] = {}
 
     for adapter in adapters:
         plat_key = adapter.platform_name.lower()
@@ -165,6 +185,7 @@ def main() -> int:
         try:
             res = adapter.publish(payload)
             ledger.record_platform_status(st, date, slot, plat_key, res, text=adapted_text, kind=kind)
+            publish_results[plat_key] = {"success": res.success, "url": res.url, "error": res.error}
             if res.success:
                 print(f"[{datetime.now().strftime('%H:%M:%S')}] [{p_name}] Published! URL: {res.url or 'N/A'} (verified={res.verified})")
                 if res.url:
@@ -179,7 +200,14 @@ def main() -> int:
                 {"success": False, "verified": False, "error": str(exc)},
                 text=adapted_text, kind=kind
             )
+            publish_results[plat_key] = {"success": False, "error": str(exc)}
             print(f"[{datetime.now().strftime('%H:%M:%S')}] [{p_name}] Publish exception: {exc}")
+
+    if publish_results:
+        try:
+            notify.notify_publish(slot, publish_results)
+        except Exception as notify_err:
+            print(f"[NOTIFY] Warning: Could not dispatch notification: {notify_err}", file=sys.stderr)
 
     slot_fully_done = ledger.is_slot_fully_published(st, date, slot, target_platforms)
     if slot_fully_done:

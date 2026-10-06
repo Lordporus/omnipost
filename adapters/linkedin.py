@@ -65,12 +65,14 @@ CHECK_SESSION_JS = r"""
 # JavaScript to trigger and focus the post composer
 TRIGGER_COMPOSER_JS = r"""
 (() => {
-  // Find Start a post button
-  const btn = document.querySelector('button[id*="share-box"]') 
-    || document.querySelector('div.share-box-feed-entry__wrapper button')
-    || document.querySelector('button.artdeco-button--muted');
-  if (btn) {
-    btn.click();
+  // Find Start a post button or div box
+  const el = document.querySelector('*[aria-label*="Start a post"]')
+    || [...document.querySelectorAll('div, button')].find(b => (b.innerText || '').trim().toLowerCase() === 'start a post')
+    || document.querySelector('button[id*="share-box"]') 
+    || document.querySelector('div.share-box-feed-entry__wrapper button');
+  if (el) {
+    const target = el.closest('div[role="button"]') || el;
+    target.click();
     return 'clicked';
   }
   return 'not_found';
@@ -79,7 +81,9 @@ TRIGGER_COMPOSER_JS = r"""
 
 FOCUS_EDITOR_JS = r"""
 (() => {
-  const ed = document.querySelector('div.ql-editor[contenteditable="true"]')
+  const ed = document.querySelector('div.tiptap.ProseMirror')
+    || document.querySelector('div[role="textbox"][contenteditable="true"]')
+    || document.querySelector('div.ql-editor[contenteditable="true"]')
     || document.querySelector('div.editor-content div[contenteditable="true"]')
     || document.querySelector('div[role="textbox"]');
   if (!ed) return 'no_editor';
@@ -90,7 +94,8 @@ FOCUS_EDITOR_JS = r"""
 
 SUBMIT_POST_JS = r"""
 (() => {
-  const postBtn = document.querySelector('button.share-actions__primary-action')
+  const postBtn = [...document.querySelectorAll('button')].find(b => (b.innerText || '').trim().toLowerCase() === 'post')
+    || document.querySelector('button.share-actions__primary-action')
     || document.querySelector('button.artdeco-button--primary')
     || document.querySelector('button[data-view-name*="post-button"]');
   if (!postBtn) return JSON.stringify({error: 'post_btn_not_found'});
@@ -300,13 +305,29 @@ class LinkedInAdapter(PlatformAdapter):
             await browser.settle_page(page, 4.0)
             
             # Click start a post button
-            trig = await page.eval(TRIGGER_COMPOSER_JS)
-            if trig != "clicked":
-                return PublishResult(
-                    platform="linkedin",
-                    success=False,
-                    error="Could not find 'Start a post' button on LinkedIn feed",
-                )
+            pos_js = """
+            (() => {
+                const el = document.querySelector('*[aria-label*="Start a post"]')
+                    || [...document.querySelectorAll('div, button')].find(b => (b.innerText || '').trim().toLowerCase() === 'start a post');
+                if (!el) return null;
+                const r = el.getBoundingClientRect();
+                return {x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2)};
+            })()
+            """
+            pos = await page.eval(pos_js)
+            if pos and isinstance(pos, dict):
+                await page.send("Input.dispatchMouseEvent", type="mousePressed", x=pos["x"], y=pos["y"], button="left", clickCount=1)
+                await page.send("Input.dispatchMouseEvent", type="mouseReleased", x=pos["x"], y=pos["y"], button="left", clickCount=1)
+            elif pos == "clicked":
+                pass
+            else:
+                trig = await page.eval(TRIGGER_COMPOSER_JS)
+                if trig != "clicked":
+                    return PublishResult(
+                        platform="linkedin",
+                        success=False,
+                        error="Could not find 'Start a post' button on LinkedIn feed",
+                    )
             
             await asyncio.sleep(1.5)
 
@@ -324,8 +345,14 @@ class LinkedInAdapter(PlatformAdapter):
                         )
                     await asyncio.sleep(1.5)
             
-            # Focus editor
-            foc = await page.eval(FOCUS_EDITOR_JS)
+            # Focus editor with retry loop for animation
+            foc = "no_editor"
+            for _ in range(15):
+                foc = await page.eval(FOCUS_EDITOR_JS)
+                if foc == "focused":
+                    break
+                await asyncio.sleep(0.5)
+
             if foc != "focused":
                 return PublishResult(
                     platform="linkedin",
