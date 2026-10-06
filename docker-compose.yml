@@ -1,0 +1,29 @@
+services:
+  omnipost:
+    build: .
+    container_name: omnipost-engine
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      - DISPLAY=:99
+      - IS_DOCKER=1
+      - BROWSER_PROFILE=/app/browser-data
+      - CHROME_PATH=/usr/bin/chromium
+    volumes:
+      - browser_profile:/app/browser-data
+      - ./config.json:/app/config.json:ro
+      - ./state.json:/app/state.json
+      - ./drafts:/app/drafts
+      - ./swipe:/app/swipe
+      - ./scratch:/app/scratch
+    healthcheck:
+      test: ["CMD", "python", "scripts/doctor.py", "--healthcheck"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  browser_profile:
+    name: omnipost_browser_data

@@ -1,0 +1,18 @@
+[Unit]
+Description=OmniPost Autonomous Multi-Platform Social Engine
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/omnipost
+EnvironmentFile=/opt/omnipost/.env
+Environment=DISPLAY=:99
+Environment=IS_LINUX=1
+ExecStart=/bin/bash /opt/omnipost/scripts/run_vps.sh
+Restart=always
+RestartSec=15
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

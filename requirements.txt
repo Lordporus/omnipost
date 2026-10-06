@@ -3,5 +3,7 @@
 # Lean cross-platform toolchain:
 # 1. websockets: talks directly to Chrome/Edge CDP debugging port
 # 2. Pillow: generates programmatic dark-mode 16:9 infocards offline
+# 3. PyYAML: parses and validates docker-compose and stack configuration
 websockets>=12.0
 Pillow>=10.0.0
+pyyaml>=6.0
