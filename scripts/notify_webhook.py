@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Any
 
 ROOT = Path(__file__).resolve().parent.parent
-DEFAULT_TIMEOUT = 8.0
+DEFAULT_TIMEOUT = 5.0
 USER_AGENT = "OmniPost-Notifier/1.0"
 
 
@@ -45,8 +45,10 @@ def _load_webhook_credentials() -> dict[str, Any]:
 
     def _get_val(key: str) -> str:
         if key in os.environ:
-            return os.environ[key].strip()
-        return env_fallback.get(key, "").strip()
+            v = os.environ[key]
+            return v.strip() if v else ""
+        v = env_fallback.get(key, "")
+        return v.strip() if v else ""
 
     tg_token = _get_val("TELEGRAM_BOT_TOKEN")
     tg_chat_id = _get_val("TELEGRAM_CHAT_ID")
@@ -71,6 +73,50 @@ def _load_webhook_credentials() -> dict[str, Any]:
     }
 
 
+def _load_webhook_proxy() -> str:
+    """Resolves proxy URL from HTTPS_PROXY/HTTP_PROXY env vars or config.json.
+
+    Treats empty string or whitespace as unset/falsy.
+    """
+    for var in ("HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy"):
+        val = os.environ.get(var)
+        if val and val.strip():
+            return val.strip()
+
+    config_path = ROOT / "config.json"
+    if config_path.exists() and config_path.is_file():
+        try:
+            cfg = json.loads(config_path.read_text(encoding="utf-8"))
+            notif = cfg.get("notifications", {})
+            proxy = (
+                notif.get("proxy")
+                or notif.get("webhook_proxy")
+                or cfg.get("webhook_proxy")
+                or cfg.get("proxy")
+            )
+            if isinstance(proxy, str) and proxy.strip():
+                return proxy.strip()
+        except Exception:
+            pass
+
+    return ""
+
+
+def _urlopen(
+    req: urllib.request.Request,
+    timeout: float = DEFAULT_TIMEOUT,
+    proxy: str | None = None,
+):
+    """Executes urllib request, using ProxyHandler when proxy is configured."""
+    proxy_url = proxy if proxy is not None else _load_webhook_proxy()
+    if proxy_url and proxy_url.strip():
+        p = proxy_url.strip()
+        proxy_handler = urllib.request.ProxyHandler({"http": p, "https": p})
+        opener = urllib.request.build_opener(proxy_handler)
+        return opener.open(req, timeout=timeout)
+    return urllib.request.urlopen(req, timeout=timeout)
+
+
 def _dispatch_telegram(
     token: str,
     chat_id: str,
@@ -78,6 +124,7 @@ def _dispatch_telegram(
     message: str,
     metadata: dict[str, Any] | None = None,
     timeout: float = DEFAULT_TIMEOUT,
+    proxy: str | None = None,
 ) -> bool:
     """Dispatches formatted message to Telegram Bot API."""
     url = f"https://api.telegram.org/bot{token}/sendMessage"
@@ -101,7 +148,7 @@ def _dispatch_telegram(
 
     req = urllib.request.Request(url, data=payload, headers=headers, method="POST")
     try:
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
+        with _urlopen(req, timeout=timeout, proxy=proxy) as resp:
             data = resp.read()
             parsed = json.loads(data.decode("utf-8")) if data else {}
             if parsed.get("ok", True):
@@ -121,6 +168,7 @@ def _dispatch_discord(
     message: str,
     metadata: dict[str, Any] | None = None,
     timeout: float = DEFAULT_TIMEOUT,
+    proxy: str | None = None,
 ) -> bool:
     """Dispatches rich embed JSON payload to Discord webhook URL."""
     # Color palette: Red for errors/alerts, Green for success, Blue for general info
@@ -156,7 +204,7 @@ def _dispatch_discord(
 
     req = urllib.request.Request(url, data=payload, headers=headers, method="POST")
     try:
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
+        with _urlopen(req, timeout=timeout, proxy=proxy) as resp:
             _ = resp.read()
             return True
     except Exception as exc:
@@ -170,6 +218,7 @@ def dispatch_webhook(
     message: str,
     metadata: dict[str, Any] | None = None,
     timeout: float = DEFAULT_TIMEOUT,
+    proxy: str | None = None,
 ) -> bool:
     """Dispatches alerts to configured Telegram Bot or Discord Webhook.
 
@@ -193,6 +242,7 @@ def dispatch_webhook(
             message=message,
             metadata=metadata,
             timeout=timeout,
+            proxy=proxy,
         )
         if tg_ok:
             success = True
@@ -205,6 +255,7 @@ def dispatch_webhook(
             message=message,
             metadata=metadata,
             timeout=timeout,
+            proxy=proxy,
         )
         if dc_ok:
             success = True
@@ -215,6 +266,8 @@ def dispatch_webhook(
 def send_session_expired_alert(
     platform: str,
     action_required: str = "Operator re-login required in automation profile",
+    timeout: float = DEFAULT_TIMEOUT,
+    proxy: str | None = None,
 ) -> bool:
     """Dispatches high-priority fast-fail alert when platform cookies or session tokens expire."""
     plat_upper = (platform or "Unknown").upper()
@@ -241,4 +294,6 @@ def send_session_expired_alert(
         title=title,
         message=message,
         metadata=metadata,
+        timeout=timeout,
+        proxy=proxy,
     )

@@ -9,6 +9,8 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from scripts.notify_webhook import (
+    DEFAULT_TIMEOUT,
+    _load_webhook_proxy,
     dispatch_webhook,
     send_session_expired_alert,
 )
@@ -176,4 +178,110 @@ def test_empty_env_strings_treated_as_unset():
             )
             assert success is False
             assert mock_urlopen.call_count == 0
+
+
+def test_default_timeout_is_five_seconds():
+    """Verifies that DEFAULT_TIMEOUT is strictly set to 5.0 seconds and passed to urlopen."""
+    assert DEFAULT_TIMEOUT == 5.0
+
+    env = {
+        "DISCORD_WEBHOOK_URL": "https://discord.com/api/webhooks/123/token_abc",
+    }
+    with patch.dict(os.environ, env, clear=True):
+        with patch("urllib.request.urlopen") as mock_urlopen:
+            mock_resp = MagicMock()
+            mock_resp.read.return_value = b""
+            mock_urlopen.return_value.__enter__.return_value = mock_resp
+
+            dispatch_webhook(
+                event_type="test",
+                title="Timeout Check",
+                message="Checking default timeout parameter",
+            )
+
+            assert mock_urlopen.call_count == 1
+            _, kwargs = mock_urlopen.call_args
+            assert kwargs.get("timeout") == 5.0
+
+
+def test_proxy_from_env_vars():
+    """Verifies proxy configuration via HTTPS_PROXY or HTTP_PROXY environment variables."""
+    env = {
+        "TELEGRAM_BOT_TOKEN": "123456:TEST_TOKEN",
+        "TELEGRAM_CHAT_ID": "987654321",
+        "HTTPS_PROXY": "http://127.0.0.1:8080",
+    }
+    with patch.dict(os.environ, env, clear=True):
+        with patch("urllib.request.build_opener") as mock_build_opener:
+            mock_opener = MagicMock()
+            mock_resp = MagicMock()
+            mock_resp.read.return_value = json.dumps({"ok": True}).encode("utf-8")
+            mock_opener.open.return_value.__enter__.return_value = mock_resp
+            mock_build_opener.return_value = mock_opener
+
+            success = dispatch_webhook(
+                event_type="publish_success",
+                title="Proxy Test",
+                message="Testing proxy dispatch",
+            )
+
+            assert success is True
+            assert mock_build_opener.call_count == 1
+            handler = mock_build_opener.call_args[0][0]
+            assert isinstance(handler, urllib.request.ProxyHandler)
+            assert handler.proxies == {
+                "http": "http://127.0.0.1:8080",
+                "https": "http://127.0.0.1:8080",
+            }
+            mock_opener.open.assert_called_once()
+            _, kwargs = mock_opener.open.call_args
+            assert kwargs.get("timeout") == 5.0
+
+
+def test_proxy_from_config_json(tmp_path):
+    """Verifies proxy fallback to config.json when env vars are unset."""
+    env = {
+        "DISCORD_WEBHOOK_URL": "https://discord.com/api/webhooks/123/token_abc",
+    }
+    config_data = {
+        "notifications": {
+            "proxy": "http://corporate.proxy.internal:3128"
+        }
+    }
+    config_file = tmp_path / "config.json"
+    config_file.write_text(json.dumps(config_data), encoding="utf-8")
+
+    with patch.dict(os.environ, env, clear=True):
+        with patch("scripts.notify_webhook.ROOT", tmp_path):
+            assert _load_webhook_proxy() == "http://corporate.proxy.internal:3128"
+            with patch("urllib.request.build_opener") as mock_build_opener:
+                mock_opener = MagicMock()
+                mock_resp = MagicMock()
+                mock_resp.read.return_value = b""
+                mock_opener.open.return_value.__enter__.return_value = mock_resp
+                mock_build_opener.return_value = mock_opener
+
+                success = dispatch_webhook(
+                    event_type="info",
+                    title="Config Proxy Test",
+                    message="Testing config proxy",
+                )
+                assert success is True
+                assert mock_build_opener.call_count == 1
+                handler = mock_build_opener.call_args[0][0]
+                assert handler.proxies == {
+                    "http": "http://corporate.proxy.internal:3128",
+                    "https": "http://corporate.proxy.internal:3128",
+                }
+
+
+def test_proxy_whitespace_or_empty_ignored():
+    """Verifies whitespace or empty strings in proxy environment variables are ignored."""
+    env = {
+        "HTTPS_PROXY": "   ",
+        "HTTP_PROXY": "",
+    }
+    with patch.dict(os.environ, env, clear=True):
+        assert _load_webhook_proxy() == ""
+
 

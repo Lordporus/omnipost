@@ -274,6 +274,148 @@ class TestWizard(unittest.TestCase):
         self.assertIn("timezone", config)
         self.assertTrue(config.get("dry_run"))
 
+    @patch("scripts.wizard.validate_bluesky_credentials")
+    def test_wizard_bluesky_validation_failure_decline_disables_channel(self, mock_val_bsky):
+        """When Bluesky credential validation fails and operator declines retry, channel is disabled."""
+        mock_val_bsky.return_value = (False, "Invalid identifier or password")
+
+        mock_inputs = [
+            "",                                  # X handle (skip)
+            "bob.bsky.social",                   # Bluesky handle
+            "wrong-password",                    # Bluesky app password
+            "n",                                 # Re-enter credentials? [y/N]: n
+            "",                                  # LinkedIn (skip)
+            "",                                  # Threads (skip)
+            "local",                             # Provider
+            "", "", "",                          # Preferences
+            "",                                  # Timezone
+            "none",                              # Webhook
+            "y",                                 # Dry run
+        ]
+
+        config, env_vars = run_wizard(
+            non_interactive=False,
+            test_mode=False,
+            root=self.tmp_dir,
+            inputs=mock_inputs,
+        )
+
+        self.assertFalse(config["platforms"]["bluesky"]["enabled"])
+        self.assertEqual(config["platforms"]["bluesky"]["identifier"], "bob.bsky.social")
+        self.assertNotIn("BSKY_APP_PASSWORD", env_vars)
+
+    @patch("scripts.wizard.validate_bluesky_credentials")
+    def test_wizard_bluesky_validation_retry_success(self, mock_val_bsky):
+        """When Bluesky credentials fail on first attempt, operator can retry and succeed."""
+        mock_val_bsky.side_effect = [(False, "Invalid password"), (True, "OK")]
+
+        mock_inputs = [
+            "",                                  # X handle (skip)
+            "bob.bsky.social",                   # Bluesky handle
+            "wrong-password",                    # 1st attempt: wrong password
+            "y",                                 # Re-enter credentials? [y/N]: y
+            "bob.bsky.social",                   # Bluesky handle confirmation
+            "correct-password",                  # 2nd attempt: correct password
+            "",                                  # LinkedIn (skip)
+            "",                                  # Threads (skip)
+            "local",                             # Provider
+            "", "", "",                          # Preferences
+            "",                                  # Timezone
+            "none",                              # Webhook
+            "y",                                 # Dry run
+        ]
+
+        config, env_vars = run_wizard(
+            non_interactive=False,
+            test_mode=False,
+            root=self.tmp_dir,
+            inputs=mock_inputs,
+        )
+
+        self.assertTrue(config["platforms"]["bluesky"]["enabled"])
+        self.assertEqual(env_vars.get("BSKY_APP_PASSWORD"), "correct-password")
+        self.assertEqual(mock_val_bsky.call_count, 2)
+
+    @patch("scripts.wizard.validate_llm_key")
+    def test_wizard_llm_validation_failure_decline_falls_back_to_local(self, mock_val_llm):
+        """When LLM API key validation fails and operator declines retry, provider falls back to local."""
+        mock_val_llm.return_value = (False, "API key unauthorized")
+
+        mock_inputs = [
+            "", "", "", "",                      # Platforms skipped
+            "openai",                            # Provider
+            "bad-api-key",                       # API Key
+            "n",                                 # Re-enter credentials? [y/N]: n
+            "", "", "",                          # Preferences
+            "",                                  # Timezone
+            "none",                              # Webhook
+            "y",                                 # Dry run
+        ]
+
+        config, env_vars = run_wizard(
+            non_interactive=False,
+            test_mode=False,
+            root=self.tmp_dir,
+            inputs=mock_inputs,
+        )
+
+        self.assertEqual(config["llm"]["provider"], "local")
+        self.assertNotIn("OPENAI_API_KEY", env_vars)
+
+    @patch("scripts.wizard.validate_llm_key")
+    def test_wizard_llm_validation_retry_success(self, mock_val_llm):
+        """When LLM API key fails on first attempt, operator can retry and succeed."""
+        mock_val_llm.side_effect = [(False, "Invalid key"), (True, "OK")]
+
+        mock_inputs = [
+            "", "", "", "",                      # Platforms skipped
+            "openai",                            # Provider
+            "bad-api-key",                       # 1st attempt
+            "y",                                 # Re-enter credentials? [y/N]: y
+            "good-api-key",                      # 2nd attempt
+            "", "", "",                          # Preferences
+            "",                                  # Timezone
+            "none",                              # Webhook
+            "y",                                 # Dry run
+        ]
+
+        config, env_vars = run_wizard(
+            non_interactive=False,
+            test_mode=False,
+            root=self.tmp_dir,
+            inputs=mock_inputs,
+        )
+
+        self.assertEqual(config["llm"]["provider"], "openai")
+        self.assertEqual(env_vars.get("OPENAI_API_KEY"), "good-api-key")
+        self.assertEqual(mock_val_llm.call_count, 2)
+
+    @patch("scripts.wizard.validate_webhook")
+    def test_wizard_webhook_validation_failure_decline_disables_webhook(self, mock_val_wh):
+        """When webhook validation fails and operator declines retry, notification is disabled."""
+        mock_val_wh.return_value = (False, "Webhook endpoint unreachable")
+
+        mock_inputs = [
+            "", "", "", "",                      # Platforms skipped
+            "local",                             # Provider
+            "", "", "",                          # Preferences
+            "",                                  # Timezone
+            "discord",                           # Webhook choice
+            "https://discord.com/bad/url",       # Webhook URL
+            "n",                                 # Re-enter credentials? [y/N]: n
+            "y",                                 # Dry run
+        ]
+
+        config, env_vars = run_wizard(
+            non_interactive=False,
+            test_mode=False,
+            root=self.tmp_dir,
+            inputs=mock_inputs,
+        )
+
+        self.assertFalse(config.get("notifications", {}).get("discord", {}).get("enabled", True))
+        self.assertNotIn("DISCORD_WEBHOOK_URL", env_vars)
+
 
 class TestSetupEntrypoint(unittest.TestCase):
     """Test suite for setup.py entrypoint invoking wizard."""

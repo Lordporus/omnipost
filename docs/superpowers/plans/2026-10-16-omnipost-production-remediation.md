@@ -180,18 +180,18 @@ Before locking the implementation tasks, we challenged the architecture against 
 * Consumes: Operator keyboard input during onboarding; webhook URLs and tokens.
 * Produces: Validated `.env` file without silent credential corruption; non-blocking webhook dispatches.
 
-- [ ] **Step 1: Add re-prompt loop in `scripts/wizard.py`**
+- [x] **Step 1: Add re-prompt loop in `scripts/wizard.py`**
   If `validate_bluesky_credentials` or `validate_llm_key` fails:
   * Print specific failure reason (e.g. `Bluesky authentication failed: Invalid identifier or password`).
   * Re-prompt operator: `Re-enter credentials? [Y/n]`.
   * If skipped, set `platforms[platform]["enabled"] = False` and warn operator.
 
-- [ ] **Step 2: Implement strict timeout and proxy support in `scripts/notify_webhook.py`**
+- [x] **Step 2: Implement strict timeout and proxy support in `scripts/notify_webhook.py`**
   Set `DEFAULT_TIMEOUT = 5.0` and allow configuring HTTP/HTTPS proxy from `config.json` for Telegram requests.
 
-- [ ] **Step 3: Run wizard and webhook unit tests**
+- [x] **Step 3: Run wizard and webhook unit tests**
   Run: `pytest tests/test_wizard.py tests/test_notify_webhook.py`
-  Expected: All tests pass.
+  Expected: All tests pass (Verified: 25 passed, 0 failed; full suite 214 passed).
 
 ---
 

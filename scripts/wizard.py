@@ -235,15 +235,35 @@ def run_wizard(
 
     if bsky_ident:
         bsky_pwd_default = os.environ.get("BSKY_APP_PASSWORD") or env_vars.get("BSKY_APP_PASSWORD", "")
-        bsky_pwd = ask("  [1/6] Bluesky App Password [skip]: ", bsky_pwd_default)
-        if bsky_pwd:
+        while True:
+            bsky_pwd = ask("  [1/6] Bluesky App Password [skip]: ", bsky_pwd_default)
+            if not bsky_pwd:
+                platforms["bluesky"]["identifier"] = bsky_ident
+                platforms["bluesky"]["enabled"] = False
+                break
+
             if not test_mode and not non_interactive:
                 ok, msg = validate_bluesky_credentials(bsky_ident, bsky_pwd)
                 if not ok:
-                    print(f"    [!] Warning: {msg}")
+                    print(f"    [!] Bluesky credential validation failed: {msg}")
+                    retry = ask("    Re-enter credentials? [y/N]: ", "n").strip().lower()
+                    if retry in ("y", "yes"):
+                        re_ident = ask(f"    Bluesky handle / identifier [{bsky_ident}]: ", bsky_ident)
+                        if re_ident:
+                            bsky_ident = re_ident
+                        bsky_pwd_default = ""
+                        continue
+                    else:
+                        print("    [!] Bluesky credentials failed validation. Disabling Bluesky channel.")
+                        platforms["bluesky"]["identifier"] = bsky_ident
+                        platforms["bluesky"]["enabled"] = False
+                        env_vars.pop("BSKY_APP_PASSWORD", None)
+                        break
+
             env_vars["BSKY_APP_PASSWORD"] = bsky_pwd
             platforms["bluesky"]["identifier"] = bsky_ident
             platforms["bluesky"]["enabled"] = True
+            break
 
     link_url_default = (
         os.environ.get("LINKEDIN_PROFILE_URL")
@@ -291,14 +311,30 @@ def run_wizard(
         }
         env_key_name = provider_key_map.get(provider_choice, f"{provider_choice.upper()}_API_KEY")
         existing_key = os.environ.get(env_key_name) or env_vars.get(env_key_name, "")
-        llm_api_key = ask(f"  [2/6] Enter {provider_choice.capitalize()} API Key: ", existing_key)
-        if llm_api_key:
+        while True:
+            llm_api_key = ask(f"  [2/6] Enter {provider_choice.capitalize()} API Key: ", existing_key)
+            if not llm_api_key:
+                print(f"    [!] No API key entered for {provider_choice}. Falling back to local.")
+                config["llm"] = {"provider": "local", "model": ""}
+                break
+
             if not test_mode and not non_interactive:
                 ok, msg = validate_llm_key(provider_choice, llm_api_key)
                 if not ok:
-                    print(f"    [!] Warning: {msg}")
+                    print(f"    [!] {provider_choice.capitalize()} API key validation failed: {msg}")
+                    retry = ask("    Re-enter credentials? [y/N]: ", "n").strip().lower()
+                    if retry in ("y", "yes"):
+                        existing_key = ""
+                        continue
+                    else:
+                        print(f"    [!] {provider_choice.capitalize()} API key invalid. Falling back to local provider.")
+                        config["llm"] = {"provider": "local", "model": ""}
+                        env_vars.pop(env_key_name, None)
+                        break
+
             env_vars[env_key_name] = llm_api_key
-        config["llm"] = {"provider": provider_choice, "api_key_env": env_key_name, "model": ""}
+            config["llm"] = {"provider": provider_choice, "api_key_env": env_key_name, "model": ""}
+            break
     else:
         config["llm"] = {"provider": "local", "model": ""}
 
@@ -404,28 +440,60 @@ def run_wizard(
 
     if wh_choice in ("telegram", "both"):
         tg_tok_default = os.environ.get("TELEGRAM_BOT_TOKEN") or env_vars.get("TELEGRAM_BOT_TOKEN", "")
-        tg_token = ask("    Telegram Bot Token: ", tg_tok_default)
         tg_chat_default = os.environ.get("TELEGRAM_CHAT_ID") or env_vars.get("TELEGRAM_CHAT_ID", "")
-        tg_chat = ask("    Telegram Chat ID: ", tg_chat_default)
-        if tg_token and tg_chat:
+        while True:
+            tg_token = ask("    Telegram Bot Token: ", tg_tok_default)
+            tg_chat = ask("    Telegram Chat ID: ", tg_chat_default)
+            if not (tg_token and tg_chat):
+                notifications["telegram"] = {"enabled": False}
+                break
+
             if not test_mode and not non_interactive:
                 ok, msg = validate_webhook("telegram", tg_token, chat_id=tg_chat)
                 if not ok:
-                    print(f"    [!] Warning: {msg}")
+                    print(f"    [!] Telegram webhook validation failed: {msg}")
+                    retry = ask("    Re-enter credentials? [y/N]: ", "n").strip().lower()
+                    if retry in ("y", "yes"):
+                        tg_tok_default = ""
+                        tg_chat_default = ""
+                        continue
+                    else:
+                        print("    [!] Telegram credentials invalid. Disabling Telegram notifications.")
+                        notifications["telegram"] = {"enabled": False}
+                        env_vars.pop("TELEGRAM_BOT_TOKEN", None)
+                        env_vars.pop("TELEGRAM_CHAT_ID", None)
+                        break
+
             env_vars["TELEGRAM_BOT_TOKEN"] = tg_token
             env_vars["TELEGRAM_CHAT_ID"] = tg_chat
             notifications["telegram"] = {"enabled": True}
+            break
 
     if wh_choice in ("discord", "both"):
         dc_url_default = os.environ.get("DISCORD_WEBHOOK_URL") or env_vars.get("DISCORD_WEBHOOK_URL", "")
-        dc_url = ask("    Discord Webhook URL: ", dc_url_default)
-        if dc_url:
+        while True:
+            dc_url = ask("    Discord Webhook URL: ", dc_url_default)
+            if not dc_url:
+                notifications["discord"] = {"enabled": False}
+                break
+
             if not test_mode and not non_interactive:
                 ok, msg = validate_webhook("discord", dc_url)
                 if not ok:
-                    print(f"    [!] Warning: {msg}")
+                    print(f"    [!] Discord webhook validation failed: {msg}")
+                    retry = ask("    Re-enter credentials? [y/N]: ", "n").strip().lower()
+                    if retry in ("y", "yes"):
+                        dc_url_default = ""
+                        continue
+                    else:
+                        print("    [!] Discord webhook invalid. Disabling Discord notifications.")
+                        notifications["discord"] = {"enabled": False}
+                        env_vars.pop("DISCORD_WEBHOOK_URL", None)
+                        break
+
             env_vars["DISCORD_WEBHOOK_URL"] = dc_url
             notifications["discord"] = {"enabled": True}
+            break
 
     config["notifications"] = notifications
 
