@@ -38,7 +38,6 @@ window.chrome = {
 
 THREADS_BASE_URL = "https://www.threads.net/"
 
-# JavaScript to detect active Threads session
 CHECK_SESSION_JS = r"""
 (() => {
   const url = location.href;
@@ -54,7 +53,15 @@ CHECK_SESSION_JS = r"""
     if (m) handle = m[1];
   }
 
-  const logged_in = !loginBtn && (!!profileLink || !!composeBtn);
+  if (!handle) {
+    const allLinks = Array.from(document.querySelectorAll('a[href]')).map(a => a.getAttribute('href') || '');
+    const userLink = allLinks.find(href => href.startsWith('/@') && !href.includes('/post/'));
+    if (userLink) {
+      handle = userLink.replace(/^\/@/, '').split('/')[0];
+    }
+  }
+
+  const logged_in = !loginBtn && (!!profileLink || !!composeBtn || !!handle);
 
   return JSON.stringify({
     url: url,
@@ -130,6 +137,26 @@ class ThreadsAdapter(PlatformAdapter):
             requires_public_image_url=False,
         )
 
+    def get_base_url(self) -> str:
+        """Determines active base URL for Threads, checking configuration and open browser tabs."""
+        cfg = settings.load()
+        explicit = cfg.get("platforms", {}).get("threads", {}).get("base_url")
+        if explicit and explicit.strip():
+            base = explicit.strip()
+            return base if base.endswith("/") else f"{base}/"
+
+        try:
+            for t in browser.list_tabs():
+                url = t.get("url", "").lower()
+                if "threads.com" in url:
+                    return "https://www.threads.com/"
+                if "threads.net" in url:
+                    return "https://www.threads.net/"
+        except Exception:
+            pass
+
+        return THREADS_BASE_URL
+
     async def _open_stealth(self, url: str) -> Session:
         """Opens a CDP session and injects stealth webdriver masking scripts."""
         ws = await browser.open_page(url)
@@ -171,7 +198,8 @@ class ThreadsAdapter(PlatformAdapter):
 
     async def _async_check_session(self) -> dict[str, Any]:
         browser.ensure_chrome()
-        page = await self._open_stealth(THREADS_BASE_URL)
+        base_url = self.get_base_url()
+        page = await self._open_stealth(base_url)
         try:
             # Poll for hydration up to 8 seconds
             logged_in = False
@@ -208,7 +236,8 @@ class ThreadsAdapter(PlatformAdapter):
 
     async def _async_publish(self, payload: PublishPayload) -> PublishResult:
         browser.ensure_chrome()
-        page = await self._open_stealth(THREADS_BASE_URL)
+        base_url = self.get_base_url()
+        page = await self._open_stealth(base_url)
         try:
             await browser.settle_page(page, 4.0)
 
@@ -277,7 +306,7 @@ class ThreadsAdapter(PlatformAdapter):
             verified = await self._async_verify(None, payload.text)
 
             clean_h = self._handle.lstrip("@") if self._handle else ""
-            post_url = f"https://www.threads.net/@{clean_h}" if clean_h else THREADS_BASE_URL
+            post_url = f"{base_url}@{clean_h}" if clean_h else base_url
 
             return PublishResult(
                 platform="threads",
@@ -302,11 +331,12 @@ class ThreadsAdapter(PlatformAdapter):
 
     async def _async_verify(self, post_id: str | None, text_snippet: str) -> bool:
         """Read-back verification on user profile timeline."""
+        base_url = self.get_base_url()
         clean_h = self._handle.lstrip("@") if self._handle else ""
         target_url = (
-            f"https://www.threads.net/@{clean_h}"
+            f"{base_url}@{clean_h}"
             if clean_h
-            else THREADS_BASE_URL
+            else base_url
         )
         try:
             page = await self._open_stealth(target_url)
