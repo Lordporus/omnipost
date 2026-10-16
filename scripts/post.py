@@ -168,7 +168,15 @@ LOGIN_JS = r"""
   const m = raw.match(/@([A-Za-z0-9_]{1,20})/);
   const prof = document.querySelector('a[data-testid="AppTabBar_Profile_Link"]');
   const ph = prof ? (prof.getAttribute('href') || '').replace(/^\//, '') : null;
-  const h = (m ? m[1] : ph) || null;
+  let h = (m ? m[1] : ph) || null;
+  if (!h) {
+    const profLink = Array.from(document.querySelectorAll('nav a[href], header a[href], a[href]'))
+      .map(a => a.getAttribute('href') || '')
+      .find(href => href.match(/^\/[A-Za-z0-9_]{1,20}$/) && !['/home', '/explore', '/notifications', '/messages', '/i', '/settings', '/search', '/compose'].includes(href.toLowerCase()));
+    if (profLink) {
+      h = profLink.replace(/^\//, '');
+    }
+  }
   const login_form = !!document.querySelector('input[name="text"], input[autocomplete="username"]');
   return JSON.stringify({url, handle: h, logged_in: !!h, login_form,
                          raw: raw.replace(/\n/g, ' ').slice(0, 120)});
