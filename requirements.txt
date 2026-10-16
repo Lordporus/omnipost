@@ -4,6 +4,11 @@
 # 1. websockets: talks directly to Chrome/Edge CDP debugging port
 # 2. Pillow: generates programmatic dark-mode 16:9 infocards offline
 # 3. PyYAML: parses and validates docker-compose and stack configuration
+# 4. requests: optional HTTP helper and testing utility
 websockets>=12.0
 Pillow>=10.0.0
 pyyaml>=6.0
+requests>=2.28.0
+
+# Developer & Test Suite Dependencies
+pytest>=8.0.0

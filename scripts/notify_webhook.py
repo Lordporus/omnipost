@@ -43,10 +43,14 @@ def _load_webhook_credentials() -> dict[str, Any]:
     """Resolves Telegram and Discord webhook credentials from environment or .env file."""
     env_fallback = _read_env_fallback()
 
-    tg_token = os.environ.get("TELEGRAM_BOT_TOKEN") or env_fallback.get("TELEGRAM_BOT_TOKEN", "").strip()
-    tg_chat_id = os.environ.get("TELEGRAM_CHAT_ID") or env_fallback.get("TELEGRAM_CHAT_ID", "").strip()
+    def _get_val(key: str) -> str:
+        if key in os.environ:
+            return os.environ[key].strip()
+        return env_fallback.get(key, "").strip()
 
-    dc_url = os.environ.get("DISCORD_WEBHOOK_URL") or env_fallback.get("DISCORD_WEBHOOK_URL", "").strip()
+    tg_token = _get_val("TELEGRAM_BOT_TOKEN")
+    tg_chat_id = _get_val("TELEGRAM_CHAT_ID")
+    dc_url = _get_val("DISCORD_WEBHOOK_URL")
 
     telegram_config = None
     if tg_token and tg_chat_id:

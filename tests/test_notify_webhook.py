@@ -14,6 +14,12 @@ from scripts.notify_webhook import (
 )
 
 
+@pytest.fixture(autouse=True)
+def isolate_env_fallback():
+    with patch("scripts.notify_webhook._read_env_fallback", return_value={}):
+        yield
+
+
 def test_telegram_webhook_dispatch():
     """Verifies POST payload formatting to Telegram Bot API."""
     env = {
@@ -152,3 +158,22 @@ def test_webhook_timeout_graceful():
                 message="Timeout test",
             )
             assert success is False
+
+
+def test_empty_env_strings_treated_as_unset():
+    """Confirms empty strings in environment variables do not trigger dispatches."""
+    env = {
+        "TELEGRAM_BOT_TOKEN": "",
+        "TELEGRAM_CHAT_ID": "  ",
+        "DISCORD_WEBHOOK_URL": "",
+    }
+    with patch.dict(os.environ, env, clear=True):
+        with patch("urllib.request.urlopen") as mock_urlopen:
+            success = dispatch_webhook(
+                event_type="test",
+                title="Empty Env Test",
+                message="Should not dispatch",
+            )
+            assert success is False
+            assert mock_urlopen.call_count == 0
+
