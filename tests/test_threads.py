@@ -70,8 +70,12 @@ class TestThreadsAdapter(unittest.TestCase):
         self.assertEqual(res.platform, "threads")
         self.assertTrue(res.success)
         self.assertTrue(res.verified)
-        self.assertIn("lordporus_ai", res.url)
+        self.assertEqual(res.url, "https://www.threads.net/@lordporus_ai")
         mock_page.send.assert_any_call("Input.insertText", text="Hello Threads world from OmniPost V2!")
+
+    def test_threads_base_url(self):
+        from adapters.threads import THREADS_BASE_URL
+        self.assertEqual(THREADS_BASE_URL, "https://www.threads.net/")
 
     @patch.object(ThreadsAdapter, "_attach_media", new_callable=AsyncMock)
     @patch.object(ThreadsAdapter, "_async_verify", return_value=True)

@@ -41,7 +41,20 @@ def ensure_browser_running(max_wait_seconds: int = 10) -> bool:
         return True
 
     exe = cfg.get("chrome_path") or r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe"
-    profile = cfg.get("profile_dir") or r"C:\Users\Sachin\.tweetytweets\edge-profile"
+    try:
+        home_dir = Path.home()
+        if str(home_dir) == "~":
+            home_dir = Path(".")
+    except Exception:
+        home_dir = Path(os.environ.get("USERPROFILE") or os.environ.get("HOME") or ".")
+
+    legacy_profile = home_dir / ".tweetytweets" / "edge-profile"
+    default_profile = home_dir / ".omnipost" / "edge-profile"
+    if legacy_profile.exists() and not default_profile.exists():
+        profile_path = str(legacy_profile)
+    else:
+        profile_path = str(default_profile)
+    profile = cfg.get("profile_dir") or profile_path
     
     cmd = [
         exe,

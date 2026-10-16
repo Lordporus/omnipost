@@ -53,7 +53,7 @@ DEFAULTS: dict[str, Any] = {
     "require_verified_source": True,    # refuse to write claims it hasn't read
     "browser": {
         "port": 9222,
-        "profile_dir": "",              # empty => <home>/.omnipost/chrome-profile
+        "profile_dir": "",              # empty => <home>/.omnipost/edge-profile
         "chrome_path": "",              # empty => auto-detect
         "headless": False,
     },
@@ -111,7 +111,16 @@ def load(required: bool = False) -> dict:
 
 
 def home() -> Path:
-    return Path(os.path.expanduser("~"))
+    try:
+        h = Path(os.path.expanduser("~"))
+        if str(h) != "~":
+            return h
+    except Exception:
+        pass
+    env_h = os.environ.get("USERPROFILE") or os.environ.get("HOME")
+    if env_h:
+        return Path(env_h)
+    return Path(".")
 
 
 def profile_dir(cfg: dict | None = None) -> Path:
@@ -122,8 +131,10 @@ def profile_dir(cfg: dict | None = None) -> Path:
         p = Path(os.path.expanduser(raw))
     else:
         # Preserve legacy .tweetytweets profile if it already exists, otherwise default to .omnipost
-        legacy = home() / ".tweetytweets" / "chrome-profile"
-        default = home() / ".omnipost" / "chrome-profile"
+        legacy_edge = home() / ".tweetytweets" / "edge-profile"
+        legacy_chrome = home() / ".tweetytweets" / "chrome-profile"
+        default = home() / ".omnipost" / "edge-profile"
+        legacy = legacy_edge if legacy_edge.exists() else (legacy_chrome if legacy_chrome.exists() else legacy_edge)
         p = legacy if (legacy.exists() and not default.exists()) else default
     p.mkdir(parents=True, exist_ok=True)
     return p

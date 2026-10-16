@@ -36,7 +36,7 @@ window.chrome = {
 };
 """
 
-THREADS_BASE_URL = "https://www.threads.com/"
+THREADS_BASE_URL = "https://www.threads.net/"
 
 # JavaScript to detect active Threads session
 CHECK_SESSION_JS = r"""
@@ -224,7 +224,7 @@ class ThreadsAdapter(PlatformAdapter):
                 return PublishResult(
                     platform="threads",
                     success=False,
-                    error="Could not find 'Start a thread' button on threads.com",
+                    error="Could not find 'Start a thread' button on threads.net",
                 )
 
             await asyncio.sleep(1.5)
@@ -277,7 +277,7 @@ class ThreadsAdapter(PlatformAdapter):
             verified = await self._async_verify(None, payload.text)
 
             clean_h = self._handle.lstrip("@") if self._handle else ""
-            post_url = f"https://www.threads.com/@{clean_h}" if clean_h else THREADS_BASE_URL
+            post_url = f"https://www.threads.net/@{clean_h}" if clean_h else THREADS_BASE_URL
 
             return PublishResult(
                 platform="threads",
@@ -304,7 +304,7 @@ class ThreadsAdapter(PlatformAdapter):
         """Read-back verification on user profile timeline."""
         clean_h = self._handle.lstrip("@") if self._handle else ""
         target_url = (
-            f"https://www.threads.com/@{clean_h}"
+            f"https://www.threads.net/@{clean_h}"
             if clean_h
             else THREADS_BASE_URL
         )
