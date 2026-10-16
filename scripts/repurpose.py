@@ -91,9 +91,15 @@ def repurpose_topic(
     """
     headline = topic_data.get("headline", "Engineering Insight")
     body = topic_data.get("body", "")
-    points = topic_data.get("points", [])
-    takeaway = topic_data.get("takeaway", "")
-    category = topic_data.get("category", "AI ARCHITECTURE")
+    raw_points = topic_data.get("points")
+    if isinstance(raw_points, list):
+        points = [str(p) for p in raw_points if str(p).strip()]
+    elif raw_points:
+        points = [str(raw_points).strip()]
+    else:
+        points = []
+    takeaway = str(topic_data.get("takeaway") or "")
+    category = str(topic_data.get("category") or "AI ARCHITECTURE")
 
     # Generate tailored text
     x_text = format_x(headline, points)

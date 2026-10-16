@@ -101,7 +101,7 @@ Before locking the implementation tasks, we challenged the architecture against 
 * Consumes: `settings.get_browser_config()`, host filesystem.
 * Produces: Dynamic browser data directory at `~/.omnipost/edge-profile` with automatic preservation of existing `~/.tweetytweets/edge-profile`; validated `threads.net` navigation.
 
-- [ ] **Step 1: Implement legacy profile detection and fallback in `scripts/browser_daemon.py` and `scripts/settings.py`**
+- [x] **Step 1: Implement legacy profile detection and fallback in `scripts/browser_daemon.py` and `scripts/settings.py`**
   Replace hardcoded `C:\Users\Sachin\.tweetytweets\...` with dynamic resolution:
   ```python
   legacy_profile = Path.home() / ".tweetytweets" / "edge-profile"
@@ -116,15 +116,15 @@ Before locking the implementation tasks, we challenged the architecture against 
   profile = cfg.get("profile_dir") or profile_path
   ```
 
-- [ ] **Step 2: Update `launch_edge.bat` with matching precedence**
+- [x] **Step 2: Update `launch_edge.bat` with matching precedence**
   Check if `%USERPROFILE%\.tweetytweets\edge-profile` exists; if so, open it to preserve existing user logins, otherwise open `%USERPROFILE%\.omnipost\edge-profile`.
 
-- [ ] **Step 3: Correct Meta Threads base URL**
+- [x] **Step 3: Correct Meta Threads base URL**
   In `adapters/threads.py:39`, set `THREADS_BASE_URL = "https://www.threads.net/"`.
 
-- [ ] **Step 4: Run test suite**
+- [x] **Step 4: Run test suite**
   Run: `pytest tests/test_browser_daemon.py tests/test_threads.py`
-  Expected: All tests pass.
+  Expected: All tests pass (Verified: 16 passed, 0 failed).
 
 ---
 
@@ -140,14 +140,14 @@ Before locking the implementation tasks, we challenged the architecture against 
 * Consumes: `GEMINI_API_KEY`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `OPENROUTER_API_KEY` + model overrides (`GEMINI_MODEL`, `OPENAI_MODEL`, etc.) from `.env` or `config.json`; voice profile markdown.
 * Produces: `generate_topic_with_llm(items, kind, voice_profile) -> dict` returning validated JSON `{headline, body, points, takeaway, category}` with robust error handling and zero-cost heuristic fallback.
 
-- [ ] **Step 1: Write failing test for LLM provider in `tests/test_llm.py`**
+- [x] **Step 1: Write failing test for LLM provider in `tests/test_llm.py`**
   Test Gemini (`gemini-2.5-flash`), OpenAI (`gpt-4o-mini`), Claude (`claude-3-5-sonnet`), configurable model env overrides (`GEMINI_MODEL`), explicit timeouts, and fallback on network/JSON errors with mocked HTTP endpoints.
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
   Run: `pytest tests/test_llm.py`
   Expected: FAIL with `ModuleNotFoundError: No module named 'scripts.llm'`.
 
-- [ ] **Step 3: Implement `scripts/llm.py` with resilience & modern defaults**
+- [x] **Step 3: Implement `scripts/llm.py` with resilience & modern defaults**
   Lightweight client using standard library `urllib.request`:
   * **Modern Defaults:**
     * Gemini: `gemini-2.5-flash` (override via `os.environ.get("GEMINI_MODEL") or cfg.get("model")`)
@@ -159,12 +159,12 @@ Before locking the implementation tasks, we challenged the architecture against 
     * Standard header `User-Agent: OmniPost-Synthesizer/2.0`.
     * Clean exception handling catching `(urllib.error.URLError, urllib.error.HTTPError, json.JSONDecodeError, TimeoutError, KeyError)` returning `(False, fallback_dict)`.
 
-- [ ] **Step 4: Connect `scripts/generate.py` to `scripts/llm.py`**
+- [x] **Step 4: Connect `scripts/generate.py` to `scripts/llm.py`**
   Update `generate_topic_from_items` to load provider and key from settings/`.env`, pass voice profile instructions, and return rich polymorphic topics with automatic fallback.
 
-- [ ] **Step 5: Run tests to verify they pass**
+- [x] **Step 5: Run tests to verify they pass**
   Run: `pytest tests/test_llm.py tests/test_generate.py`
-  Expected: PASS.
+  Expected: PASS (Verified: 20 passed, 0 failed).
 
 ---
 

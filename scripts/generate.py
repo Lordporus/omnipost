@@ -26,8 +26,8 @@ def extract_key_takeaways(text: str) -> list[str]:
     return sentences[:3]
 
 
-def generate_topic_from_items(kind: str, items: list[dict[str, Any]]) -> dict[str, Any]:
-    """Generates a structured topic dictionary from a list of collected swipe items."""
+def generate_heuristic_topic(kind: str, items: list[dict[str, Any]]) -> dict[str, Any]:
+    """Generates a structured topic dictionary deterministically without LLM API calls."""
     if not items:
         # High-signal fallback aligned with AI/Engineering theme
         return {
@@ -64,6 +64,33 @@ def generate_topic_from_items(kind: str, items: list[dict[str, Any]]) -> dict[st
         "takeaway": f"Read more on {top_item.get('source', 'source').upper()}: {top_item.get('url', '')}".strip(),
         "category": category,
     }
+
+
+def generate_topic_from_items(
+    kind: str,
+    items: list[dict[str, Any]],
+    use_llm: bool = True,
+    voice_profile: str | None = None,
+) -> dict[str, Any]:
+    """Generates a structured topic dictionary from a list of collected swipe items.
+
+    Attempts synthesis via modern multi-LLM engine if configured, falling back to
+    deterministic heuristic generation on failure or when LLM is unconfigured.
+    """
+    if not items:
+        return generate_heuristic_topic(kind, items)
+
+    if use_llm:
+        from scripts.llm import generate_topic_with_llm
+        ok, topic = generate_topic_with_llm(
+            items=items,
+            kind=kind,
+            voice_profile=voice_profile,
+        )
+        if ok and topic:
+            return topic
+
+    return generate_heuristic_topic(kind, items)
 
 
 def load_daily_swipe(date_str: str) -> list[dict[str, Any]]:
