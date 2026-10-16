@@ -208,7 +208,7 @@ Before locking the implementation tasks, we challenged the architecture against 
 * Consumes: Git commits and pull requests.
 * Produces: Automated cross-platform CI verification on GitHub.
 
-- [ ] **Step 1: Create `.github/workflows/ci.yml` with hermetic test environment**
+- [x] **Step 1: Create `.github/workflows/ci.yml` with hermetic test environment**
   Matrix test runner testing Python 3.10, 3.11, and 3.12 on both `ubuntu-latest` and `windows-latest`.
   Supply explicit mock environment variables:
   ```yaml
@@ -218,6 +218,7 @@ Before locking the implementation tasks, we challenged the architecture against 
     GEMINI_API_KEY: "mock-gemini-key"
     OPENAI_API_KEY: "mock-openai-key"
     ANTHROPIC_API_KEY: "mock-anthropic-key"
+    OPENROUTER_API_KEY: "mock-openrouter-key"
     BSKY_IDENTIFIER: "mock.bsky.social"
     BSKY_APP_PASSWORD: "mock-app-password"
     TELEGRAM_BOT_TOKEN: ""
@@ -225,12 +226,13 @@ Before locking the implementation tasks, we challenged the architecture against 
     DISCORD_WEBHOOK_URL: ""
   ```
 
-- [ ] **Step 2: Sanitize local paths in `config.json` and `state.json`**
+- [x] **Step 2: Sanitize local paths in `config.json` and `state.json`**
   Replace absolute `C:\Users\Sachin\...` paths with relative or portable home paths.
 
-- [ ] **Step 3: Add `CONTRIBUTING.md` and `SECURITY.md`**
+- [x] **Step 3: Add `CONTRIBUTING.md` and `SECURITY.md`**
   Provide clear contribution guidelines and security disclosure instructions.
 
-- [ ] **Step 4: Run end-to-end dry-run and live tests**
+- [x] **Step 4: Run end-to-end dry-run and live tests**
   Run: `python scripts/prereq_check.py` and `python scripts/doctor.py`
-  Expected: All checks green.
+  Expected: All checks green (Verified: 0 exit code, all green).
+
