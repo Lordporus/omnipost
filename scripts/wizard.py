@@ -39,12 +39,14 @@ try:
     from scripts.validator import (
         validate_bluesky_credentials,
         validate_llm_key,
+        validate_model_id,
         validate_webhook,
     )
 except ImportError:
     from validator import (
         validate_bluesky_credentials,
         validate_llm_key,
+        validate_model_id,
         validate_webhook,
     )
 
@@ -123,6 +125,15 @@ def _deep_merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any
         else:
             out[k] = v
     return out
+
+
+DEFAULT_MODELS = {
+    "gemini": "gemini-2.5-flash",
+    "openai": "gpt-4o-mini",
+    "claude": "claude-3-5-sonnet-20241022",
+    "anthropic": "claude-3-5-sonnet-20241022",
+    "openrouter": "meta-llama/llama-3.3-70b-instruct",
+}
 
 
 def run_wizard(
@@ -296,10 +307,19 @@ def run_wizard(
     # =========================================================================
     llm_cfg = config.get("llm", {})
     provider_default = os.environ.get("LLM_PROVIDER") or llm_cfg.get("provider") or "local"
-    provider_choice = ask(
-        "  [2/6] Select LLM Provider (local, gemini, openai, claude, openrouter) [default: local]: ",
+    raw_provider = ask(
+        "  [2/6] Select LLM Provider ([1] gemini, [2] openai, [3] claude, [4] openrouter, [5] local) [default: local]: ",
         provider_default,
     ).lower()
+
+    num_map = {
+        "1": "gemini",
+        "2": "openai",
+        "3": "claude",
+        "4": "openrouter",
+        "5": "local",
+    }
+    provider_choice = num_map.get(raw_provider, raw_provider)
 
     if provider_choice not in ("local", "none", "deterministic", ""):
         provider_key_map = {
@@ -332,8 +352,35 @@ def run_wizard(
                         env_vars.pop(env_key_name, None)
                         break
 
+            # Model Selection with Pre-Flight Verification
+            model_default = (
+                os.environ.get(f"{provider_choice.upper()}_MODEL")
+                or llm_cfg.get("model")
+                or DEFAULT_MODELS.get(provider_choice, "gemini-2.5-flash")
+            )
+            while True:
+                model_choice = ask(f"  [2/6] Enter Model ID [default: {model_default}]: ", model_default)
+                if not model_choice:
+                    model_choice = model_default
+
+                if not test_mode and not non_interactive:
+                    ok_m, msg_m = validate_model_id(provider_choice, llm_api_key, model_choice)
+                    if not ok_m:
+                        print(f"    [!] {provider_choice.capitalize()} model validation failed: {msg_m}")
+                        retry_m = ask("    Re-enter Model ID? [y/N]: ", "n").strip().lower()
+                        if retry_m in ("y", "yes"):
+                            continue
+                        else:
+                            print(f"    [!] Retaining model '{model_default}'.")
+                            model_choice = model_default
+                            break
+                    else:
+                        print(f"    [+] {provider_choice.capitalize()} model '{model_choice}' verified successfully.")
+                break
+
             env_vars[env_key_name] = llm_api_key
-            config["llm"] = {"provider": provider_choice, "api_key_env": env_key_name, "model": ""}
+            env_vars[f"{provider_choice.upper()}_MODEL"] = model_choice
+            config["llm"] = {"provider": provider_choice, "api_key_env": env_key_name, "model": model_choice}
             break
     else:
         config["llm"] = {"provider": "local", "model": ""}
@@ -449,6 +496,7 @@ def run_wizard(
                 break
 
             if not test_mode and not non_interactive:
+                print("    [*] Dispatching live test message to Telegram bot...")
                 ok, msg = validate_webhook("telegram", tg_token, chat_id=tg_chat)
                 if not ok:
                     print(f"    [!] Telegram webhook validation failed: {msg}")
@@ -463,6 +511,8 @@ def run_wizard(
                         env_vars.pop("TELEGRAM_BOT_TOKEN", None)
                         env_vars.pop("TELEGRAM_CHAT_ID", None)
                         break
+                else:
+                    print("    [+] Telegram Bot connection verified successfully!")
 
             env_vars["TELEGRAM_BOT_TOKEN"] = tg_token
             env_vars["TELEGRAM_CHAT_ID"] = tg_chat

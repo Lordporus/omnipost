@@ -11,7 +11,8 @@ OmniPost evolves from a proven single-platform X autonomous publishing engine in
 - [x] **Phase 3: LinkedIn CDP Adapter** - Stealth browser automation for LinkedIn posts and multi-page PDF document carousels.
 - [x] **Phase 4: Meta Threads CDP Adapter & Content Repurposer** - Browser CDP automation for Threads and polymorphic 1-insight-to-4-channel drafting.
 - [x] **Phase 5: Unified Ledger & Cross-Platform Engagement** - Atomic multi-platform ledger in `state.json` v2.0, partial-failure isolation, and closed-loop feedback.
-- [ ] **Phase 6: Production Wisdom & Enforcement-First Hardening** - Port TweetyTweets production rigor: risk transparency, code guardrails, voice measurement ritual, $0-cost schedule gate, and E2E integration tests.
+- [x] **Phase 6: Production Wisdom & Enforcement-First Hardening** - Port TweetyTweets production rigor: risk transparency, code guardrails, voice measurement ritual, $0-cost schedule gate, and E2E integration tests.
+- [ ] **Phase 7: Consumer Onboarding, Platform-Native Synthesis & Resilience Polish** - 1-click bootstrap, dynamic multi-provider model selection, platform-native content archetypes, in-page LinkedIn toast capture, and lean network resilience.
 
 ## Phase Details
 
@@ -105,5 +106,20 @@ Plans:
 - [x] 06-02: Zero-Cost Idle Gate, Voice Measurement Ritual & Onboarding Ceremony
 - [x] 06-03: Real-World E2E Test Suite, Risk Transparency & Authoritative Documentation
 
+### Phase 7: Consumer Onboarding, Platform-Native Synthesis & Resilience Polish
+**Goal**: Elevate OmniPost v2.5 to a commercial consumer-ready desktop application with 1-click bootstrap, dynamic multi-provider model selection with live validation, platform-native content archetypes (X hook, LinkedIn carousel, Threads conversation, Bluesky insight), in-page LinkedIn toast verification, and lean network resilience.
+**Depends on**: Phase 6
+**Requirements**: REQ-BOOTSTRAP-01, REQ-WIZARD-MODEL-01, REQ-WIZARD-TELEGRAM-01, REQ-SYNTH-NATIVE-01, REQ-SYNTH-ARCHETYPES-01, REQ-LINK-TOAST-01, REQ-NET-RESIL-01, REQ-NOTIFY-RICH-01
+**Success Criteria** (what must be TRUE):
+  1. `setup.bat` and `setup.sh` provide zero-friction 1-click environment setup and launch `wizard.py`.
+  2. `scripts/wizard.py` allows selecting between Gemini, OpenAI, Anthropic, and OpenRouter with custom model input and zero-token pre-flight probe validation.
+  3. `scripts/wizard.py` performs a live Telegram bot ping test, preventing `400: chat not found`.
+  4. `scripts/generate.py` outputs a structured 4-platform JSON payload tailored to each network's audience without arbitrary text slicing.
+  5. `adapters/linkedin.py` captures `urn:li:activity` live from the feed submission toast with zero secondary navigation.
+  6. `scripts/publish_now.py` probes connectivity via Google 204, handles network timeouts with amber Telegram warnings, and never hangs indefinitely.
+**Plans**: 3 plans
 
-
+Plans:
+- [x] 07-01: 1-Click Root Bootstrap & Onboarding Ceremony with Dynamic Multi-Provider Model Selection & Telegram Validation
+- [ ] 07-02: Platform-Native Content & Audience Engagement Engine
+- [ ] 07-03: In-Page LinkedIn Toast Verification, Lean Network Resilience & Rich Telegram Alerts

@@ -140,6 +140,76 @@ def validate_llm_key(
         return False, f"{display} network error: {exc}"
 
 
+def validate_model_id(
+    provider: str,
+    key: str,
+    model_id: str,
+    timeout: float = DEFAULT_TIMEOUT,
+) -> tuple[bool, str]:
+    """Zero-token pre-flight validation of user-selected model ID with regex sanitization."""
+    p = (provider or "").strip().lower()
+    m = (model_id or "").strip()
+    k = (key or "").strip()
+
+    if not m:
+        return False, "Model ID cannot be empty."
+    if not k:
+        return False, "API key cannot be empty."
+
+    # Threat mitigation: Sanitize model_id to prevent SSRF / path traversal (07-SECURITY.md)
+    if not re.match(r"^[a-zA-Z0-9._:/-]+$", m):
+        return False, f"Invalid model ID format: '{m}' contains illegal characters."
+
+    headers = {
+        "User-Agent": USER_AGENT,
+    }
+
+    if p == "gemini":
+        display = "Gemini"
+        encoded_key = urllib.parse.quote(k)
+        clean_model = m if m.startswith("models/") else f"models/{m}"
+        url = f"https://generativelanguage.googleapis.com/v1beta/{clean_model}?key={encoded_key}"
+        req = urllib.request.Request(url, headers=headers, method="GET")
+
+    elif p == "openai":
+        display = "OpenAI"
+        url = f"https://api.openai.com/v1/models/{m}"
+        headers["Authorization"] = f"Bearer {k}"
+        req = urllib.request.Request(url, headers=headers, method="GET")
+
+    elif p == "openrouter":
+        display = "OpenRouter"
+        url = "https://openrouter.ai/api/v1/models"
+        headers["Authorization"] = f"Bearer {k}"
+        req = urllib.request.Request(url, headers=headers, method="GET")
+
+    elif p in ("claude", "anthropic"):
+        display = "Claude"
+        url = f"https://api.anthropic.com/v1/models/{m}"
+        headers["x-api-key"] = k
+        headers["anthropic-version"] = "2023-06-01"
+        req = urllib.request.Request(url, headers=headers, method="GET")
+
+    else:
+        return False, f"Unsupported provider '{provider}' for model validation."
+
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            data = resp.read()
+            if p == "openrouter":
+                parsed = json.loads(data.decode("utf-8")) if data else {}
+                model_ids = {item.get("id") for item in parsed.get("data", [])}
+                if m not in model_ids:
+                    return False, f"Model '{m}' not found in OpenRouter model catalog."
+            return True, f"{display} model '{m}' verified successfully."
+    except urllib.error.HTTPError as err:
+        body = err.read().decode("utf-8", errors="replace")
+        detail = _extract_error_detail(body)
+        return False, f"{display} model validation failed ({err.code}): {detail}"
+    except Exception as exc:
+        return False, f"{display} network error: {exc}"
+
+
 def validate_webhook(
     service: str,
     url_or_token: str,
@@ -176,13 +246,18 @@ def validate_webhook(
                 if parsed.get("ok"):
                     return True, "Telegram webhook verified successfully."
                 desc = parsed.get("description", "Unknown Telegram error")
-                return False, f"Telegram validation failed: {desc}"
+                if "chat not found" in desc.lower():
+                    desc += " (Please open your bot in Telegram and click /start first)"
+                return False, f"Telegram validation failed: {desc.replace(val, '[REDACTED_TOKEN]')}"
         except urllib.error.HTTPError as err:
             body = err.read().decode("utf-8", errors="replace")
-            detail = _extract_error_detail(body)
+            detail = _extract_error_detail(body).replace(val, "[REDACTED_TOKEN]")
+            if "chat not found" in detail.lower():
+                detail += " (Please open your bot in Telegram and click /start first)"
             return False, f"Telegram validation failed ({err.code}): {detail}"
         except Exception as exc:
-            return False, f"Telegram connection error: {exc}"
+            safe_err = str(exc).replace(val, "[REDACTED_TOKEN]")
+            return False, f"Telegram connection error: {safe_err}"
 
     elif svc == "discord":
         if not val or not (val.startswith("http://") or val.startswith("https://")):
@@ -327,6 +402,7 @@ def _normalize_text_for_comparison(text: str) -> str:
 def check_duplicate_post(
     text: str,
     state: dict | None = None,
+    platform: str | None = None,
 ) -> tuple[bool, str]:
     """Checks whether the text (or near-identical normalized text) has already been published."""
     norm_candidate = _normalize_text_for_comparison(text)
@@ -336,22 +412,37 @@ def check_duplicate_post(
     st = state or {}
     posts = st.get("posts", [])
     for entry in posts:
-        # Check top-level text
+        if platform:
+            # Check if this specific platform was already published in this entry
+            plat_data = entry.get("platforms", {}).get(platform.lower())
+            if isinstance(plat_data, dict) and plat_data.get("status") == "published":
+                hist_text = plat_data.get("text") or entry.get("text", "")
+                if hist_text and _normalize_text_for_comparison(hist_text) == norm_candidate:
+                    date_str = plat_data.get("at") or entry.get("date") or "history"
+                    return True, f"Duplicate content: already published to {platform} on {date_str}"
+            elif not entry.get("platforms"):
+                hist_text = entry.get("text", "")
+                if hist_text and _normalize_text_for_comparison(hist_text) == norm_candidate:
+                    date_str = entry.get("at") or entry.get("date") or "history"
+                    return True, f"Duplicate content: matches previous post from {date_str}"
+            continue
+
+        # Fallback global check when platform is not specified
         hist_text = entry.get("text", "")
         if hist_text and _normalize_text_for_comparison(hist_text) == norm_candidate:
             date_str = entry.get("at") or entry.get("date") or "history"
             return True, f"Duplicate content: matches previous post from {date_str}"
 
-        # Check polymorphic platforms text
         platforms = entry.get("platforms", {})
         for plat_name, p_data in platforms.items():
-            if isinstance(p_data, dict):
+            if isinstance(p_data, dict) and p_data.get("status") == "published":
                 p_text = p_data.get("text", "")
                 if p_text and _normalize_text_for_comparison(p_text) == norm_candidate:
                     date_str = p_data.get("at") or entry.get("date") or "history"
                     return True, f"Duplicate content: matches previous {plat_name} post from {date_str}"
 
     return False, ""
+
 
 
 def verify_source_trace(
@@ -390,6 +481,7 @@ def verify_source_trace(
 def check_account_warmup(
     state: dict | None = None,
     max_posts_per_day: int = 1,
+    platform: str | None = None,
 ) -> tuple[bool, str]:
     """Ensures new accounts don't trigger platform spam filters by posting too fast."""
     st = state or {}
@@ -402,16 +494,38 @@ def check_account_warmup(
     # Count verified posts today (UTC)
     today_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     today_count = 0
+    p_plat = (platform or "").lower()
     for p in posts:
         at_val = p.get("at") or p.get("date") or ""
         if at_val.startswith(today_str):
-            today_count += 1
+            if p_plat:
+                plat_data = p.get("platforms", {}).get(p_plat)
+                if plat_data:
+                    is_published = isinstance(plat_data, dict) and plat_data.get("status") == "published"
+                elif not p.get("platforms"):
+                    is_published = p.get("status") != "failed" and p.get("verified") is not False
+                else:
+                    is_published = False
+            else:
+                is_published = (
+                    p.get("verified") is True
+                    or bool(p.get("tweet_url"))
+                    or (p.get("status") != "failed" and not p.get("platforms"))
+                    or any(
+                        isinstance(p_data, dict) and p_data.get("status") == "published"
+                        for p_data in p.get("platforms", {}).values()
+                    )
+                )
+            if is_published:
+                today_count += 1
+
 
     if today_count >= max_posts_per_day:
+        target_name = f" on {platform.upper()}" if platform else ""
         return (
             False,
             f"Account in warm-up period ({total_posts}/15 total posts). "
-            f"Already published {today_count} post(s) today. Capped at {max_posts_per_day}/day.",
+            f"Already published {today_count} post(s) today{target_name}. Capped at {max_posts_per_day}/day.",
         )
 
     return True, f"Warm-up active: {today_count}/{max_posts_per_day} posts today."
@@ -479,11 +593,12 @@ def validate_draft_guardrails(
             raise EngagementBaitError(f"{bait_msg} No engagement bait: platforms rank these as spam.")
 
     # 5. Duplicate post check
-    is_dup, dup_msg = check_duplicate_post(text, state)
+    is_dup, dup_msg = check_duplicate_post(text, state, platform=platform)
     if is_dup:
         errors.append(dup_msg)
         if raise_on_error:
             raise DuplicatePostError(dup_msg)
+
 
     # 6. Source trace check
     has_trace, trace_msg = verify_source_trace(draft_dict, swipe_dir)
@@ -494,10 +609,11 @@ def validate_draft_guardrails(
 
     # 7. Account warm-up check (optional or during live dispatch)
     if check_warmup:
-        warm_ok, warm_msg = check_account_warmup(state)
+        warm_ok, warm_msg = check_account_warmup(state, platform=platform)
         if not warm_ok:
             errors.append(warm_msg)
             if raise_on_error:
+
                 raise AccountWarmupError(warm_msg)
 
     if errors:
