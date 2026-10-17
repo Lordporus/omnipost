@@ -24,7 +24,25 @@ class TestWizard(unittest.TestCase):
             shutil.rmtree(self.tmp_dir)
         self.tmp_dir.mkdir(parents=True, exist_ok=True)
 
+        # Isolate environment from CI/host platform keys so wizard tests are hermetic
+        self.env_patcher = patch.dict(os.environ, {}, clear=False)
+        self.env_patcher.start()
+        for k in (
+            "BSKY_IDENTIFIER",
+            "BSKY_APP_PASSWORD",
+            "GEMINI_API_KEY",
+            "OPENAI_API_KEY",
+            "ANTHROPIC_API_KEY",
+            "OPENROUTER_API_KEY",
+            "TELEGRAM_BOT_TOKEN",
+            "TELEGRAM_CHAT_ID",
+            "DISCORD_WEBHOOK_URL",
+        ):
+            os.environ.pop(k, None)
+
     def tearDown(self):
+        if hasattr(self, "env_patcher"):
+            self.env_patcher.stop()
         if self.tmp_dir.exists():
             import shutil
             shutil.rmtree(self.tmp_dir)

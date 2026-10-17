@@ -226,8 +226,15 @@ def parse_llm_json(raw_text: str) -> dict[str, Any]:
         if not takeaway:
             takeaway = str(data.get("threads") or "Build deterministic systems.")[:100].strip()
 
+    locs = {
+        "headline": headline,
+        "body": body,
+        "points": points,
+        "takeaway": takeaway,
+        "category": category,
+    }
     required_keys = ["headline", "body", "points", "takeaway", "category"]
-    missing = [k for k in required_keys if not locals().get(k)]
+    missing = [k for k in required_keys if not locs.get(k)]
     if missing and not has_platform_keys:
         raise KeyError(f"Missing required keys in LLM output: {missing}")
 
