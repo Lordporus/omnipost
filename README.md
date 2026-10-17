@@ -3,15 +3,15 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/Lordporus/omnipost/releases"><img src="https://img.shields.io/badge/version-2.0.0-00F59B.svg?style=flat-square&labelColor=06090E" alt="Version 2.0.0" /></a>
+  <a href="https://github.com/Lordporus/omnipost/releases"><img src="https://img.shields.io/badge/version-2.5.0-00F59B.svg?style=flat-square&labelColor=06090E" alt="Version 2.5.0" /></a>
   <a href="https://python.org"><img src="https://img.shields.io/badge/python-3.12+-06B6D4.svg?style=flat-square&labelColor=06090E" alt="Python 3.12+" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-10B981.svg?style=flat-square&labelColor=06090E" alt="License MIT" /></a>
-  <a href="https://github.com/Lordporus/omnipost/actions"><img src="https://img.shields.io/badge/tests-184%20passed-00F59B.svg?style=flat-square&labelColor=06090E" alt="Tests 184 Passed" /></a>
+  <a href="https://github.com/Lordporus/omnipost/actions"><img src="https://img.shields.io/badge/tests-230%20passed-00F59B.svg?style=flat-square&labelColor=06090E" alt="Tests 230 Passed" /></a>
   <img src="https://img.shields.io/badge/api_cost-$0_forever-F59E0B.svg?style=flat-square&labelColor=06090E" alt="Zero API Cost" />
   <img src="https://img.shields.io/badge/docker-ready-38BDF8.svg?style=flat-square&labelColor=06090E" alt="Docker Ready" />
 </p>
 
-<h1 align="center">OmniPost V2.0</h1>
+<h1 align="center">OmniPost V2.5</h1>
 
 <p align="center">
   <b>Autonomous, Zero-Cost Cross-Platform Publishing Syndicate for AI Agents & Technical Builders.</b><br />
@@ -98,7 +98,7 @@ OmniPost operates as a deterministic, decoupled four-stage pipeline:
 | :--- | :--- | :--- | :--- | :---: |
 | **X (Twitter)** | Stealth Chrome CDP Session | 16:9 Infocard (`.png`) | DOM Composer Settle + Tweet URL Parse | **\$0.00** |
 | **Bluesky** | Native ATProto XRPC | 16:9 Infocard (`.png`) | Microsecond Commit Response + CID/URI | **\$0.00** |
-| **LinkedIn** | ProseMirror DOM Automation | 4-Slide Vector PDF Carousel | Activity Feed Read-Back (`urn:li:activity`) | **\$0.00** |
+| **LinkedIn** | ProseMirror DOM Automation | 4-Slide Vector PDF Carousel | In-Page Toast URN (`urn:li:activity`) + Feed Fallback | **\$0.00** |
 | **Meta Threads** | Headless Chrome CDP Session | 16:9 Infocard (`.png`) | Profile Activity Scrape & Confirmation | **\$0.00** |
 
 ---
@@ -132,34 +132,51 @@ python -m render.carousel --preview-only
 
 ## Quickstart & Setup
 
-### 1. Interactive 6-Step CLI Wizard
+### 1. 1-Click Zero-Friction Bootstrap (Recommended)
 
-Run the interactive setup wizard to configure accounts, choose your AI provider, and set posting preferences:
+OmniPost includes single-click bootstrap scripts that inspect Python, automatically install dependencies from `requirements.txt`, and launch the onboarding ceremony:
+
+* **Windows:** Double-click `setup.bat` (or execute `.\setup.bat` in PowerShell/CMD).
+* **Linux / macOS:** Run `bash setup.sh`.
 
 ```bash
 git clone https://github.com/Lordporus/omnipost.git
 cd omnipost
-python setup.py
+
+# Windows
+.\setup.bat
+
+# Linux / macOS
+bash setup.sh
 ```
+
+### 2. Interactive Onboarding Ceremony
+
+The onboarding wizard guides you through credentials, platform channels, and LLM configuration with real-time pre-flight verification:
 
 ```
 ╔═══════════════════════════════════════════════════════════════════╗
-║                      OMNIPOST V2.0 ONBOARDING                     ║
+║                      OMNIPOST V2.5 ONBOARDING                     ║
 ║         Autonomous Sovereign Multi-Platform Distribution          ║
 ╚═══════════════════════════════════════════════════════════════════╝
 
 [1/6] Account Credentials & Handles (X, Bluesky, LinkedIn, Threads)
-[2/6] Multi-LLM Provider (Gemini / Claude / OpenAI / OpenRouter / Local Heuristic)
-      ↳ Validating live 1-token API ping... [OK]
+[2/6] Multi-LLM Provider & Model Selection:
+      • Google Gemini (Default: gemini-2.5-flash or custom model)
+      • OpenAI (Default: gpt-4o-mini or custom model)
+      • Anthropic Claude (Default: claude-3-5-sonnet-20241022 or custom model)
+      • OpenRouter (Default: meta-llama/llama-3.3-70b-instruct or custom model)
+      ↳ Pre-flight zero-token probe validation... [OK - Verified]
 [3/6] Content Strategy & Voice Profile Configuration
 [4/6] System Timezone Detection (Auto: Asia/Kolkata)
 [5/6] Remote Webhook Alerting (Telegram Bot / Discord Embeds)
+      ↳ Live Telegram bot ping test... [OK - "400: chat not found" prevented]
 [6/6] Operating Mode (Dry-Run vs Autonomous Live Dispatch)
 
 [SETUP] Configuration sealed to config.json & .env. Ready for production.
 ```
 
-### 2. Automated / Non-Interactive CI Mode
+### 3. Automated / Non-Interactive CI Mode
 
 For CI/CD runners, Docker builds, or automated server provisioning:
 
@@ -223,11 +240,12 @@ sudo journalctl -u omnipost -f
 
 ---
 
-## Remote Webhook Monitoring & Session Alerts
+## Remote Webhook Monitoring & Executive Summary Cards
 
-OmniPost provides instant notifications via Telegram and Discord whenever posts are dispatched or authentication sessions require re-login:
+OmniPost delivers instant executive notifications via Telegram Bot API and Discord Webhooks:
 
-* **Post Success Alerts:** Rich embed detailing post link, media status, and scheduled slot.
+* **Executive Drop Summary Cards:** Upon batch publication, delivers a formatted summary featuring platform status badges (`✅ X`, `✅ Bluesky`, `✅ Threads`, `✅ LinkedIn`), direct clickable post permalinks, account handles, and execution latency.
+* **Amber Network Timeout Alerts:** If transient network packet loss occurs during a post attempt, OmniPost emits a non-fatal amber warning and proceeds to remaining platforms without hanging.
 * **Session Expiration Guard:** Fast-fail alerts immediately dispatched if browser cookies expire, preventing silent pipeline stalls.
 
 ---
@@ -236,13 +254,16 @@ OmniPost provides instant notifications via Telegram and Discord whenever posts 
 
 | Command | Description |
 | :--- | :--- |
-| `python setup.py` | Interactive 6-step CLI onboarding wizard with live credential validation. |
+| `.\setup.bat` | 1-Click Windows bootstrap: auto-installs requirements and starts onboarding. |
+| `bash setup.sh` | 1-Click Linux/macOS bootstrap: auto-installs requirements and starts onboarding. |
+| `python setup.py` | Interactive CLI onboarding ceremony with live credential & model validation. |
 | `python setup.py --non-interactive` | Headless setup for automated VPS and container provisioning. |
 | `python scripts/prereq_check.py` | Diagnostic checker validating Python, Git, Browser, Docker, and ports. |
 | `python scripts/doctor.py --healthcheck` | Fast binary healthcheck (exit code 0/1) for container orchestrators. |
 | `python scripts/doctor.py --live` | Deep diagnostic testing network feeds, browser CDP, and platform sessions. |
-| `python scripts/pipeline.py` | Runs research, generates polymorphic drafts, and renders visual assets. |
+| `python scripts/pipeline.py` | Ingests swipe intelligence, generates 4 native drafts, and renders visual assets. |
 | `python scripts/autoposter.py --dry-run` | Evaluates due schedule slots and simulates dispatch without live posting. |
+| `python scripts/publish_now.py --draft drafts/YYYY-MM-DD.json` | Broadcasts pre-generated platform-native drafts without text truncation. |
 | `python scripts/publish_now.py --text "..."` | On-demand instant broadcast across any combination of platforms. |
 | `python -m render.carousel` | Compiles 1080x1080 HTML preview and vector PDF carousel. |
 | `python scripts/daemon.py` | Long-running supervisor managing jittered posting and morning research. |
@@ -300,40 +321,41 @@ python -m pytest -v
 ```
 ============================= test session starts =============================
 platform win32 -- Python 3.12.10, pytest-8.3.2
-collected 184 items
+collected 230 items
 
-tests/test_adapters.py ...........                                       [  6%]
-tests/test_analytics.py .....                                            [  8%]
-tests/test_bluesky.py .........                                          [ 13%]
-tests/test_browser_daemon.py ......                                      [ 16%]
-tests/test_carousel.py .......                                           [ 20%]
-tests/test_carousel_rendering.py .....                                   [ 23%]
-tests/test_docker_config.py ...                                          [ 25%]
-tests/test_feedback.py ...                                               [ 26%]
-tests/test_gate.py ....                                                  [ 28%]
-tests/test_generate.py ....                                              [ 30%]
-tests/test_guardrails.py ..........                                      [ 36%]
-tests/test_infocard.py ...                                               [ 38%]
-tests/test_integration_e2e.py ...                                        [ 39%]
-tests/test_ledger.py ....                                                [ 41%]
-tests/test_linkedin.py ......                                            [ 45%]
-tests/test_linkedin_carousel.py ....                                     [ 47%]
-tests/test_multi_platform.py ....                                        [ 49%]
-tests/test_multiplatform_adaptation.py ....                              [ 51%]
-tests/test_notify.py ......                                              [ 54%]
-tests/test_notify_webhook.py ......                                      [ 58%]
-tests/test_omnipost.py ............                                      [ 64%]
-tests/test_onboarding_ceremony.py .....                                  [ 67%]
-tests/test_pipeline.py ....                                              [ 69%]
+tests/test_adapters.py ...........                                       [  4%]
+tests/test_analytics.py .....                                            [  6%]
+tests/test_bluesky.py .........                                          [ 10%]
+tests/test_browser_daemon.py .........                                   [ 14%]
+tests/test_carousel.py .......                                           [ 17%]
+tests/test_carousel_rendering.py .....                                   [ 20%]
+tests/test_docker_config.py ...                                          [ 21%]
+tests/test_feedback.py ...                                               [ 22%]
+tests/test_gate.py ....                                                  [ 24%]
+tests/test_generate.py .......                                           [ 27%]
+tests/test_guardrails.py ..........                                      [ 31%]
+tests/test_infocard.py ...                                               [ 33%]
+tests/test_integration_e2e.py ...                                        [ 34%]
+tests/test_ledger.py ....                                                [ 36%]
+tests/test_linkedin.py ........                                          [ 39%]
+tests/test_linkedin_carousel.py ....                                     [ 41%]
+tests/test_llm.py ..................                                     [ 49%]
+tests/test_multi_platform.py ....                                        [ 50%]
+tests/test_multiplatform_adaptation.py ....                              [ 52%]
+tests/test_notify.py ......                                              [ 55%]
+tests/test_notify_webhook.py ..............                              [ 61%]
+tests/test_omnipost.py ............                                      [ 66%]
+tests/test_onboarding_ceremony.py .....                                  [ 68%]
+tests/test_pipeline.py ....                                              [ 70%]
 tests/test_prereq_check.py ...........                                   [ 75%]
-tests/test_repurposer.py ......                                          [ 78%]
-tests/test_retry_isolation.py .                                          [ 79%]
-tests/test_threads.py ......                                             [ 82%]
-tests/test_validator.py ....................                             [ 93%]
-tests/test_vps_deployment.py ...                                         [ 95%]
-tests/test_wizard.py .........                                           [100%]
+tests/test_repurposer.py ......                                          [ 77%]
+tests/test_retry_isolation.py .                                          [ 78%]
+tests/test_threads.py .........                                          [ 82%]
+tests/test_validator.py ....................                             [ 90%]
+tests/test_vps_deployment.py ...                                         [ 92%]
+tests/test_wizard.py ..................                                  [100%]
 
-======================= 184 passed in 136.15s (0:02:16) =======================
+======================= 230 passed in 162.16s (0:02:42) =======================
 ```
 
 ---
