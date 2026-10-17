@@ -107,6 +107,22 @@ SUBMIT_POST_JS = r"""
 })()
 """
 
+TOAST_QUERY_JS = r"""
+(() => {
+  const toastLink = document.querySelector('a[href*="/feed/update/urn:li:activity:"]')
+    || document.querySelector('a[href*="urn:li:activity:"]')
+    || document.querySelector('div[role="alert"] a')
+    || document.querySelector('.artdeco-toast-item a');
+  if (toastLink && toastLink.href) return toastLink.href;
+  const toastSpan = [...document.querySelectorAll('span, div')].find(s => {
+    const t = (s.innerText || '').toLowerCase();
+    return t.includes('post successful') || t.includes('your post was shared') || t.includes('view post');
+  });
+  if (toastSpan) return 'success_toast_detected';
+  return null;
+})()
+"""
+
 TRIGGER_DOCUMENT_MODAL_JS = r"""
 (() => {
   const docBtn = document.querySelector('button[aria-label*="Add a document"]')
@@ -375,17 +391,39 @@ class LinkedInAdapter(PlatformAdapter):
                     error=f"LinkedIn post submission error: {sub_res.get('error')}",
                 )
 
-            # Settle after clicking Post
-            await asyncio.sleep(4.0)
+            # In-page toast verification loop (poll for up to 5 seconds)
+            toast_url = None
+            verified = False
+            post_id = None
+            for _ in range(5):
+                await asyncio.sleep(1.0)
+                try:
+                    toast_res = await page.eval(TOAST_QUERY_JS)
+                    if toast_res and toast_res != "null":
+                        if "http" in toast_res or "urn:li:activity" in toast_res:
+                            toast_url = toast_res
+                            verified = True
+                            m = re.search(r"urn:li:activity:(\d+)", toast_url)
+                            if m:
+                                post_id = m.group(1)
+                            break
+                        elif toast_res == "success_toast_detected":
+                            verified = True
+                            break
+                except Exception:
+                    pass
 
-            # Read back verification
-            verified = await self._async_verify(None, payload.text)
+            # If toast was not detected, fall back to recent activity feed verification
+            if not verified:
+                verified = await self._async_verify(None, payload.text)
 
             return PublishResult(
                 platform="linkedin",
                 success=True,
+                post_id=post_id,
+                url=toast_url,
                 verified=verified,
-                raw_response={"submitted": True},
+                raw_response={"submitted": True, "toast_url": toast_url},
             )
         finally:
             await page.__aexit__(None, None, None)

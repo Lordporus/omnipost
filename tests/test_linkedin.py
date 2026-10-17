@@ -111,6 +111,56 @@ class TestLinkedInAdapter(unittest.TestCase):
         self.assertTrue(res.verified)
         mock_page.send.assert_any_call("Input.insertText", text="Automated LinkedIn insight post.")
 
+    @patch.object(LinkedInAdapter, "_check_rate_limit", return_value=(True, None))
+    @patch.object(LinkedInAdapter, "_async_verify")
+    @patch("scripts.browser.settle_page", new_callable=AsyncMock)
+    @patch("adapters.linkedin.LinkedInAdapter._open_stealth")
+    @patch("scripts.browser.ensure_chrome")
+    def test_publish_text_with_toast_urn_success(self, mock_ensure, mock_open, mock_settle, mock_verify, mock_rate):
+        mock_page = AsyncMock()
+        mock_page.eval.side_effect = [
+            "clicked",               # TRIGGER_COMPOSER_JS
+            "focused",               # FOCUS_EDITOR_JS
+            json.dumps({"clicked": True}),  # SUBMIT_POST_JS
+            "https://www.linkedin.com/feed/update/urn:li:activity:7251892837492819201/",  # TOAST_QUERY_JS
+        ]
+        mock_open.return_value = mock_page
+
+        payload = PublishPayload(text="Toast verification test.")
+        res = self.adapter.publish(payload)
+
+        self.assertEqual(res.platform, "linkedin")
+        self.assertTrue(res.success)
+        self.assertTrue(res.verified)
+        self.assertEqual(res.post_id, "7251892837492819201")
+        self.assertEqual(res.url, "https://www.linkedin.com/feed/update/urn:li:activity:7251892837492819201/")
+        # _async_verify should NOT be called because toast verified it
+        mock_verify.assert_not_called()
+
+    @patch.object(LinkedInAdapter, "_check_rate_limit", return_value=(True, None))
+    @patch.object(LinkedInAdapter, "_async_verify")
+    @patch("scripts.browser.settle_page", new_callable=AsyncMock)
+    @patch("adapters.linkedin.LinkedInAdapter._open_stealth")
+    @patch("scripts.browser.ensure_chrome")
+    def test_publish_text_with_toast_text_success(self, mock_ensure, mock_open, mock_settle, mock_verify, mock_rate):
+        mock_page = AsyncMock()
+        mock_page.eval.side_effect = [
+            "clicked",               # TRIGGER_COMPOSER_JS
+            "focused",               # FOCUS_EDITOR_JS
+            json.dumps({"clicked": True}),  # SUBMIT_POST_JS
+            "success_toast_detected",  # TOAST_QUERY_JS
+        ]
+        mock_open.return_value = mock_page
+
+        payload = PublishPayload(text="Toast text verification test.")
+        res = self.adapter.publish(payload)
+
+        self.assertEqual(res.platform, "linkedin")
+        self.assertTrue(res.success)
+        self.assertTrue(res.verified)
+        mock_verify.assert_not_called()
+
 
 if __name__ == "__main__":
     unittest.main()
+

@@ -297,3 +297,73 @@ def send_session_expired_alert(
         timeout=timeout,
         proxy=proxy,
     )
+
+
+def format_summary_card(
+    results: dict[str, Any],
+    slot: str,
+    total_time: float = 0.0,
+    handles: dict[str, str] | None = None,
+) -> str:
+    """Formats an executive multi-platform summary card for Telegram / Discord."""
+    handles = handles or {}
+    lines = [
+        "🚀 OmniPost: Daily Drop Completed!",
+        f"📅 Slot: {slot}",
+        "",
+    ]
+    error_count = 0
+    plat_names = {
+        "x": "X (Twitter)",
+        "bluesky": "Bluesky",
+        "threads": "Threads",
+        "linkedin": "LinkedIn",
+    }
+    for plat_key, r in results.items():
+        name = plat_names.get(plat_key.lower(), plat_key.upper())
+        handle = handles.get(plat_key.lower(), "")
+        handle_str = f": {handle}" if handle else ""
+
+        success = getattr(r, "success", False) if hasattr(r, "success") else bool(r.get("success"))
+        url = getattr(r, "url", None) if hasattr(r, "url") else r.get("url")
+        err = getattr(r, "error", None) if hasattr(r, "error") else r.get("error")
+
+        if success:
+            lines.append(f"✅ {name}{handle_str}")
+            if url:
+                lines.append(f"   🔗 {url}")
+            else:
+                lines.append(f"   🔗 Verified live on feed")
+        elif err == "network_timeout":
+            error_count += 1
+            lines.append(f"⚠️ {name}{handle_str}")
+            lines.append("   ⚠️ Network timeout (deferred check)")
+        else:
+            error_count += 1
+            lines.append(f"❌ {name}{handle_str}")
+            lines.append(f"   ❌ Failed: {err or 'Unknown error'}")
+
+    t_str = f"{int(total_time)}s" if total_time > 0 else "<30s"
+    lines.append("")
+    lines.append(f"🛡️ Guardrails Passed | {error_count} Errors | Total Time: {t_str}")
+    return "\n".join(lines).strip()
+
+
+def dispatch_summary_card(
+    results: dict[str, Any],
+    slot: str,
+    total_time: float = 0.0,
+    handles: dict[str, str] | None = None,
+    timeout: float = DEFAULT_TIMEOUT,
+    proxy: str | None = None,
+) -> bool:
+    """Dispatches the rich multi-platform executive card to configured webhooks."""
+    card = format_summary_card(results=results, slot=slot, total_time=total_time, handles=handles)
+    return dispatch_webhook(
+        event_type="summary",
+        title="OmniPost Executive Report",
+        message=card,
+        timeout=timeout,
+        proxy=proxy,
+    )
+

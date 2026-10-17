@@ -285,3 +285,89 @@ def test_proxy_whitespace_or_empty_ignored():
         assert _load_webhook_proxy() == ""
 
 
+def test_format_summary_card():
+    """Verifies executive multi-platform summary card formatting."""
+    from scripts.notify_webhook import format_summary_card
+    from adapters.base import PublishResult
+
+    results = {
+        "x": PublishResult(
+            platform="x",
+            success=True,
+            url="https://x.com/Lordporus/status/2111153945251062031",
+            verified=True,
+        ),
+        "bluesky": PublishResult(
+            platform="bluesky",
+            success=True,
+            url="https://bsky.app/profile/lordporus.bsky.social/post/3mxz4mltqeh2f",
+            verified=True,
+        ),
+        "threads": PublishResult(
+            platform="threads",
+            success=False,
+            error="network_timeout",
+            verified=False,
+        ),
+        "linkedin": PublishResult(
+            platform="linkedin",
+            success=True,
+            url="https://www.linkedin.com/feed/update/urn:li:activity:7251892837492819201/",
+            verified=True,
+        ),
+    }
+    handles = {
+        "x": "@Lordporus",
+        "bluesky": "@lordporus.bsky.social",
+        "threads": "@ig_lordporus",
+        "linkedin": "Purushottam Kumar",
+    }
+    card = format_summary_card(results=results, slot="2026-10-17 18:30", total_time=28.4, handles=handles)
+
+    assert "🚀 OmniPost: Daily Drop Completed!" in card
+    assert "Slot: 2026-10-17 18:30" in card
+    assert "✅ X (Twitter): @Lordporus" in card
+    assert "🔗 https://x.com/Lordporus/status/2111153945251062031" in card
+    assert "✅ Bluesky: @lordporus.bsky.social" in card
+    assert "⚠️ Threads: @ig_lordporus" in card
+    assert "⚠️ Network timeout" in card
+    assert "✅ LinkedIn: Purushottam Kumar" in card
+    assert "🔗 https://www.linkedin.com/feed/update/urn:li:activity:7251892837492819201/" in card
+    assert "1 Errors" in card
+    assert "28s" in card
+
+
+def test_dispatch_summary_card():
+    """Verifies dispatch_summary_card calls dispatch_webhook with formatted executive card."""
+    from scripts.notify_webhook import dispatch_summary_card
+
+    with patch("scripts.notify_webhook.dispatch_webhook") as mock_dispatch:
+        mock_dispatch.return_value = True
+        ok = dispatch_summary_card(
+            results={"x": {"success": True, "url": "https://x.com/post/1"}},
+            slot="18:00",
+            total_time=15.0,
+        )
+        assert ok is True
+        mock_dispatch.assert_called_once()
+        _, kwargs = mock_dispatch.call_args
+        assert kwargs.get("event_type") == "summary"
+        assert "OmniPost" in kwargs.get("title")
+        assert "Slot: 18:00" in kwargs.get("message")
+
+
+def test_check_connectivity():
+    """Verifies check_connectivity probe returns True on 204/200 and False on exception."""
+    from scripts.publish_now import check_connectivity
+
+    with patch("urllib.request.urlopen") as mock_urlopen:
+        mock_resp = MagicMock()
+        mock_resp.status = 204
+        mock_urlopen.return_value.__enter__.return_value = mock_resp
+        assert check_connectivity() is True
+
+    with patch("urllib.request.urlopen", side_effect=urllib.error.URLError("Network unreachable")):
+        assert check_connectivity() is False
+
+
+

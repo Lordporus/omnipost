@@ -20,6 +20,9 @@ sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "scripts"))
 
 import concurrent.futures
+import json
+import urllib.request
+from typing import Any
 
 try:
     from scripts import settings, ledger, notify_webhook
@@ -29,6 +32,16 @@ except ImportError:
     import notify_webhook
 
 from adapters.base import PublishPayload, PublishResult
+
+
+def check_connectivity(probe_url: str = "https://www.google.com/generate_204", timeout: float = 3.0) -> bool:
+    """Probes internet connectivity via lightweight 204 endpoint."""
+    try:
+        req = urllib.request.Request(probe_url, headers={"User-Agent": "OmniPost/2.5"})
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            return resp.status in (200, 204)
+    except Exception:
+        return False
 
 
 def main() -> int:
@@ -123,6 +136,8 @@ def main() -> int:
         print("Mode:    DRY-RUN (No real posts will be made)", flush=True)
     print("==================================================\n", flush=True)
 
+    start_time = datetime.now()
+
     if args.dry_run:
         for adapter in adapters:
             p_name = adapter.platform_name.upper()
@@ -135,6 +150,10 @@ def main() -> int:
             print(f"  Fits limit: {len(t_content) <= caps.max_characters} ({len(t_content)}/{caps.max_characters}c)", flush=True)
             print(f"  Preview: {t_content[:80]}...", flush=True)
             print(f"  Ready to post: {status.get('ok')}\n", flush=True)
+        return 0
+
+    if not check_connectivity(timeout=3.0):
+        print("[WARN] Internet connection unreachable. Deferring publishing.", flush=True)
         return 0
 
     st = ledger.load_state()
@@ -185,18 +204,18 @@ def main() -> int:
                     {"platform": p_name, "error": str(res.error)},
                 )
         except concurrent.futures.TimeoutError:
-            err_msg = f"Operation timed out after {args.timeout}s"
-            print(f"[{p_name}] TIMEOUT ALERT: {err_msg}! Skipping to next platform.", flush=True)
+            err_msg = "network_timeout"
+            print(f"[{p_name}] TIMEOUT ALERT: Operation timed out after {args.timeout}s! Skipping to next platform.", flush=True)
             err_res = PublishResult(platform=plat_key, success=False, error=err_msg)
             results[plat_key] = err_res
             ledger.record_platform_status(
                 st, today, slot, plat_key, err_res, text=post_text, kind="manual_test"
             )
             notify_webhook.dispatch_webhook(
-                "failure",
-                f"[{p_name}] Publishing Timed Out",
-                f"Publishing to {p_name} timed out after {args.timeout} seconds.",
-                {"platform": p_name, "timeout_seconds": str(args.timeout)},
+                "warning",
+                f"⚠️ [{p_name}] Network Timeout Alert",
+                f"Post attempt to {p_name} timed out due to unstable network after {args.timeout}s. Check your feed before retrying.",
+                {"platform": p_name, "status": "network_timeout", "timeout": str(args.timeout)},
             )
         except Exception as exc:
             print(f"[{p_name}] EXCEPTION: {exc}", flush=True)
@@ -219,6 +238,24 @@ def main() -> int:
     for plat, r in results.items():
         status_sym = "[PASS]" if r.success else "[FAIL]"
         print(f"{status_sym} {plat.upper()}: url={r.url} verified={r.verified} error={r.error}", flush=True)
+
+    if not args.dry_run and results:
+        handles = {}
+        for adapter in adapters:
+            plat_k = adapter.platform_name.lower()
+            try:
+                stat = adapter.check_session()
+                if stat.get("handle"):
+                    handles[plat_k] = stat.get("handle")
+            except Exception:
+                pass
+        total_time = (datetime.now() - start_time).total_seconds()
+        notify_webhook.dispatch_summary_card(
+            results=results,
+            slot=f"{today} {slot}",
+            total_time=total_time,
+            handles=handles,
+        )
 
     return 0 if all_ok else 1
 
