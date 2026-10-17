@@ -75,13 +75,16 @@ CHECK_SESSION_JS = r"""
 # JavaScript to open the post composer
 TRIGGER_COMPOSER_JS = r"""
 (() => {
-  // Find "Start a thread" input prompt or navbar compose button
-  const composeBtn = document.querySelector('div[role="button"][aria-label*="New thread"]')
-    || document.querySelector('svg[aria-label*="New thread"]')?.closest('div[role="button"], button')
-    || document.querySelector('div.x1i10hfl[role="button"]')
-    || [...document.querySelectorAll('div[role="button"], button')].find(d => (d.innerText || '').toLowerCase().includes('start a thread') || (d.innerText || '').toLowerCase().includes('new thread'));
-  if (composeBtn) {
-    composeBtn.click();
+  const btn = document.querySelector('svg[aria-label="Create"]')?.closest('div[role="button"]')
+    || document.querySelector('svg[aria-label="New thread"]')?.closest('div[role="button"]')
+    || document.querySelector('div[aria-label*="Empty text field"]')
+    || document.querySelector('div[role="button"][aria-label*="New thread"]')
+    || [...document.querySelectorAll('div[role="button"], button')].find(d => {
+         const t = (d.innerText || '').toLowerCase();
+         return t.includes('what’s new') || t.includes("what's new") || t.includes('start a thread') || t.includes('new thread');
+       });
+  if (btn) {
+    btn.click();
     return 'clicked';
   }
   return 'not_found';
@@ -90,7 +93,8 @@ TRIGGER_COMPOSER_JS = r"""
 
 FOCUS_EDITOR_JS = r"""
 (() => {
-  const ed = document.querySelector('div[role="textbox"][contenteditable="true"]')
+  const ed = document.querySelector('div[contenteditable="true"][role="textbox"]')
+    || document.querySelector('div[contenteditable="true"]')
     || document.querySelector('div[data-lexical-editor="true"]')
     || document.querySelector('div.notranslate[contenteditable="true"]');
   if (!ed) return 'no_editor';
@@ -101,7 +105,7 @@ FOCUS_EDITOR_JS = r"""
 
 SUBMIT_POST_JS = r"""
 (() => {
-  const postBtn = [...document.querySelectorAll('div[role="button"]')].find(b => (b.innerText || '').trim().toLowerCase() === 'post')
+  const postBtn = [...document.querySelectorAll('div[role="button"], button')].find(b => (b.innerText || '').trim().toLowerCase() === 'post')
     || document.querySelector('div[role="button"][aria-label*="Post"]');
   if (!postBtn) return JSON.stringify({error: 'post_btn_not_found'});
   const disabled = postBtn.getAttribute('aria-disabled') === 'true' || postBtn.disabled;

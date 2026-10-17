@@ -309,13 +309,30 @@ async def _attach_image(page: Session, path: Path) -> str:
 
 
 async def _click_post(page: Session) -> str:
-    for _ in range(45):
-        await asyncio.sleep(1.0)
+    for _ in range(25):
+        await asyncio.sleep(0.5)
         st = json.loads(await page.eval(COMPOSE_STATE_JS))
         if st.get("btn_disabled") is False:
-            await page.eval("document.querySelector('%s').click()" % POST_BTN)
+            pos_js = """
+            (() => {
+                const btn = document.querySelector('[data-testid="tweetButton"]')
+                    || document.querySelector('[data-testid="tweetButtonInline"]');
+                if (!btn) return null;
+                const r = btn.getBoundingClientRect();
+                return {x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2)};
+            })()
+            """
+            pos = await page.eval(pos_js)
+            if pos and isinstance(pos, dict):
+                await page.send("Input.dispatchMouseEvent", type="mouseMoved", x=pos["x"], y=pos["y"])
+                await page.send("Input.dispatchMouseEvent", type="mousePressed", x=pos["x"], y=pos["y"], button="left", clickCount=1)
+                await asyncio.sleep(0.1)
+                await page.send("Input.dispatchMouseEvent", type="mouseReleased", x=pos["x"], y=pos["y"], button="left", clickCount=1)
+            await page.eval("(() => { const b = document.querySelector('[data-testid=\"tweetButton\"]') || document.querySelector('[data-testid=\"tweetButtonInline\"]'); if (b) b.click(); })()")
             return "clicked"
+
     return "button never enabled"
+
 
 
 # ------------------------------------------------------------------ read-back
@@ -478,9 +495,9 @@ async def do_post(text: str, image: Path | None = None, kind: str = "value",
     head = _norm(body)[:60]
     match = None
     feed: list[dict] = []
-    deadline = time.time() + 90
+    deadline = time.time() + 25
     while time.time() < deadline:
-        await asyncio.sleep(5)
+        await asyncio.sleep(2.0)
         try:
             feed = await _read_profile()
         except (CDPError, OSError, asyncio.TimeoutError) as err:
@@ -491,6 +508,7 @@ async def do_post(text: str, image: Path | None = None, kind: str = "value",
         match = next((p for p in feed if head and head[:40] in _norm(p.get("text"))), None)
         if match:
             break
+
 
     entry = {
         "at": datetime.now(timezone.utc).isoformat(),

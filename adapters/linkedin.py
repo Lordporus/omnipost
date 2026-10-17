@@ -81,16 +81,17 @@ TRIGGER_COMPOSER_JS = r"""
 
 FOCUS_EDITOR_JS = r"""
 (() => {
-  const ed = document.querySelector('div.tiptap.ProseMirror')
-    || document.querySelector('div[role="textbox"][contenteditable="true"]')
-    || document.querySelector('div.ql-editor[contenteditable="true"]')
+  const ed = document.querySelector('div[role="dialog"] div[contenteditable="true"]')
+    || document.querySelector('div.artdeco-modal div[contenteditable="true"]')
+    || document.querySelector('div.tiptap.ProseMirror')
     || document.querySelector('div.editor-content div[contenteditable="true"]')
-    || document.querySelector('div[role="textbox"]');
+    || document.querySelector('div[role="textbox"][contenteditable="true"]');
   if (!ed) return 'no_editor';
   ed.focus();
   return 'focused';
 })()
 """
+
 
 SUBMIT_POST_JS = r"""
 (() => {
@@ -305,22 +306,21 @@ class LinkedInAdapter(PlatformAdapter):
             await browser.settle_page(page, 4.0)
             
             # Click start a post button
-            pos_js = """
+            click_js = """
             (() => {
-                const el = document.querySelector('*[aria-label*="Start a post"]')
-                    || [...document.querySelectorAll('div, button')].find(b => (b.innerText || '').trim().toLowerCase() === 'start a post');
-                if (!el) return null;
-                const r = el.getBoundingClientRect();
-                return {x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2)};
+                const btn = document.querySelector('button[id*="share-box"]')
+                    || document.querySelector('button.share-box-feed-entry__trigger')
+                    || document.querySelector('button.artdeco-button--tertiary')
+                    || [...document.querySelectorAll('button, div[role="button"]')].find(b => (b.innerText || '').toLowerCase().includes('start a post'));
+                if (!btn) return 'not_found';
+                btn.scrollIntoView({block: 'center'});
+                btn.click();
+                return 'clicked';
             })()
             """
-            pos = await page.eval(pos_js)
-            if pos and isinstance(pos, dict):
-                await page.send("Input.dispatchMouseEvent", type="mousePressed", x=pos["x"], y=pos["y"], button="left", clickCount=1)
-                await page.send("Input.dispatchMouseEvent", type="mouseReleased", x=pos["x"], y=pos["y"], button="left", clickCount=1)
-            elif pos == "clicked":
-                pass
-            else:
+
+            trig = await page.eval(click_js)
+            if trig != "clicked":
                 trig = await page.eval(TRIGGER_COMPOSER_JS)
                 if trig != "clicked":
                     return PublishResult(
@@ -329,7 +329,8 @@ class LinkedInAdapter(PlatformAdapter):
                         error="Could not find 'Start a post' button on LinkedIn feed",
                     )
             
-            await asyncio.sleep(1.5)
+            await asyncio.sleep(2.0)
+
 
             # Attach Carousel PDF if requested
             if payload.media_type == "carousel" and payload.media_paths:
@@ -410,7 +411,7 @@ class LinkedInAdapter(PlatformAdapter):
         try:
             page = await self._open_stealth(target_url)
             try:
-                deadline = time.time() + 35.0
+                deadline = time.time() + 10.0
                 norm_snippet = re.sub(r"\s+", " ", text_snippet[:40]).strip().lower()
 
                 check_js = r"""
@@ -427,7 +428,7 @@ class LinkedInAdapter(PlatformAdapter):
                 """
 
                 while time.time() < deadline:
-                    await browser.settle_page(page, 4.0)
+                    await asyncio.sleep(2.0)
                     try:
                         raw = await page.eval(check_js)
                         posts = json.loads(raw or "[]")
@@ -438,8 +439,8 @@ class LinkedInAdapter(PlatformAdapter):
                         p_text = p.get("text", "")
                         if norm_snippet in re.sub(r"\s+", " ", p_text).lower():
                             return True
-                    await asyncio.sleep(3.0)
                 return False
+
             finally:
                 await page.__aexit__(None, None, None)
         except Exception:

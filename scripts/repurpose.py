@@ -101,11 +101,12 @@ def repurpose_topic(
     takeaway = str(topic_data.get("takeaway") or "")
     category = str(topic_data.get("category") or "AI ARCHITECTURE")
 
-    # Generate tailored text
-    x_text = format_x(headline, points)
-    bsky_text = format_bluesky(headline, points)
-    link_text = format_linkedin(headline, body, points, takeaway)
-    thrd_text = format_threads(headline, takeaway)
+    # Use platform-tailored text if already synthesized, otherwise generate
+    platforms_dict = topic_data.get("platforms") if isinstance(topic_data.get("platforms"), dict) else {}
+    x_text = str(platforms_dict.get("x") or topic_data.get("x") or format_x(headline, points))
+    bsky_text = str(platforms_dict.get("bluesky") or topic_data.get("bluesky") or format_bluesky(headline, points))
+    link_text = str(platforms_dict.get("linkedin") or topic_data.get("linkedin") or format_linkedin(headline, body, points, takeaway))
+    thrd_text = str(platforms_dict.get("threads") or topic_data.get("threads") or format_threads(headline, takeaway))
 
     media_map: dict[str, Any] = {
         "x": [],

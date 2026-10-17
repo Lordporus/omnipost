@@ -176,6 +176,36 @@ def generate_standard_slides(
     takeaway = parsed["takeaway"]
     category = parsed["category"]
 
+    if isinstance(topic_data, dict) and "carousel" in topic_data and isinstance(topic_data["carousel"], dict):
+        raw_slides = topic_data["carousel"].get("slides", [])
+        if raw_slides and isinstance(raw_slides, list) and len(raw_slides) >= 2:
+            parsed_slides = []
+            total = len(raw_slides)
+            for idx, s in enumerate(raw_slides):
+                s_header = str(s.get("header") or s.get("title") or f"Slide {idx+1}").strip()
+                s_body = str(s.get("body") or "").strip()
+                s_bullets = s.get("bullets") if isinstance(s.get("bullets"), list) else []
+                if idx == 0:
+                    s_type = "hero"
+                    s_tag = category
+                elif idx == total - 1:
+                    s_type = "checklist_cta"
+                    s_tag = "CHECKLIST"
+                elif idx == 1:
+                    s_type = "problem"
+                    s_tag = "CONTEXT"
+                else:
+                    s_type = "solution"
+                    s_tag = "FRAMEWORK"
+                parsed_slides.append({
+                    "type": s_type,
+                    "title": s_header,
+                    "tag": s_tag,
+                    "body": s_body,
+                    "bullets": s_bullets,
+                })
+            return parsed_slides
+
     # Slide 1: Hook & Hero (Headline ONLY in Slide 1)
     s1 = {
         "type": "hero",
