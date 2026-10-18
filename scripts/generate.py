@@ -15,15 +15,116 @@ ROOT = Path(__file__).resolve().parent.parent
 
 
 def extract_key_takeaways(text: str) -> list[str]:
-    """Extracts punchy bullet-point takeaways from summary text."""
-    sentences = [s.strip() for s in re.split(r"[.!?]\s+", text) if len(s.strip()) > 15]
-    if not sentences:
-        return [
-            "Deterministic systems outperform probabilistic retry loops.",
-            "Always maintain atomic state ledgers across all platform actions.",
-            "Local CDP execution bypasses external cloud API rate limits.",
-        ]
-    return sentences[:3]
+    """Extracts punchy bullet-point takeaways from summary text, guaranteeing >= 3 points."""
+    fallback_defaults = [
+        "Deterministic state execution outperforms retry loops.",
+        "Decoupled state management ensures crash resilience.",
+        "Verification of published state prevents double dispatch.",
+    ]
+    raw_sentences = [s.strip() for s in re.split(r"[.!?]\s+", text) if len(s.strip()) > 15]
+
+    seen: set[str] = set()
+    points: list[str] = []
+    for s in raw_sentences:
+        clean_s = s.rstrip(".!?").strip()
+        if clean_s and clean_s.lower() not in seen:
+            seen.add(clean_s.lower())
+            points.append(clean_s)
+
+    for fb in fallback_defaults:
+        if len(points) >= 3:
+            break
+        clean_fb = fb.rstrip(".!?").strip()
+        if clean_fb.lower() not in seen:
+            seen.add(clean_fb.lower())
+            points.append(clean_fb)
+
+    return points[:3]
+
+
+def _ensure_carousel_integrity(topic: dict[str, Any], kind: str = "tech_insight") -> dict[str, Any]:
+    """Guarantees every slide in carousel has semantic headers, valid bodies, and non-empty bullets."""
+    if not isinstance(topic, dict):
+        return topic
+
+    category = str(topic.get("category") or ("AI UPDATE" if kind == "ai_update" else "TECH INSIGHT"))
+    headline = str(topic.get("headline") or "Engineering Insight").strip()
+    body = str(topic.get("body") or "").strip()
+    raw_points = topic.get("points") or []
+    points = [str(p).strip() for p in raw_points if str(p).strip()]
+    if len(points) < 3:
+        points = extract_key_takeaways(body or headline)
+    takeaway = str(topic.get("takeaway") or "Build sovereign infrastructure before scaling agents.").strip()
+
+    carousel = topic.get("carousel")
+    if not isinstance(carousel, dict) or not isinstance(carousel.get("slides"), list) or len(carousel.get("slides")) < 4:
+        topic["carousel"] = {
+            "title": headline[:70],
+            "slides": [
+                {
+                    "header": headline[:60],
+                    "body": f"Architectural breakdown of {headline} and its production impact.",
+                    "tag": category,
+                    "bullets": points[:2] if len(points) >= 2 else ["Deterministic design pattern", "Decoupled state management"],
+                },
+                {
+                    "header": "Core Architectural Friction",
+                    "body": body[:200] if body else "Production failure recovery and distributed state management.",
+                    "tag": "BOTTLENECK",
+                    "bullets": [points[0]] if points else ["Unverified state cascades across services"],
+                },
+                {
+                    "header": "Implementation Pattern",
+                    "body": points[1] if len(points) > 1 else "State machine verification pattern",
+                    "tag": "IMPLEMENTATION",
+                    "bullets": points[1:3] if len(points) > 2 else ["Deterministic execution beats flaky retry loops"],
+                },
+                {
+                    "header": "Production Verification Checklist",
+                    "body": f"Key takeaway: {takeaway}",
+                    "tag": "CHECKLIST",
+                    "bullets": [
+                        "Atomic state persistence",
+                        "Isolated failure recovery",
+                        "Verified credential boundaries",
+                    ],
+                },
+            ],
+        }
+        return topic
+
+    default_headers = [
+        headline[:60],
+        "Core Architectural Friction",
+        "Implementation Pattern",
+        "Production Verification Checklist",
+    ]
+    default_bullets = [
+        points[:2] if len(points) >= 2 else ["Deterministic design pattern", "Decoupled state management"],
+        [points[0]] if points else ["Unverified state cascades across services"],
+        points[1:3] if len(points) > 2 else ["Deterministic execution beats flaky retry loops"],
+        [
+            "Atomic state persistence",
+            "Isolated failure recovery",
+            "Verified credential boundaries",
+        ],
+    ]
+
+    for idx, slide in enumerate(carousel["slides"]):
+        if not isinstance(slide, dict):
+            continue
+        hdr = str(slide.get("header") or slide.get("title") or "").strip()
+        cleaned_hdr = re.sub(r"^0\d\.\s*", "", hdr).strip()
+        if not cleaned_hdr or cleaned_hdr.lower() in ("overview", "technical context", "key takeaway", "summary", "the fragility trap", "atomic ledgers", "local cdp control"):
+            slide["header"] = default_headers[min(idx, len(default_headers) - 1)]
+        else:
+            slide["header"] = cleaned_hdr
+
+        existing_bullets = slide.get("bullets")
+        if not isinstance(existing_bullets, list) or len(existing_bullets) == 0:
+            slide["bullets"] = default_bullets[min(idx, len(default_bullets) - 1)]
+
+    return topic
 
 
 def generate_heuristic_topic(kind: str, items: list[dict[str, Any]]) -> dict[str, Any]:
@@ -64,13 +165,44 @@ def generate_heuristic_topic(kind: str, items: list[dict[str, Any]]) -> dict[str
             + f"\n\nBottom line: {takeaway}"
         )
         carousel = {
-            "title": headline,
+            "title": headline[:70],
             "slides": [
-                {"header": "01. The Fragility Trap", "body": "Why probabilistic LLM retry loops fail under high concurrency and real network conditions."},
-                {"header": "02. Atomic Ledgers", "body": "Using verified local state machines to guarantee zero duplicate publishing."},
-                {"header": "03. Local CDP Control", "body": "Bypassing expensive SaaS rate limits using native browser automation."},
-                {"header": "04. Production Checklist", "body": "Always decouple prompt generation from execution state. Verification beats optimistic publishing."}
-            ]
+                {
+                    "header": headline[:60],
+                    "body": "Architectural breakdown of deterministic agent systems and production reliability.",
+                    "tag": category,
+                    "bullets": points[:2] if len(points) >= 2 else [
+                        "Deterministic design pattern",
+                        "Decoupled state management",
+                    ],
+                },
+                {
+                    "header": "Core Architectural Friction",
+                    "body": "Why probabilistic LLM retry loops fail under high concurrency and real network conditions.",
+                    "tag": "BOTTLENECK",
+                    "bullets": [points[0]] if points else [
+                        "Unverified state cascades across services",
+                    ],
+                },
+                {
+                    "header": "Implementation Pattern",
+                    "body": points[1] if len(points) > 1 else "State machine verification pattern",
+                    "tag": "IMPLEMENTATION",
+                    "bullets": points[1:3] if len(points) > 2 else [
+                        "Deterministic execution beats flaky retry loops",
+                    ],
+                },
+                {
+                    "header": "Production Verification Checklist",
+                    "body": f"Key takeaway: {takeaway}",
+                    "tag": "CHECKLIST",
+                    "bullets": [
+                        "Atomic state persistence",
+                        "Isolated failure recovery",
+                        "Verified credential boundaries",
+                    ],
+                },
+            ],
         }
 
         return {
@@ -107,7 +239,21 @@ def generate_heuristic_topic(kind: str, items: list[dict[str, Any]]) -> dict[str
 
     category = "AI UPDATE" if kind == "ai_update" else "TECH INSIGHT"
     body = summary[:300] if len(summary) > 20 else f"{title}. Key engineering analysis and practical implications for production systems."
-    takeaway = f"Read more on {top_item.get('source', 'source').upper()}: {top_item.get('url', '')}".strip()
+
+    raw_url = str(top_item.get("url") or "").strip()
+    source_name = str(top_item.get("source") or "web").strip()
+    domain = ""
+    if raw_url:
+        domain_match = re.search(r"https?://(?:www\.)?([^/]+)", raw_url)
+        if domain_match:
+            domain = domain_match.group(1)
+
+    if domain:
+        takeaway = f"{domain} • Verified Reference"
+    elif source_name and source_name.lower() != "web":
+        takeaway = f"{source_name.upper()} • Verified Reference"
+    else:
+        takeaway = "Build sovereign infrastructure before scaling agents."
 
     # Craft 4 platform-native archetypes
     # X: <280 chars, punchy 1-2 liner, no hashtags
@@ -135,13 +281,37 @@ def generate_heuristic_topic(kind: str, items: list[dict[str, Any]]) -> dict[str
     )
 
     carousel = {
-        "title": title[:60],
+        "title": title[:70],
         "slides": [
-            {"header": "01. Overview", "body": title},
-            {"header": "02. Technical Context", "body": body[:200]},
-            {"header": "03. Key Takeaway", "body": points[0] if points else "Engineering insight"},
-            {"header": "04. Summary", "body": takeaway[:180] if takeaway else "Follow for daily architectural breakdowns."}
-        ]
+            {
+                "header": title[:60],
+                "body": f"Architectural breakdown of {title} and its production impact.",
+                "tag": category,
+                "bullets": points[:2] if len(points) >= 2 else ["Deterministic design pattern", "Decoupled state management"],
+            },
+            {
+                "header": "Core Architectural Friction",
+                "body": body[:200],
+                "tag": "BOTTLENECK",
+                "bullets": [points[0]] if points else ["Unverified state cascades across services"],
+            },
+            {
+                "header": "Implementation Pattern",
+                "body": points[1] if len(points) > 1 else "State machine verification pattern",
+                "tag": "IMPLEMENTATION",
+                "bullets": points[1:3] if len(points) > 2 else ["Deterministic execution beats flaky retry loops"],
+            },
+            {
+                "header": "Production Verification Checklist",
+                "body": f"Key takeaway: {takeaway}",
+                "tag": "CHECKLIST",
+                "bullets": [
+                    "Atomic state persistence",
+                    "Isolated failure recovery",
+                    "Verified credential boundaries",
+                ],
+            },
+        ],
     }
 
     return {
@@ -201,7 +371,8 @@ def generate_topic_from_items(
     deterministic heuristic generation on failure or when LLM is unconfigured.
     """
     if not items:
-        return generate_heuristic_topic(kind, items)
+        topic = generate_heuristic_topic(kind, items)
+        return _ensure_carousel_integrity(topic, kind)
 
     if use_llm:
         from scripts.llm import generate_topic_with_llm
@@ -211,9 +382,10 @@ def generate_topic_from_items(
             voice_profile=voice_profile,
         )
         if ok and topic:
-            return topic
+            return _ensure_carousel_integrity(topic, kind)
 
-    return generate_heuristic_topic(kind, items)
+    topic = generate_heuristic_topic(kind, items)
+    return _ensure_carousel_integrity(topic, kind)
 
 
 def load_daily_swipe(date_str: str) -> list[dict[str, Any]]:

@@ -50,6 +50,7 @@ def main() -> int:
     )
     parser.add_argument("--text", default=None, help="Text content to publish (uniform text across platforms)")
     parser.add_argument("--draft", default=None, help="Path to draft JSON or JSON string with platform-native texts")
+    parser.add_argument("--slot", help="Specific time slot to publish from daily draft (e.g. 13:00)")
     parser.add_argument("--dry-run", action="store_true", help="Simulate publish without sending")
     parser.add_argument("--image", help="Optional local image path to attach")
     parser.add_argument("--platforms", help="Comma-separated platforms to target (e.g. linkedin,threads)")
@@ -78,10 +79,28 @@ def main() -> int:
                 print(f"[ERROR] Specified draft path does not exist and is not valid JSON: {args.draft}", flush=True)
                 return 1
 
+        # Check for daily schedule slots structure
+        if "slots" in draft_data and isinstance(draft_data["slots"], list) and len(draft_data["slots"]) > 0:
+            selected = None
+            if getattr(args, "slot", None):
+                target_slot = args.slot.strip()
+                selected = next((s for s in draft_data["slots"] if s.get("slot") == target_slot), None)
+                if not selected:
+                    available = [s.get("slot") for s in draft_data["slots"] if s.get("slot")]
+                    print(f"[ERROR] Slot '{args.slot}' not found in draft file. Available: {available}", flush=True)
+                    return 1
+            else:
+                # Default to first unposted slot, or slots[0]
+                selected = next((s for s in draft_data["slots"] if not s.get("posted", False)), draft_data["slots"][0])
+            draft_data = selected
+
         # Extract platform tailored texts and media
         platforms_dict = draft_data.get("platforms") if isinstance(draft_data.get("platforms"), dict) else {}
         for plat in ["x", "bluesky", "linkedin", "threads"]:
             p_val = draft_data.get(plat)
+            if p_val is None and plat in platforms_dict:
+                p_val = platforms_dict[plat]
+
             if isinstance(p_val, dict):
                 if p_val.get("text"):
                     tailored_texts[plat] = str(p_val["text"])
@@ -95,10 +114,11 @@ def main() -> int:
                         tailored_media[plat] = paths
             elif isinstance(p_val, str) and p_val.strip():
                 tailored_texts[plat] = p_val.strip()
-            elif plat in platforms_dict and isinstance(platforms_dict[plat], str):
-                tailored_texts[plat] = platforms_dict[plat].strip()
 
     uniform_text = (args.text or "").strip()
+    if not uniform_text and draft_data.get("text"):
+        uniform_text = str(draft_data["text"]).strip()
+
     if not uniform_text and not tailored_texts:
         print("[ERROR] Post text or valid --draft must be provided.", flush=True)
         return 1
@@ -112,6 +132,12 @@ def main() -> int:
             print(f"[ERROR] Specified image not found: {p}", flush=True)
             return 1
         media_paths.append(p)
+    elif draft_data.get("image"):
+        p = Path(draft_data["image"])
+        if not p.is_absolute():
+            p = ROOT / p
+        if p.exists():
+            media_paths.append(p)
 
     adapters = settings.get_active_adapters()
     if args.platforms:
@@ -143,7 +169,15 @@ def main() -> int:
             p_name = adapter.platform_name.upper()
             plat_key = adapter.platform_name.lower()
             caps = adapter.capabilities
-            status = adapter.check_session()
+            if plat_key in ("x", "linkedin", "threads"):
+                from scripts import browser
+                if not browser.alive():
+                    status = {"ok": False, "handle": getattr(adapter, "_handle", None) or "Not Running", "error": "Browser CDP daemon not active on port 9444"}
+                else:
+                    status = adapter.check_session()
+            else:
+                status = adapter.check_session()
+
             t_content = tailored_texts.get(plat_key, uniform_text)
             print(f"[{p_name}] Session: {'OK' if status.get('ok') else 'FAIL'}", flush=True)
             print(f"  Account: {status.get('handle')}", flush=True)
@@ -158,7 +192,7 @@ def main() -> int:
 
     st = ledger.load_state()
     today = datetime.now().strftime("%Y-%m-%d")
-    slot = datetime.now().strftime("%H:%M")
+    slot = draft_data.get("slot") or datetime.now().strftime("%H:%M")
 
     results: dict[str, PublishResult] = {}
     for adapter in adapters:

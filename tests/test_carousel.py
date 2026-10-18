@@ -29,7 +29,8 @@ class TestCarouselBuilder(unittest.TestCase):
         self.assertIn("Zero API cost for X", html_out)
         self.assertIn("@Lordporus", html_out)
         self.assertIn("1 / 1", html_out)
-        self.assertIn("Connect & Share", html_out)  # Last slide CTA
+        self.assertIn("slide-pagination", html_out)
+        self.assertIn("pagination-pill", html_out)
         self.assertIn("@page {", html_out)
         self.assertIn("1080px 1080px", html_out)
 
@@ -43,24 +44,21 @@ class TestCarouselBuilder(unittest.TestCase):
 
         self.assertIn("Slide 1 Hook", html_out)
         self.assertIn("1 / 3", html_out)
-        self.assertIn("Swipe ➔", html_out)  # Early slide CTA
         self.assertIn("3 / 3", html_out)
-        self.assertIn("Connect & Share", html_out)
+        self.assertIn("slide-pagination", html_out)
+        self.assertIn("pagination-pill", html_out)
 
     def test_create_carousel_pdf_empty_slides_raises(self):
         with self.assertRaises(ValueError):
             create_carousel_pdf([])
 
+    @patch("render.carousel.asyncio.run")
     @patch("render.carousel._render_pdf_cdp")
-    def test_create_carousel_pdf_delegates_to_cdp(self, mock_render_cdp):
+    def test_create_carousel_pdf_delegates_to_cdp(self, mock_render_cdp, mock_asyncio_run):
         fake_pdf = Path("scratch/test_carousel.pdf")
-
-        async def fake_render(html_file, output_pdf, port):
-            output_pdf.parent.mkdir(parents=True, exist_ok=True)
-            output_pdf.write_bytes(b"%PDF-1.4 test vector pdf content")
-            return output_pdf
-
-        mock_render_cdp.side_effect = fake_render
+        fake_pdf.parent.mkdir(parents=True, exist_ok=True)
+        fake_pdf.write_bytes(b"%PDF-1.4 test vector pdf content")
+        mock_asyncio_run.return_value = fake_pdf
 
         slides = [{"title": "Architecture", "body": "Overview"}]
         result = create_carousel_pdf(
@@ -114,7 +112,8 @@ class TestCarouselBuilder(unittest.TestCase):
         self.assertIn("4 / 4", html_out)
         self.assertIn("bullet-icon-svg", html_out)
         self.assertIn("check-icon-svg", html_out)
-        self.assertIn("swipe-icon-svg", html_out)
+        self.assertIn("slide-pagination", html_out)
+        self.assertIn("pagination-pill", html_out)
 
     def test_parse_linkedin_payload_monolithic_string(self):
         raw_linkedin = (

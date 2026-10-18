@@ -221,7 +221,7 @@ def generate_standard_slides(
     ]
     s2 = {
         "type": "problem",
-        "title": "01. The Problem Space",
+        "title": "The Problem Space",
         "tag": "BOTTLENECK",
         "body": problem_context,
         "bullets": problem_bullets,
@@ -232,7 +232,7 @@ def generate_standard_slides(
     sol_bullet = points[1] if len(points) > 1 else "Chrome DevTools Protocol eliminates costly SaaS wrappers"
     s3 = {
         "type": "solution",
-        "title": "02. Core Architecture",
+        "title": "Core Architecture",
         "tag": "IMPLEMENTATION",
         "body": sol_headline,
         "code": (
@@ -257,7 +257,7 @@ def generate_standard_slides(
 
     s4 = {
         "type": "checklist_cta",
-        "title": "03. Production Checklist",
+        "title": "Production Checklist",
         "tag": "CHECKLIST",
         "body": takeaway or "Build sovereign infrastructure before scaling agents.",
         "bullets": checklist_points,
@@ -307,39 +307,39 @@ def build_carousel_html(
             code_html = f'<pre class="code-panel"><code>{html.escape(s_code)}</code></pre>'
 
         # Polymorphic slide body templates
+        # Polymorphic slide body templates
         if s_type == "hero":
+            hero_panel_inner = bullets_html if bullets_html else f"""
+          <div class="hero-overview-badge">
+            <span class="hero-pulse"></span>
+            <span>PRODUCTION BLUEPRINT</span>
+          </div>
+          <div class="hero-subtext">{html.escape(s_body)}</div>"""
             content_block = f"""
         <h1 class="slide-hero-title">{s_title}</h1>
         <div class="slide-hero-subtitle">{s_body}</div>
         <div class="card-panel hero-card-panel">
-          <div class="hero-overview-badge">
-            <span class="hero-pulse"></span>
-            <span>PRODUCTION SYSTEM BLUEPRINT</span>
-          </div>
-          <div class="hero-subtext">A 4-part architectural breakdown of resilient automation, deterministic state machines, and zero-cost distribution.</div>
+          {hero_panel_inner}
         </div>"""
         elif s_type == "problem":
+            card_panel = f'<div class="card-panel card-panel-amber">{bullets_html}</div>' if bullets_html else ""
             content_block = f"""
         <h1 class="slide-title">{s_title}</h1>
         <div class="slide-body">{s_body}</div>
-        <div class="card-panel card-panel-amber">
-          {bullets_html}
-        </div>"""
+        {card_panel}"""
         elif s_type == "solution":
+            inner = f"{code_html}\n{bullets_html}".strip()
+            card_panel = f'<div class="card-panel">{inner}</div>' if inner else ""
             content_block = f"""
         <h1 class="slide-title">{s_title}</h1>
         <div class="slide-body">{s_body}</div>
-        <div class="card-panel">
-          {code_html}
-          {bullets_html}
-        </div>"""
+        {card_panel}"""
         elif s_type == "checklist_cta":
             cta_btn = slide.get("cta_label", "Follow for daily system architectures")
+            card_panel = f'<div class="card-panel checklist-panel">{bullets_html}</div>' if bullets_html else ""
             content_block = f"""
         <h1 class="slide-title">{s_title}</h1>
-        <div class="card-panel checklist-panel">
-          {bullets_html}
-        </div>
+        {card_panel}
         <div class="outro-banner">
           <div class="outro-takeaway-label">CORE TAKEAWAY</div>
           <div class="outro-takeaway">{s_body}</div>
@@ -365,6 +365,13 @@ def build_carousel_html(
 
         badge_class = "badge badge-amber" if s_type == "problem" else "badge"
 
+        # Modern pagination pills (/taste-design clean indicators, no filler text)
+        pills = []
+        for p_idx in range(1, total_slides + 1):
+            active_cls = " active" if p_idx == idx else ""
+            pills.append(f'<span class="pagination-pill{active_cls}"></span>')
+        pagination_html = f'<div class="slide-pagination">{"".join(pills)}</div>'
+
         slide_html = f"""
     <section class="slide">
       <header class="header">
@@ -379,7 +386,7 @@ def build_carousel_html(
       </div>
       <footer class="footer">
         <span class="author-handle"><span class="author-dot"></span>{html.escape(author)}</span>
-        <span class="swipe-cta"><span>{cta_text}</span>{SVG_SWIPE}</span>
+        {pagination_html}
       </footer>
     </section>"""
         slides_markup.append(slide_html)

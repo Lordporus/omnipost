@@ -3,32 +3,31 @@
 <head>
   <meta charset="UTF-8">
   <title>{{MAIN_TITLE}}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700;800;900&family=Geist+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
   <style>
     :root {
-      /* Canvas & Ambient Surfaces */
-      --bg-canvas: #06090E;
-      --bg-card: #121927;
-      --bg-card-elevated: #162032;
+      /* Canvas & Ambient Surfaces (/taste-design Zinc/Slate base) */
+      --bg-canvas: #080A0F;
+      --bg-card: #0F131D;
+      --bg-card-elevated: #151A27;
       --border-card: rgba(255, 255, 255, 0.08);
-      --border-card-highlight: rgba(0, 245, 155, 0.35);
-      --border-card-amber: rgba(245, 158, 11, 0.35);
+      --border-card-highlight: rgba(0, 229, 153, 0.35);
 
       /* High-Contrast Typography */
       --text-primary: #FFFFFF;
-      --text-secondary: #CBD5E1;
+      --text-secondary: #94A3B8;
       --text-muted: #64748B;
 
-      /* Alive Tech Accents */
-      --accent-emerald: #00F59B;
-      --accent-amber: #F59E0B;
-      --accent-cyan: #06B6D4;
-      --accent-gradient: linear-gradient(135deg, #00F59B 0%, #06B6D4 100%);
-      --accent-amber-gradient: linear-gradient(135deg, #F59E0B 0%, #D97706 100%);
-      --accent-glow: rgba(0, 245, 155, 0.12);
+      /* Singular Precision Accent (/taste-design Rule 2: 1 Accent, Saturation < 80%) */
+      --accent-primary: #00E599;
+      --accent-muted: rgba(0, 229, 153, 0.12);
+      --accent-gradient: linear-gradient(135deg, #00E599 0%, #00B4D8 100%);
 
-      /* Typography Stack */
-      --font-sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-      --font-mono: "JetBrains Mono", "Fira Code", Consolas, "Courier New", monospace;
+      /* Typography Stack (Geist + Geist Mono) */
+      --font-sans: "Geist", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      --font-mono: "Geist Mono", "JetBrains Mono", Consolas, monospace;
     }
 
     @page {
@@ -104,21 +103,21 @@
     }
 
     .badge {
-      font-size: 15px;
+      font-size: 14px;
       font-weight: 700;
       letter-spacing: 0.12em;
       text-transform: uppercase;
-      color: var(--accent-emerald);
-      background: rgba(0, 245, 155, 0.1);
+      color: var(--accent-primary);
+      background: var(--accent-muted);
       border: 1px solid var(--border-card-highlight);
-      padding: 8px 20px;
+      padding: 6px 18px;
       border-radius: 999px;
     }
 
     .badge-amber {
-      color: var(--accent-amber);
-      background: rgba(245, 158, 11, 0.1);
-      border: 1px solid var(--border-card-amber);
+      color: var(--accent-primary);
+      background: var(--accent-muted);
+      border: 1px solid var(--border-card-highlight);
     }
 
     .author-badge {
@@ -129,12 +128,12 @@
     }
 
     .slide-counter {
-      font-size: 18px;
+      font-size: 16px;
       font-weight: 700;
       color: var(--text-muted);
       font-variant-numeric: tabular-nums;
       background: rgba(255, 255, 255, 0.04);
-      padding: 8px 16px;
+      padding: 6px 14px;
       border-radius: 8px;
       border: 1px solid var(--border-card);
     }
@@ -149,13 +148,13 @@
     }
 
     .slide-hero-title {
-      font-size: 56px;
+      font-size: 58px;
       font-weight: 900;
       line-height: 1.15;
       letter-spacing: -0.03em;
       color: #FFFFFF;
       margin-bottom: 24px;
-      background: linear-gradient(180deg, #FFFFFF 40%, #CBD5E1 100%);
+      background: linear-gradient(180deg, #FFFFFF 40%, #94A3B8 100%);
       -webkit-background-clip: text;
       -webkit-text-fill-color: transparent;
     }
@@ -169,7 +168,7 @@
     }
 
     .slide-title {
-      font-size: 44px;
+      font-size: 46px;
       font-weight: 800;
       line-height: 1.2;
       color: #FFFFFF;
@@ -195,7 +194,7 @@
     }
 
     .card-panel-amber {
-      border-color: rgba(245, 158, 11, 0.2);
+      border-color: var(--border-card-highlight);
     }
 
     .hero-card-panel {
@@ -203,26 +202,26 @@
       flex-direction: column;
       gap: 16px;
       border-color: var(--border-card-highlight);
-      background: radial-gradient(circle at 10% 20%, #16253B 0%, var(--bg-card) 90%);
+      background: radial-gradient(circle at 10% 20%, #162032 0%, var(--bg-card) 90%);
     }
 
     .hero-overview-badge {
       display: inline-flex;
       align-items: center;
       gap: 12px;
-      font-size: 14px;
+      font-size: 13px;
       font-weight: 800;
       letter-spacing: 0.14em;
       text-transform: uppercase;
-      color: var(--accent-emerald);
+      color: var(--accent-primary);
     }
 
     .hero-pulse {
-      width: 10px;
-      height: 10px;
+      width: 8px;
+      height: 8px;
       border-radius: 50%;
-      background: var(--accent-emerald);
-      box-shadow: 0 0 12px var(--accent-emerald);
+      background: var(--accent-primary);
+      box-shadow: 0 0 10px var(--accent-primary);
     }
 
     .hero-subtext {
@@ -249,13 +248,13 @@
     }
 
     .bullet-icon-svg {
-      color: var(--accent-cyan);
+      color: var(--accent-primary);
       flex-shrink: 0;
       margin-top: 6px;
     }
 
     .check-icon-svg {
-      color: var(--accent-emerald);
+      color: var(--accent-primary);
       flex-shrink: 0;
       margin-top: 4px;
     }
@@ -263,13 +262,13 @@
     /* Technical Code Panel */
     .code-panel {
       background: #04070D;
-      border: 1px solid rgba(6, 182, 212, 0.25);
+      border: 1px solid rgba(0, 229, 153, 0.25);
       border-radius: 12px;
       padding: 24px 32px;
       font-family: var(--font-mono);
       font-size: 20px;
       line-height: 1.6;
-      color: #38BDF8;
+      color: var(--accent-primary);
       margin-bottom: 24px;
       white-space: pre-wrap;
       box-shadow: inset 0 2px 8px rgba(0, 0, 0, 0.8);
@@ -286,7 +285,7 @@
       align-items: center;
       text-align: center;
       gap: 16px;
-      background: radial-gradient(circle at 50% 50%, #16243A 0%, var(--bg-card) 100%);
+      background: radial-gradient(circle at 50% 50%, #151A27 0%, var(--bg-card) 100%);
       border: 1px solid var(--border-card-highlight);
       border-radius: 16px;
       padding: 32px 40px;
@@ -297,7 +296,7 @@
       font-weight: 800;
       letter-spacing: 0.16em;
       text-transform: uppercase;
-      color: var(--accent-emerald);
+      color: var(--accent-primary);
     }
 
     .outro-takeaway {
@@ -310,15 +309,15 @@
 
     .outro-btn {
       display: inline-block;
-      font-size: 18px;
+      font-size: 17px;
       font-weight: 800;
-      color: #06090E;
+      color: #080A0F;
       background: var(--accent-gradient);
       padding: 12px 36px;
       border-radius: 999px;
       letter-spacing: 0.05em;
       text-transform: uppercase;
-      box-shadow: 0 8px 24px rgba(0, 245, 155, 0.25);
+      box-shadow: 0 8px 24px rgba(0, 229, 153, 0.25);
     }
 
     /* Legacy fallback outro card */
@@ -328,7 +327,7 @@
       flex-direction: column;
       align-items: center;
       gap: 24px;
-      background: radial-gradient(circle at 50% 50%, #16243A 0%, var(--bg-card) 100%);
+      background: radial-gradient(circle at 50% 50%, #151A27 0%, var(--bg-card) 100%);
       border: 1px solid var(--border-card-highlight);
       border-radius: 20px;
       padding: 48px;
@@ -358,7 +357,7 @@
     }
 
     .author-handle {
-      font-size: 18px;
+      font-size: 17px;
       font-weight: 600;
       color: var(--text-secondary);
       display: flex;
@@ -370,23 +369,28 @@
       width: 8px;
       height: 8px;
       border-radius: 50%;
-      background: var(--accent-emerald);
-      box-shadow: 0 0 8px var(--accent-emerald);
+      background: var(--accent-primary);
+      box-shadow: 0 0 8px var(--accent-primary);
     }
 
-    .swipe-cta {
+    .slide-pagination {
       display: flex;
       align-items: center;
       gap: 8px;
-      font-size: 18px;
-      font-weight: 700;
-      color: var(--accent-cyan);
-      letter-spacing: 0.06em;
-      text-transform: uppercase;
     }
 
-    .swipe-icon-svg {
-      color: var(--accent-cyan);
+    .pagination-pill {
+      height: 6px;
+      width: 18px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.15);
+      transition: background 0.3s ease;
+    }
+
+    .pagination-pill.active {
+      width: 32px;
+      background: var(--accent-primary);
+      box-shadow: 0 0 10px rgba(0, 229, 153, 0.4);
     }
   </style>
 </head>

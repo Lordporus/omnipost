@@ -110,12 +110,11 @@ def test_create_carousel_pdf_binary_structure(tmp_path):
     # Minimal valid PDF binary sample (%PDF-1.4 header + basic trailer)
     mock_pdf_bytes = b"%PDF-1.4\n1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n%%EOF"
 
-    async def fake_render(html_file, output_pdf, port):
+    with patch("render.carousel.asyncio.run") as mock_asyncio_run, patch("render.carousel._render_pdf_cdp"):
         output_pdf.parent.mkdir(parents=True, exist_ok=True)
         output_pdf.write_bytes(mock_pdf_bytes)
-        return output_pdf
+        mock_asyncio_run.return_value = output_pdf
 
-    with patch("render.carousel._render_pdf_cdp", side_effect=fake_render):
         slides = generate_standard_slides({
             "headline": "Sovereign Engineering Stack",
             "body": "Zero external dependencies beyond standard library and Chrome CDP.",

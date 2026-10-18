@@ -50,9 +50,12 @@ def ensure_browser_running(max_wait_seconds: int = 10) -> bool:
 
     legacy_profile = home_dir / ".tweetytweets" / "edge-profile"
     default_profile = home_dir / ".omnipost" / "edge-profile"
-    if legacy_profile.exists() and not default_profile.exists():
-        profile_path = str(legacy_profile)
-    else:
+    try:
+        if legacy_profile.exists() and not default_profile.exists():
+            profile_path = str(legacy_profile)
+        else:
+            profile_path = str(default_profile)
+    except OSError:
         profile_path = str(default_profile)
     profile = cfg.get("profile_dir") or profile_path
     

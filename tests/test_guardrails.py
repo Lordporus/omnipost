@@ -197,8 +197,8 @@ class TestGuardRails(unittest.TestCase):
     def test_handle_mismatch_guard_in_post_py(self):
         from scripts.post import require_session
 
-        with patch("scripts.post.session_info") as mock_sess:
-            mock_sess.return_value = {"logged_in": True, "handle": "wrong_user"}
+        with patch("scripts.post.asyncio.run") as mock_asyncio_run, patch("scripts.post.session_info"):
+            mock_asyncio_run.return_value = {"logged_in": True, "handle": "wrong_user"}
             with self.assertRaises(HandleMismatchError):
                 require_session(expect="target_user")
 

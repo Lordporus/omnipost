@@ -35,11 +35,11 @@ except ImportError:
     from browser_daemon import ensure_browser_running
 
 
-def populate_daily_plan(plan: dict[str, Any], swipe_items: list[dict[str, Any]]) -> dict[str, Any]:
+def populate_daily_plan(plan: dict[str, Any], swipe_items: list[dict[str, Any]], force: bool = False) -> dict[str, Any]:
     """Iterates through slots in a plan, generating topics, polymorphic drafts, and assets."""
     for idx, slot_data in enumerate(plan.get("slots", [])):
-        # If text is already populated, skip overwriting
-        if slot_data.get("text") and slot_data.get("platforms"):
+        # If text is already populated, skip overwriting unless force is True
+        if not force and slot_data.get("text") and slot_data.get("platforms"):
             continue
 
         kind = slot_data.get("kind", "value")
@@ -63,7 +63,7 @@ def populate_daily_plan(plan: dict[str, Any], swipe_items: list[dict[str, Any]])
     return plan
 
 
-def run_daily_pipeline(date_str: str | None = None) -> Path:
+def run_daily_pipeline(date_str: str | None = None, force: bool = False) -> Path:
     """Executes the complete daily preparation pipeline."""
     target_date = date_str or datetime.now().strftime("%Y-%m-%d")
     print(f"[PIPELINE] Running daily autonomous pipeline for {target_date}...")
@@ -96,7 +96,7 @@ def run_daily_pipeline(date_str: str | None = None) -> Path:
 
     # 4. Populate slots with polymorphic content & media
     print("[PIPELINE] Synthesizing polymorphic content and rendering media cards...")
-    updated_plan = populate_daily_plan(plan_data, swipe_items)
+    updated_plan = populate_daily_plan(plan_data, swipe_items, force=force)
 
     plan_file.write_text(json.dumps(updated_plan, indent=2, ensure_ascii=False), encoding="utf-8")
     print(f"[PIPELINE] Successfully generated and stored daily plan: {plan_file}")
@@ -106,5 +106,6 @@ def run_daily_pipeline(date_str: str | None = None) -> Path:
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--date", help="Target date YYYY-MM-DD (defaults to today)")
+    parser.add_argument("--force", action="store_true", help="Force re-generation of all slots even if already populated")
     args = parser.parse_args()
-    run_daily_pipeline(args.date)
+    run_daily_pipeline(args.date, force=args.force)

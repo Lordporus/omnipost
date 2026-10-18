@@ -12,9 +12,11 @@ OmniPost evolves from a proven single-platform X autonomous publishing engine in
 - [x] **Phase 4: Meta Threads CDP Adapter & Content Repurposer** - Browser CDP automation for Threads and polymorphic 1-insight-to-4-channel drafting.
 - [x] **Phase 5: Unified Ledger & Cross-Platform Engagement** - Atomic multi-platform ledger in `state.json` v2.0, partial-failure isolation, and closed-loop feedback.
 - [x] **Phase 6: Production Wisdom & Enforcement-First Hardening** - Port TweetyTweets production rigor: risk transparency, code guardrails, voice measurement ritual, $0-cost schedule gate, and E2E integration tests.
-- [ ] **Phase 7: Consumer Onboarding, Platform-Native Synthesis & Resilience Polish** - 1-click bootstrap, dynamic multi-provider model selection, platform-native content archetypes, in-page LinkedIn toast capture, and lean network resilience.
+- [x] **Phase 7: Consumer Onboarding, Platform-Native Synthesis & Resilience Polish** - 1-click bootstrap, dynamic multi-provider model selection, platform-native content archetypes, in-page LinkedIn toast capture, and lean network resilience.
+- [ ] **Phase 8: Visual Taste Overhaul & CLI Draft Dispatcher** - Slot-aware CLI publishing, semantic insight slide generation, Geist font & single-accent visual overhaul, zero-empty-void panel guarantees.
 
 ## Phase Details
+
 
 ### Phase 1: Adapter Foundation & Bluesky Integration
 **Goal**: Decouple publishing into a standard `PlatformAdapter` interface, preserve working X functionality in `adapters/x.py`, implement zero-browser Bluesky publishing over ATProto XRPC, and enable multi-platform configuration toggles.
@@ -123,3 +125,22 @@ Plans:
 - [x] 07-01: 1-Click Root Bootstrap & Onboarding Ceremony with Dynamic Multi-Provider Model Selection & Telegram Validation
 - [x] 07-02: Platform-Native Content & Audience Engagement Engine
 - [x] 07-03: In-Page LinkedIn Toast Verification, Lean Network Resilience & Rich Telegram Alerts
+
+### Phase 8: Visual Taste Overhaul & CLI Draft Dispatcher
+**Goal**: Resolve draft dispatch failures for multi-slot daily schedules, eliminate content echoing, ban cheap numbered meta-labels, upgrade typography and design to Awwwards-caliber `/taste-design` and `/gpt-taste` standards, and enforce zero-empty-void rendering.
+**Depends on**: Phase 7
+**Requirements**: REQ-DISPATCH-SLOT-01, REQ-SYNTH-BULLETS-01, REQ-DESIGN-FONT-01, REQ-DESIGN-PALETTE-01, REQ-DESIGN-VOIDS-01
+**Success Criteria** (what must be TRUE):
+  1. `publish_now.py --draft drafts/YYYY-MM-DD.json` automatically unwraps the daily slots array without schema crash.
+  2. `--slot <HH:MM>` allows on-demand publishing of any specific time slot.
+  3. `scripts/generate.py` guarantees 3 distinct bullet points per slide and strictly bans cheap meta-labels (`01. Overview`, `02. Technical Context`).
+  4. `render/template.html` adopts Google Fonts `Geist` + `Geist Mono` and unifies around a singular precision accent color.
+  5. `render/carousel.py` guarantees zero empty `.card-panel` voids and replaces `"Swipe ➔"` with sleek pagination indicators.
+  6. Dry-run and live PDF compilation pass with 100% visual integrity.
+**Plans**: 4 plans
+
+Plans:
+- [x] 08-01: CLI Draft Dispatcher Slot Unwrapping & Fallback Handling
+- [x] 08-02: Content Synthesis Integrity & Anti-Echo Semantic Slide Generation
+- [x] 08-03: Visual Design Taste Overhaul (/taste-design & /gpt-taste)
+- [x] 08-04: End-to-End Pipeline & Live Publishing Verification

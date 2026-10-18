@@ -137,15 +137,21 @@ def repurpose_topic(
         carousel_dir.mkdir(parents=True, exist_ok=True)
         pdf_path = carousel_dir / "architecture_carousel.pdf"
         try:
-            from render.carousel import generate_standard_slides
+            from scripts import browser
+            from render.carousel import generate_standard_slides, build_carousel_html
             slides = generate_standard_slides(topic_data=topic_data, author=author)
-            create_carousel_pdf(
-                slides=slides,
-                title=headline,
-                tag=category,
-                author=author,
-                output_path=pdf_path,
-            )
+            # Guarantee fresh HTML preview is always generated
+            html_preview = build_carousel_html(slides=slides, title=headline, tag=category, author=author)
+            (carousel_dir / "preview.html").write_text(html_preview, encoding="utf-8")
+
+            if browser.alive():
+                create_carousel_pdf(
+                    slides=slides,
+                    title=headline,
+                    tag=category,
+                    author=author,
+                    output_path=pdf_path,
+                )
             media_map["linkedin"] = [str(pdf_path.relative_to(ROOT))]
         except Exception:
             pass
