@@ -51,15 +51,30 @@ def main() -> int:
     parser.add_argument("--text", default=None, help="Text content to publish (uniform text across platforms)")
     parser.add_argument("--draft", default=None, help="Path to draft JSON or JSON string with platform-native texts")
     parser.add_argument("--slot", help="Specific time slot to publish from daily draft (e.g. 13:00)")
+    parser.add_argument("--fresh", action="store_true", help="Harvest fresh intelligence, generate today's multi-slot draft, and compile unique assets")
+    parser.add_argument("--force-fresh", action="store_true", help="Force re-generation of today's draft even if already populated")
     parser.add_argument("--dry-run", action="store_true", help="Simulate publish without sending")
     parser.add_argument("--image", help="Optional local image path to attach")
     parser.add_argument("--platforms", help="Comma-separated platforms to target (e.g. linkedin,threads)")
-    parser.add_argument("--timeout", type=float, default=45.0, help="Per-platform timeout in seconds (default: 45)")
+    parser.add_argument("--timeout", type=float, default=80.0, help="Per-platform timeout in seconds (default: 80)")
     args = parser.parse_args()
 
     draft_data: dict[str, Any] = {}
     tailored_texts: dict[str, str] = {}
     tailored_media: dict[str, list[Path]] = {}
+    tailored_media_types: dict[str, str] = {}
+    tailored_metadata: dict[str, dict[str, Any]] = {}
+
+    if args.fresh:
+        try:
+            from scripts import pipeline
+            today_str = datetime.now().strftime("%Y-%m-%d")
+            print(f"[*] Running autonomous intelligence pipeline for {today_str}...", flush=True)
+            plan_file = pipeline.run_daily_pipeline(date_str=today_str, force=args.force_fresh)
+            args.draft = str(plan_file)
+        except Exception as exc:
+            print(f"[ERROR] Failed to run fresh pipeline: {exc}", file=sys.stderr, flush=True)
+            return 1
 
     if args.draft:
         draft_str = args.draft.strip()
@@ -112,6 +127,10 @@ def main() -> int:
                             paths.append(mp)
                     if paths:
                         tailored_media[plat] = paths
+                if p_val.get("media_type"):
+                    tailored_media_types[plat] = str(p_val["media_type"]).strip()
+                if p_val.get("document_title"):
+                    tailored_metadata.setdefault(plat, {})["document_title"] = str(p_val["document_title"]).strip()
             elif isinstance(p_val, str) and p_val.strip():
                 tailored_texts[plat] = p_val.strip()
 
@@ -209,10 +228,16 @@ def main() -> int:
         if plat_key in tailored_media:
             plat_media = tailored_media[plat_key]
 
+        media_type = tailored_media_types.get(plat_key, "image")
+        extra_meta = {"kind": "manual_test"}
+        if plat_key in tailored_metadata:
+            extra_meta.update(tailored_metadata[plat_key])
+
         payload = PublishPayload(
             text=post_text,
             media_paths=plat_media,
-            extra_metadata={"kind": "manual_test"},
+            media_type=media_type,
+            extra_metadata=extra_meta,
         )
 
         print(f"[{p_name}] Publishing (max {args.timeout}s)...", flush=True)

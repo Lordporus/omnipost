@@ -25,6 +25,8 @@ class PublishPayload:
     extra_metadata: dict[str, Any] = field(default_factory=dict)
 
 
+import base64
+
 @dataclass
 class PublishResult:
     """Standardized outcome of a platform publish attempt."""
@@ -34,7 +36,32 @@ class PublishResult:
     url: str | None = None
     verified: bool = False
     error: str | None = None
+    artifacts: dict[str, str] = field(default_factory=dict)
     raw_response: dict[str, Any] = field(default_factory=dict)
+
+
+async def capture_failure_artifacts(page: Any, platform: str) -> dict[str, str]:
+    """Capture viewport screenshot and DOM dump upon publishing failure."""
+    shots_dir = Path("shots")
+    shots_dir.mkdir(parents=True, exist_ok=True)
+    shot_path = shots_dir / f"{platform}_fail.png"
+    html_path = shots_dir / f"{platform}_fail.html"
+    artifacts: dict[str, str] = {}
+    try:
+        data = await page.send("Page.captureScreenshot", format="png")
+        if data and "data" in data:
+            shot_path.write_bytes(base64.b64decode(data["data"]))
+            artifacts["screenshot"] = str(shot_path)
+    except Exception:
+        pass
+    try:
+        content = await page.eval("document.documentElement.outerHTML")
+        if content:
+            html_path.write_text(content, encoding="utf-8")
+            artifacts["html"] = str(html_path)
+    except Exception:
+        pass
+    return artifacts
 
 
 class PlatformAdapter(ABC):

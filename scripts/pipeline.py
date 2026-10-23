@@ -52,6 +52,7 @@ def populate_daily_plan(plan: dict[str, Any], swipe_items: list[dict[str, Any]],
             date_str=plan.get("date"),
             generate_media=True,
             author=f"@{settings.load().get('handle', 'Lordporus')} • OmniPost",
+            slot=slot_data.get("slot"),
         )
 
         slot_data["text"] = poly_data["x"]["text"]

@@ -183,8 +183,19 @@ async def open_page(url: str = "about:blank") -> str:
                 is_threads = ("threads.com" in domain or "threads.net" in domain) and ("threads.com" in tab_url or "threads.net" in tab_url)
                 if domain in tab_url or is_threads:
                     ws = tab["webSocketDebuggerUrl"]
-                    # If target url differs, navigate the existing tab unless both are Threads variants
-                    if url.rstrip("/").lower() not in tab_url and not is_threads:
+                    # If target url differs, navigate existing tab. For threads, navigate if on subpage or different host
+                    clean_tab = tab_url.split("?")[0].rstrip("/").lower()
+                    clean_target = url.split("?")[0].rstrip("/").lower()
+                    needs_nav = False
+                    if is_threads:
+                        # threads.com and threads.net are equivalent root domains
+                        is_subpage = any(sub in clean_tab for sub in ("/activity", "/notifications", "/search", "/messages", "/settings", "/post/"))
+                        if is_subpage:
+                            needs_nav = True
+                    elif clean_target not in clean_tab:
+                        needs_nav = True
+
+                    if needs_nav:
                         try:
                             async with Session(ws) as p:
                                 await p.send("Page.navigate", url=url)

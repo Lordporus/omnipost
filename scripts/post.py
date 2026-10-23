@@ -258,7 +258,10 @@ FOCUS_JS = r"""
 
 COMPOSE_STATE_JS = r"""
 (() => {
-  const btn = document.querySelector('[data-testid="tweetButton"]');
+  const btn = document.querySelector('[data-testid="tweetButton"]')
+    || document.querySelector('[data-testid="tweetButtonInline"]')
+    || document.querySelector('button[data-testid*="tweetButton"]')
+    || document.querySelector('div[role="button"][data-testid*="tweetButton"]');
   const ed  = document.querySelector('[data-testid="tweetTextarea_0"]');
   const toast = document.querySelector('[data-testid="toast"]');
   const txt = document.body ? document.body.innerText : '';
@@ -316,7 +319,9 @@ async def _click_post(page: Session) -> str:
             pos_js = """
             (() => {
                 const btn = document.querySelector('[data-testid="tweetButton"]')
-                    || document.querySelector('[data-testid="tweetButtonInline"]');
+                    || document.querySelector('[data-testid="tweetButtonInline"]')
+                    || document.querySelector('button[data-testid*="tweetButton"]')
+                    || document.querySelector('div[role="button"][data-testid*="tweetButton"]');
                 if (!btn) return null;
                 const r = btn.getBoundingClientRect();
                 return {x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2)};
@@ -328,7 +333,7 @@ async def _click_post(page: Session) -> str:
                 await page.send("Input.dispatchMouseEvent", type="mousePressed", x=pos["x"], y=pos["y"], button="left", clickCount=1)
                 await asyncio.sleep(0.1)
                 await page.send("Input.dispatchMouseEvent", type="mouseReleased", x=pos["x"], y=pos["y"], button="left", clickCount=1)
-            await page.eval("(() => { const b = document.querySelector('[data-testid=\"tweetButton\"]') || document.querySelector('[data-testid=\"tweetButtonInline\"]'); if (b) b.click(); })()")
+            await page.eval("(() => { const b = document.querySelector('[data-testid=\"tweetButton\"]') || document.querySelector('[data-testid=\"tweetButtonInline\"]') || document.querySelector('button[data-testid*=\"tweetButton\"]') || document.querySelector('div[role=\"button\"][data-testid*=\"tweetButton\"]'); if (b) b.click(); })()")
             return "clicked"
 
     return "button never enabled"
@@ -408,13 +413,13 @@ async def capture(what: str = "profile", h: str | None = None) -> dict:
     path = SHOTS / f"{what}.png"
     page = await _open(url)
     try:
-        await browser.settle_page(page, 9 if what == "profile" else 5)
+        await browser.settle_page(page, 4.0 if what == "profile" else 3.0)
         await page.send("Emulation.setDeviceMetricsOverride", width=1280, height=1000,
                         deviceScaleFactor=1, mobile=False)
         note = None
         if what == "profile":
             note = await page.eval(SCROLL_TO_ARTICLE_JS)
-            await asyncio.sleep(1.5)
+            await asyncio.sleep(1.0)
         res = await page.send("Page.captureScreenshot", format="png")
         path.write_bytes(base64.b64decode(res["data"]))
         title = await page.eval("document.title")
@@ -427,7 +432,7 @@ async def capture(what: str = "profile", h: str | None = None) -> dict:
 # ------------------------------------------------------------------ posting
 
 async def do_post(text: str, image: Path | None = None, kind: str = "value",
-                  dry_run: bool = False, settle: float = 6.0) -> dict:
+                  dry_run: bool = False, settle: float = 4.0) -> dict:
     c = cfg()
     st = load_state()
     day = next_day(st) if kind == "ai_update" else None
@@ -479,6 +484,8 @@ async def do_post(text: str, image: Path | None = None, kind: str = "value",
                     "note": "nothing was published"}
 
         click = await _click_post(page)
+        if click != "clicked":
+            return {"error": f"Post button click failed: {click}", "click": click, "screenshot": str(shot)}
         sent = False
         for _ in range(30):
             await asyncio.sleep(1.0)

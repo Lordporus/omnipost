@@ -79,17 +79,26 @@ def parse_linkedin_payload(payload: str | dict[str, Any]) -> dict[str, Any]:
             parsed["category"] = category.upper()
             return parsed
 
+        # Derive dynamic points and context if missing, without ANY hardcoded strings
         clean_hl_val = _clean_text(headline)
         clean_points = [_clean_bullet(p) for p in raw_points if str(p).strip() and _clean_bullet(p) != clean_hl_val]
+        
+        ctx = _clean_text(body)
+        if not clean_points:
+            sentences = [s.strip() for s in re.split(r'[\n.·•►▸;]', ctx) if len(s.strip()) > 15]
+            clean_points = [s for s in sentences if s != clean_hl_val][:3]
+        if not clean_points:
+            clean_points = [f"Core engineering analysis for {clean_hl_val}"]
+
+        dyn_takeaway = _clean_text(takeaway)
+        if not dyn_takeaway:
+            dyn_takeaway = clean_points[-1] if clean_points else f"Key implementation principle for {clean_hl_val}."
+
         return {
             "headline": clean_hl_val,
-            "problem_context": _clean_text(body) or "Production systems design patterns and failure recovery.",
-            "points": clean_points or [
-                "Deterministic state machine ensures zero dual-post bugs",
-                "Chrome DevTools Protocol renders native vector PDFs locally",
-                "Cross-channel polymorphic repurposing from a single insight",
-            ],
-            "takeaway": _clean_text(takeaway) or "Build sovereign infrastructure before scaling agents.",
+            "problem_context": ctx or f"System architecture deep dive into {clean_hl_val}.",
+            "points": clean_points,
+            "takeaway": dyn_takeaway,
             "category": str(category).upper(),
         }
 
@@ -112,7 +121,7 @@ def parse_linkedin_payload(payload: str | dict[str, Any]) -> dict[str, Any]:
 
     # 3. Extract Bullet Points / Key Takeaways section
     points: list[str] = []
-    takeaways_split = re.split(r"(?i)\n+key\s+engineering\s+takeaways:\s*\n*", text)
+    takeaways_split = re.split(r"(?i)\n+key\s+(?:engineering\s+)?takeaways:\s*\n*", text)
     if len(takeaways_split) > 1:
         text_before_bullets = takeaways_split[0].strip()
         bullet_block = takeaways_split[1].strip()
@@ -130,14 +139,13 @@ def parse_linkedin_payload(payload: str | dict[str, Any]) -> dict[str, Any]:
     paragraphs = [p.strip() for p in text_before_bullets.split("\n\n") if p.strip()]
     if len(paragraphs) >= 2:
         headline = paragraphs[0]
-        # Slide 2 Problem context: remaining paragraphs joined without headline
         problem_context = " ".join(paragraphs[1:])
     elif len(paragraphs) == 1:
         lines = [line.strip() for line in paragraphs[0].split("\n") if line.strip()]
-        headline = lines[0] if lines else "Autonomous Architecture"
+        headline = lines[0] if lines else "Engineering Architecture"
         problem_context = " ".join(lines[1:]) if len(lines) > 1 else ""
     else:
-        headline = "Autonomous Architecture"
+        headline = "Engineering Architecture"
         problem_context = ""
 
     # Clean out any leftover headline substring from problem_context
@@ -149,18 +157,23 @@ def parse_linkedin_payload(payload: str | dict[str, Any]) -> dict[str, Any]:
     points = [p for p in points if p != clean_hl]
 
     if not problem_context:
-        problem_context = "Production systems design patterns and failure recovery."
+        problem_context = f"Production architecture deep dive and engineering breakdown for {clean_hl}."
+
+    if not points:
+        sentences = [s.strip() for s in re.split(r'[\n.·•►▸;]', text_before_bullets) if len(s.strip()) > 15]
+        points = [s for s in sentences if s != clean_hl][:3]
+    if not points:
+        points = [f"Core system design consideration for {clean_hl}"]
+
+    if not takeaway:
+        takeaway = points[-1] if points else f"Production implementation takeaway for {clean_hl}."
 
     return {
         "headline": clean_hl,
         "problem_context": _clean_text(problem_context),
-        "points": points or [
-            "Deterministic state machine ensures zero dual-post bugs",
-            "Chrome DevTools Protocol renders native vector PDFs locally",
-            "Cross-channel polymorphic repurposing from a single insight",
-        ],
-        "takeaway": takeaway or "Build sovereign infrastructure before scaling agents.",
-        "category": "SYSTEMS DESIGN",
+        "points": points,
+        "takeaway": takeaway,
+        "category": "TECH ARCHITECTURE",
     }
 
 
@@ -168,7 +181,7 @@ def generate_standard_slides(
     topic_data: dict[str, Any] | str,
     author: str = "@Lordporus • OmniPost",
 ) -> list[dict[str, Any]]:
-    """Builds a structured, high-density 4-slide carousel enforcing zero headline duplication."""
+    """Builds a structured, high-density 4-slide carousel enforcing zero hardcoded text."""
     parsed = parse_linkedin_payload(topic_data)
     headline = parsed["headline"]
     problem_context = parsed["problem_context"]
@@ -211,57 +224,44 @@ def generate_standard_slides(
         "type": "hero",
         "title": headline,
         "tag": category,
-        "body": "A deep dive into production design patterns, failure recovery, and sovereign automation.",
+        "body": problem_context[:160] if problem_context else f"An architectural deep dive into {headline}.",
     }
 
-    # Slide 2: Architectural Bottleneck / Problem Space
-    problem_bullets = [
-        "Coordination bottlenecks under high-concurrency multi-channel dispatch.",
-        "Cascading failures and duplicate posts from unverified API state.",
-    ]
+    # Slide 2: Architectural Bottleneck / Problem Space (Derived 100% dynamically)
+    problem_sentences = [s.strip() for s in re.split(r'[\n.·•►▸;]', problem_context) if len(s.strip()) > 15]
+    prob_bullets = problem_sentences[:3] if len(problem_sentences) >= 2 else (points[:2] if len(points) >= 2 else [f"Key technical challenges in {headline}"])
     s2 = {
         "type": "problem",
-        "title": "The Problem Space",
+        "title": f"The Bottleneck in {headline[:35]}",
         "tag": "BOTTLENECK",
-        "body": problem_context,
-        "bullets": problem_bullets,
+        "body": problem_context if len(problem_context) < 300 else problem_context[:297] + "...",
+        "bullets": prob_bullets,
     }
 
-    # Slide 3: Deep Technical Solution / Architecture
-    sol_headline = points[0] if points else "Deterministic State Machine Pattern"
-    sol_bullet = points[1] if len(points) > 1 else "Chrome DevTools Protocol eliminates costly SaaS wrappers"
+    # Slide 3: Deep Technical Solution / Architecture (Derived 100% dynamically)
+    sol_headline = points[0] if points else f"Architecture Design for {headline[:30]}"
+    sol_bullets = points[1:3] if len(points) > 1 else ([problem_context[:120]] if problem_context else [headline])
+    code_block = ""
+    if isinstance(topic_data, dict):
+        code_block = str(topic_data.get("code") or topic_data.get("code_snippet") or "")
     s3 = {
         "type": "solution",
-        "title": "Core Architecture",
+        "title": "System Architecture",
         "tag": "IMPLEMENTATION",
         "body": sol_headline,
-        "code": (
-            "// Deterministic State Engine Pattern\n"
-            "class PublishingGate {\n"
-            "  verify(slot: TimeSlot): boolean {\n"
-            "    return ledger.isVerified(slot) && cdp.isHealthy();\n"
-            "  }\n"
-            "}"
-        ),
-        "bullets": [sol_bullet],
+        "code": code_block,
+        "bullets": sol_bullets,
     }
 
-    # Slide 4: Production Checklist & Sovereign Outro
-    checklist_points = points[2:] if len(points) > 2 else (points[1:] if len(points) > 1 else points)
-    if not checklist_points:
-        checklist_points = [
-            "Atomic state writing to prevent dual-post collisions.",
-            "Independent failure isolation per platform channel.",
-            "Local vector rendering directly inside headless Chromium.",
-        ]
-
+    # Slide 4: Production Checklist & Dynamic Outro (Derived 100% dynamically)
+    checklist_points = points[2:] if len(points) > 2 else (points if points else [takeaway])
     s4 = {
         "type": "checklist_cta",
         "title": "Production Checklist",
         "tag": "CHECKLIST",
-        "body": takeaway or "Build sovereign infrastructure before scaling agents.",
+        "body": takeaway or f"Architectural foundation for {headline}.",
         "bullets": checklist_points,
-        "cta_label": "Follow for daily system architectures",
+        "cta_label": f"Follow for {category.title()} Architectures",
     }
 
     return [s1, s2, s3, s4]
@@ -473,6 +473,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Render LinkedIn PDF Carousels and HTML Previews")
     parser.add_argument("--date", help="Draft plan date (YYYY-MM-DD)")
     parser.add_argument("--draft", help="Explicit path to draft JSON file")
+    parser.add_argument("--slot", help="Specific slot to render (e.g. 20:00)")
     parser.add_argument("--out", help="Output path for the generated PDF")
     parser.add_argument("--preview-only", action="store_true", help="Only render preview.html without PDF export")
     args = parser.parse_args()
@@ -507,6 +508,8 @@ def main() -> None:
             plan = json.loads(draft_path.read_text(encoding="utf-8"))
             slots = plan.get("slots", [])
             for s in slots:
+                if getattr(args, "slot", None) and s.get("slot") != args.slot.strip():
+                    continue
                 li_data = (s.get("platforms") or {}).get("linkedin", {})
                 if li_data.get("text") and li_data.get("text").strip():
                     raw_payload = li_data.get("text")
@@ -540,7 +543,13 @@ def main() -> None:
     print(f"[CAROUSEL] HTML preview generated: {preview_file}")
 
     if not args.preview_only:
-        out_pdf = Path(args.out) if args.out else carousels_dir / "architecture_carousel.pdf"
+        if args.out:
+            out_pdf = Path(args.out)
+        else:
+            date_tag = args.date or (draft_path.stem if draft_path else datetime.now().strftime("%Y-%m-%d"))
+            slot_tag = (args.slot or "default").replace(":", "")
+            out_pdf = carousels_dir / f"carousel_{date_tag}_{slot_tag}.pdf"
+
         print(f"[CAROUSEL] Exporting vector PDF via CDP to: {out_pdf}...")
         try:
             create_carousel_pdf(

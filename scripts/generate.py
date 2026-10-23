@@ -14,8 +14,11 @@ from typing import Any
 ROOT = Path(__file__).resolve().parent.parent
 
 
-def extract_key_takeaways(text: str) -> list[str]:
-    """Extracts punchy bullet-point takeaways from summary text, guaranteeing >= 3 points."""
+def extract_key_takeaways(text: str, exclude_title: str = "") -> list[str]:
+    """Extracts punchy bullet-point takeaways from summary text, guaranteeing >= 3 unique points.
+    
+    Strictly excludes the headline or close variations to ban content echoing.
+    """
     fallback_defaults = [
         "Deterministic state execution outperforms retry loops.",
         "Decoupled state management ensures crash resilience.",
@@ -23,12 +26,20 @@ def extract_key_takeaways(text: str) -> list[str]:
     ]
     raw_sentences = [s.strip() for s in re.split(r"[.!?]\s+", text) if len(s.strip()) > 15]
 
+    exclude_norm = exclude_title.strip().lower()
     seen: set[str] = set()
+    if exclude_norm:
+        seen.add(exclude_norm)
+
     points: list[str] = []
     for s in raw_sentences:
         clean_s = s.rstrip(".!?").strip()
-        if clean_s and clean_s.lower() not in seen:
-            seen.add(clean_s.lower())
+        norm_s = clean_s.lower()
+        # Ban exact match or significant substring overlap with title
+        if norm_s and norm_s not in seen:
+            if exclude_norm and (norm_s in exclude_norm or exclude_norm in norm_s):
+                continue
+            seen.add(norm_s)
             points.append(clean_s)
 
     for fb in fallback_defaults:
@@ -40,6 +51,23 @@ def extract_key_takeaways(text: str) -> list[str]:
             points.append(clean_fb)
 
     return points[:3]
+
+
+def determine_card_count(topic_data: dict[str, Any]) -> int:
+    """Calculates whether content warrants 1, 2, or 3 visual cards.
+    
+    - 1 Card: Concise insight or single takeaway (body < 120 chars or points <= 1).
+    - 2 Cards: Problem vs. Solution or comparative architectural tradeoff.
+    - 3 Cards: Deep workflow (Hook/Context -> Architecture Engine -> Production Checklist).
+    """
+    points = [p for p in topic_data.get("points", []) if len(str(p).strip()) > 15]
+    body = str(topic_data.get("body", "")).strip()
+    
+    if len(points) >= 3 and len(body) > 180:
+        return 3
+    elif len(points) >= 2 or len(body) > 90:
+        return 2
+    return 1
 
 
 def _ensure_carousel_integrity(topic: dict[str, Any], kind: str = "tech_insight") -> dict[str, Any]:
@@ -235,10 +263,19 @@ def generate_heuristic_topic(kind: str, items: list[dict[str, Any]]) -> dict[str
         summary = str(raw_extra.get("summary") or raw_extra.get("text") or raw_extra.get("title") or title)
     else:
         summary = str(top_item.get("summary") or title)
-    points = extract_key_takeaways(summary)
+
+    # Anti-Echo Protection: If summary is just the title repeated or under 40 chars, synthesize rich context
+    clean_summary = summary.strip()
+    if not clean_summary or clean_summary.lower() == title.lower() or len(clean_summary) < 40:
+        summary = (
+            f"Analyzing architectural tradeoffs, latency considerations, and state machine "
+            f"reliability for {title} in production systems."
+        )
+
+    points = extract_key_takeaways(summary, exclude_title=title)
 
     category = "AI UPDATE" if kind == "ai_update" else "TECH INSIGHT"
-    body = summary[:300] if len(summary) > 20 else f"{title}. Key engineering analysis and practical implications for production systems."
+    body = summary[:300] if len(summary) > 40 else f"Architectural breakdown of {title} with production implementation guidelines."
 
     raw_url = str(top_item.get("url") or "").strip()
     source_name = str(top_item.get("source") or "web").strip()
@@ -314,7 +351,7 @@ def generate_heuristic_topic(kind: str, items: list[dict[str, Any]]) -> dict[str
         ],
     }
 
-    return {
+    topic_dict = {
         "headline": title[:90],
         "body": body,
         "points": points,
@@ -332,6 +369,8 @@ def generate_heuristic_topic(kind: str, items: list[dict[str, Any]]) -> dict[str
             "linkedin": linkedin_text,
         },
     }
+    topic_dict["card_count"] = determine_card_count(topic_dict)
+    return topic_dict
 
 
 def generate_platform_native_drafts(

@@ -21,6 +21,7 @@ from adapters.base import (
     PlatformCapabilities,
     PublishPayload,
     PublishResult,
+    capture_failure_artifacts,
 )
 from scripts import browser, settings
 from scripts.browser import CDPError, Session
@@ -125,13 +126,34 @@ TOAST_QUERY_JS = r"""
 
 TRIGGER_DOCUMENT_MODAL_JS = r"""
 (() => {
-  const docBtn = document.querySelector('button[aria-label*="Add a document"]')
-    || document.querySelector('button[data-view-name*="document"]')
-    || document.querySelector('button.share-promoted-detour-button[aria-label*="document"]');
+  // 1. Direct document button on composer toolbar
+  const docBtn = document.querySelector('button[aria-label*="Add a document" i]')
+    || document.querySelector('button[aria-label*="Document" i]')
+    || document.querySelector('button[data-view-name*="document" i]')
+    || document.querySelector('button.share-promoted-detour-button[aria-label*="document" i]')
+    || [...document.querySelectorAll('button')].find(b => {
+         const label = (b.getAttribute('aria-label') || b.innerText || '').toLowerCase();
+         return label.includes('document') || label.includes('pdf');
+       });
   if (docBtn) {
+    docBtn.scrollIntoView({block: 'center', inline: 'nearest'});
     docBtn.click();
     return 'clicked';
   }
+
+  // 2. Overflow / More options button (...) on toolbar
+  const overflowBtn = document.querySelector('button[aria-label*="More" i]')
+    || document.querySelector('button[aria-label*="Add to your post" i]')
+    || document.querySelector('button.share-box-footer__overflow-btn')
+    || document.querySelector('button[data-control-name*="overflow" i]')
+    || document.querySelector('svg[data-test-icon*="overflow"]')?.closest('button')
+    || document.querySelector('svg[data-test-icon*="more"]')?.closest('button');
+
+  if (overflowBtn) {
+    overflowBtn.click();
+    return 'overflow_clicked';
+  }
+
   return 'not_found';
 })()
 """
@@ -139,22 +161,29 @@ TRIGGER_DOCUMENT_MODAL_JS = r"""
 DOCUMENT_TITLE_JS = r"""
 (title) => {
   const input = document.querySelector('input[id*="document-title"]')
-    || document.querySelector('input[placeholder*="Title"]')
-    || document.querySelector('input[name="title"]');
-  if (!input) return 'no_title_input';
-  input.value = title;
-  input.dispatchEvent(new Event('input', { bubbles: true }));
-  input.dispatchEvent(new Event('change', { bubbles: true }));
+    || document.querySelector('input[placeholder*="Title" i]')
+    || document.querySelector('input[aria-label*="Title" i]')
+    || document.querySelector('input[name="title"]')
+    || document.querySelector('.share-document-card__title-input');
+  if (input) {
+    input.value = title;
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+  }
   
   // Find Done/Next button in modal
   const doneBtn = document.querySelector('button.share-box-footer__primary-btn')
     || document.querySelector('button[data-view-name*="document-done"]')
-    || [...document.querySelectorAll('button')].find(b => (b.innerText || '').trim().toLowerCase() === 'done' || (b.innerText || '').trim().toLowerCase() === 'next');
+    || document.querySelector('button.share-document-card__submit-btn')
+    || [...document.querySelectorAll('button')].find(b => {
+         const t = (b.innerText || '').trim().toLowerCase();
+         return t === 'done' || t === 'next';
+       });
   if (doneBtn) {
     doneBtn.click();
     return 'done_clicked';
   }
-  return 'done_not_found';
+  return input ? 'title_filled_no_done' : 'no_title_input';
 }
 """
 
@@ -256,54 +285,201 @@ class LinkedInAdapter(PlatformAdapter):
                 "error": str(exc),
             }
 
-    async def _async_publish(self, payload: PublishPayload) -> PublishResult:
-        # 1. Spacing check
-        allowed, msg = self._check_rate_limit()
-        if not allowed:
-            return PublishResult(
-                platform="linkedin",
-                success=False,
-                error=msg,
-            )
-
-    async def _attach_document(self, page: Session, pdf_path: Path, doc_title: str) -> bool:
-        """Uploads a PDF document to LinkedIn using file input simulation."""
-        if not pdf_path.exists():
+    async def _attach_images(self, page: Session, image_paths: list[Path]) -> bool:
+        """Attaches 1-3 PNG images directly to LinkedIn post composer via the Media button."""
+        valid_files = [str(p.resolve()) for p in image_paths if p.exists() and p.suffix.lower() in (".png", ".jpg", ".jpeg", ".webp")]
+        if not valid_files:
             return False
 
-        # 1. Click "Add a document" button
-        trig = await page.eval(TRIGGER_DOCUMENT_MODAL_JS)
-        if trig != "clicked":
+        # 1. Look for existing image input in composer
+        node_id = None
+        for _ in range(3):
+            try:
+                doc = await page.send("DOM.getDocument", depth=-1)
+                root_id = doc.get("root", {}).get("nodeId", 0)
+                if root_id:
+                    inp = await page.send(
+                        "DOM.querySelector",
+                        nodeId=root_id,
+                        selector='input[type="file"][accept*="image"], input[type="file"]',
+                    )
+                    node_id = inp.get("nodeId")
+                    if node_id:
+                        break
+            except Exception:
+                pass
+            await asyncio.sleep(0.3)
+
+        # 2. If no direct input, click the Media toolbar button
+        if not node_id:
+            click_media_js = """
+            (() => {
+                const btn = document.querySelector('button[aria-label*="Media" i]')
+                    || document.querySelector('button.share-promoted-detour-button[aria-label*="photo" i]')
+                    || document.querySelector('button[componentkey*="dda61378"]');
+                if (btn) { btn.click(); return 'clicked'; }
+                return 'not_found';
+            })()
+            """
+            trig = await page.eval(click_media_js)
+            await asyncio.sleep(1.0)
+            for _ in range(6):
+                try:
+                    doc = await page.send("DOM.getDocument", depth=-1)
+                    root_id = doc.get("root", {}).get("nodeId", 0)
+                    if root_id:
+                        inp = await page.send(
+                            "DOM.querySelector",
+                            nodeId=root_id,
+                            selector='input[type="file"][accept*="image"], input[type="file"]',
+                        )
+                        node_id = inp.get("nodeId")
+                        if node_id:
+                            break
+                except Exception:
+                    pass
+                await asyncio.sleep(0.4)
+
+        if not node_id:
+            return False
+
+        # 3. Set files via CDP
+        try:
+            await page.send(
+                "DOM.setFileInputFiles",
+                files=valid_files,
+                nodeId=node_id,
+            )
+        except Exception:
             return False
 
         await asyncio.sleep(2.0)
 
-        # 2. Attach PDF file via DOM file input
-        try:
-            # Query the file input element in document modal
-            doc = await page.send("DOM.getDocument")
-            root_id = doc["root"]["nodeId"]
-            inp = await page.send(
-                "DOM.querySelector",
-                nodeId=root_id,
-                selector='input[type="file"]',
-            )
-            node_id = inp.get("nodeId")
-            if not node_id:
-                return False
+        # 4. In LinkedIn media preview dialog, wait for upload processing and click "Next" / "Done"
+        click_next_js = """
+        (() => {
+            const btns = [...document.querySelectorAll('button, div[role="button"]')];
+            const nextBtn = document.querySelector('button.share-box-footer__primary-btn')
+                || document.querySelector('button[aria-label="Next"]')
+                || document.querySelector('button[aria-label="Done"]')
+                || btns.find(b => {
+                     const t = (b.innerText || b.getAttribute('aria-label') || '').trim().toLowerCase();
+                     return t === 'next' || t === 'done';
+                   });
+            if (nextBtn && !nextBtn.disabled && !nextBtn.getAttribute('aria-disabled')) {
+                nextBtn.scrollIntoView({block: 'center'});
+                nextBtn.click();
+                return 'clicked';
+            }
+            return nextBtn ? 'disabled' : 'not_found';
+        })()
+        """
+        for _ in range(15):
+            res = await page.eval(click_next_js)
+            if res == "clicked":
+                break
+            await asyncio.sleep(1.0)
 
+        await asyncio.sleep(1.5)
+        return True
+
+    async def _attach_document(self, page: Session, pdf_path: Path, doc_title: str) -> bool:
+        """Uploads a PDF document to LinkedIn using fast file input or drag-and-drop simulation."""
+        if not pdf_path.exists():
+            return False
+
+        abs_pdf = str(pdf_path.resolve())
+
+        # Fast-Path 1: Check if composer already has an active input[type="file"]
+        node_id = None
+        for _ in range(5):
+            try:
+                doc = await page.send("DOM.getDocument", depth=-1)
+                root_id = doc.get("root", {}).get("nodeId", 0)
+                if root_id:
+                    inp = await page.send(
+                        "DOM.querySelector",
+                        nodeId=root_id,
+                        selector='input[type="file"][accept*="pdf"], input[type="file"]',
+                    )
+                    node_id = inp.get("nodeId")
+                    if node_id:
+                        break
+            except Exception:
+                pass
+            await asyncio.sleep(0.4)
+
+        # Fast-Path 2: If no input found, synthesize document trigger
+        if not node_id:
+            trig = await page.eval(TRIGGER_DOCUMENT_MODAL_JS)
+            if trig == "overflow_clicked":
+                await asyncio.sleep(0.8)
+                click_overflow_doc_js = """
+                (() => {
+                    const item = document.querySelector('li[data-control-name*="document"]')
+                        || document.querySelector('button[aria-label*="document" i]')
+                        || document.querySelector('div[role="button"][aria-label*="document" i]')
+                        || [...document.querySelectorAll('button, div[role="button"], li, span')].find(el => {
+                            const t = (el.getAttribute('aria-label') || el.innerText || '').toLowerCase();
+                            return t.includes('document');
+                        });
+                    if (item) {
+                        item.scrollIntoView({block: 'center', inline: 'nearest'});
+                        item.click();
+                        return 'clicked';
+                    }
+                    return 'item_not_found';
+                })()
+                """
+                for _ in range(6):
+                    sub_trig = await page.eval(click_overflow_doc_js)
+                    if sub_trig == "clicked":
+                        break
+                    await asyncio.sleep(0.5)
+
+            # Look for file input again in the opened document dialog
+            for _ in range(8):
+                try:
+                    doc = await page.send("DOM.getDocument", depth=-1)
+                    root_id = doc.get("root", {}).get("nodeId", 0)
+                    if root_id:
+                        inp = await page.send(
+                            "DOM.querySelector",
+                            nodeId=root_id,
+                            selector='input[type="file"]',
+                        )
+                        node_id = inp.get("nodeId")
+                        if node_id:
+                            break
+                except Exception:
+                    pass
+                await asyncio.sleep(0.4)
+
+        if not node_id:
+            await capture_failure_artifacts(page, "linkedin")
+            return False
+
+        try:
             await page.send(
                 "DOM.setFileInputFiles",
-                files=[str(pdf_path.resolve())],
+                files=[abs_pdf],
                 nodeId=node_id,
             )
-            await asyncio.sleep(3.0)
-
-            # 3. Fill Document Title
-            res = await page.eval(f"({DOCUMENT_TITLE_JS})({json.dumps(doc_title)})")
-            await asyncio.sleep(2.0)
-            return True
+            # Wait for PDF upload and processing with polling for title input & done button
+            clean_title = (doc_title or pdf_path.stem).replace("\n", " ").strip()[:50]
+            title_done = False
+            for _ in range(12):
+                await asyncio.sleep(1.0)
+                res = await page.eval(f"({DOCUMENT_TITLE_JS})({json.dumps(clean_title)})")
+                if res == "done_clicked":
+                    title_done = True
+                    break
+            await asyncio.sleep(1.5)
+            if not title_done:
+                await capture_failure_artifacts(page, "linkedin")
+            return title_done
         except Exception:
+            await capture_failure_artifacts(page, "linkedin")
             return False
 
     async def _async_publish(self, payload: PublishPayload) -> PublishResult:
@@ -339,28 +515,48 @@ class LinkedInAdapter(PlatformAdapter):
             if trig != "clicked":
                 trig = await page.eval(TRIGGER_COMPOSER_JS)
                 if trig != "clicked":
+                    artifacts = await capture_failure_artifacts(page, "linkedin")
                     return PublishResult(
                         platform="linkedin",
                         success=False,
                         error="Could not find 'Start a post' button on LinkedIn feed",
+                        artifacts=artifacts,
                     )
             
             await asyncio.sleep(2.0)
 
+            # 1. Attach Images if provided
+            image_targets = [p for p in payload.media_paths if p.suffix.lower() in (".png", ".jpg", ".jpeg", ".webp")]
+            if image_targets:
+                attached_img = await self._attach_images(page, image_targets)
+                if not attached_img:
+                    artifacts = await capture_failure_artifacts(page, "linkedin")
+                    print(f"  [WARN] LinkedIn: Failed to attach images. Proceeding with text post. Telemetry: {artifacts.get('screenshot')}", file=sys.stderr)
+                    # Close any media modal overlay if open so main composer is visible
+                    await page.eval("""
+                    (() => {
+                        const closeBtn = document.querySelector('button[aria-label="Dismiss"]')
+                            || document.querySelector('button[aria-label="Close"]')
+                            || document.querySelector('button.artdeco-modal__dismiss');
+                        if (closeBtn) closeBtn.click();
+                    })()
+                    """)
+                    await asyncio.sleep(1.0)
+                else:
+                    await asyncio.sleep(1.5)
 
-            # Attach Carousel PDF if requested
-            if payload.media_type == "carousel" and payload.media_paths:
+            # 2. Attach Carousel PDF if requested or if .pdf file provided and no images attached
+            has_pdf = bool(payload.media_paths and payload.media_paths[0].suffix.lower() == ".pdf")
+            if not image_targets and (payload.media_type == "carousel" or has_pdf) and payload.media_paths:
                 pdf_target = payload.media_paths[0]
                 if pdf_target.suffix.lower() == ".pdf":
                     doc_title = payload.extra_metadata.get("document_title") or payload.text.split("\n")[0][:60]
                     attached = await self._attach_document(page, pdf_target, doc_title)
                     if not attached:
-                        return PublishResult(
-                            platform="linkedin",
-                            success=False,
-                            error="Failed to attach PDF carousel document to LinkedIn post",
-                        )
-                    await asyncio.sleep(1.5)
+                        artifacts = await capture_failure_artifacts(page, "linkedin")
+                        print(f"  [WARN] LinkedIn: Failed to attach PDF carousel document. Proceeding with text post. Telemetry: {artifacts.get('screenshot')}", file=sys.stderr)
+                    else:
+                        await asyncio.sleep(1.5)
             
             # Focus editor with retry loop for animation
             foc = "no_editor"
@@ -381,14 +577,38 @@ class LinkedInAdapter(PlatformAdapter):
             await page.send("Input.insertText", text=payload.text)
             await asyncio.sleep(1.0)
 
-            # Submit
-            sub_res_str = await page.eval(SUBMIT_POST_JS)
-            sub_res = json.loads(sub_res_str or "{}")
+            # Ensure LinkedIn's Lexical/ProseMirror framework registers the content
+            await page.eval("""
+            (() => {
+                const ed = document.querySelector('div[role="dialog"] div[contenteditable="true"]')
+                    || document.querySelector('div.artdeco-modal div[contenteditable="true"]')
+                    || document.querySelector('div.tiptap.ProseMirror')
+                    || document.querySelector('div.editor-content div[contenteditable="true"]')
+                    || document.querySelector('div[role="textbox"][contenteditable="true"]');
+                if (ed) {
+                    ed.dispatchEvent(new Event('input', { bubbles: true }));
+                    ed.dispatchEvent(new Event('change', { bubbles: true }));
+                }
+            })()
+            """)
+            await asyncio.sleep(1.0)
+
+            # Wait and submit with poll for enabled state
+            sub_res = {"error": "post_btn_disabled"}
+            for _ in range(10):
+                sub_res_str = await page.eval(SUBMIT_POST_JS)
+                sub_res = json.loads(sub_res_str or "{}")
+                if not sub_res.get("error"):
+                    break
+                await asyncio.sleep(1.0)
+
             if sub_res.get("error"):
+                artifacts = await capture_failure_artifacts(page, "linkedin")
                 return PublishResult(
                     platform="linkedin",
                     success=False,
                     error=f"LinkedIn post submission error: {sub_res.get('error')}",
+                    artifacts=artifacts,
                 )
 
             # In-page toast verification loop (poll for up to 5 seconds)

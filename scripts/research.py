@@ -31,8 +31,12 @@ import xml.etree.ElementTree as ET
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-import browser
-import settings
+try:
+    from scripts import browser
+    from scripts import settings
+except ImportError:
+    import browser
+    import settings
 
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")

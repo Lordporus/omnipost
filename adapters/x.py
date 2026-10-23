@@ -70,12 +70,20 @@ class XAdapter(PlatformAdapter):
                 )
             )
 
+            success = bool(res.get("posted"))
+            err = res.get("error")
+            if not success and not err:
+                if res.get("toast_sent"):
+                    err = "Post was submitted, but timeline readback verification timed out"
+                else:
+                    err = "Post submission failed or timed out"
+
             return PublishResult(
                 platform="x",
-                success=bool(res.get("posted")),
+                success=success,
                 url=res.get("tweet_url"),
                 verified=bool(res.get("verified")),
-                error=res.get("error"),
+                error=err,
                 raw_response=res,
             )
         except Exception as exc:

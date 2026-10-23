@@ -20,6 +20,7 @@ from adapters.base import (
     PlatformCapabilities,
     PublishPayload,
     PublishResult,
+    capture_failure_artifacts,
 )
 from scripts import browser, settings
 from scripts.browser import CDPError, Session
@@ -42,13 +43,13 @@ CHECK_SESSION_JS = r"""
 (() => {
   const url = location.href;
   const isFeed = url.includes('threads.net') || url.includes('threads.com');
-  // Check for profile icon, user handle link, or write icon in navigation bar
-  const profileLink = document.querySelector('a[href*="/@"]');
-  const loginBtn = document.querySelector('a[href*="/login"], button[type="button"][aria-label*="Log in"]');
-  const composeBtn = document.querySelector('div[role="button"][aria-label*="New thread"], svg[aria-label*="New thread"], button[aria-label*="New thread"]');
+  const loginBtn = document.querySelector('a[href*="/login"], button[type="button"][aria-label*="Log in"], [role="button"][aria-label*="Log in"]');
+  const profileLink = document.querySelector('a[href*="/@"]') || document.querySelector('a[href*="/activity"]');
+  const composeBtn = document.querySelector('div[role="button"][aria-label*="Create" i], div[role="button"][aria-label*="New thread" i], svg[aria-label*="Create" i], svg[aria-label*="New thread" i], a[href*="/compose"]');
+  const navBar = document.querySelector('nav') || document.querySelector('div[role="navigation"]');
 
   let handle = null;
-  if (profileLink) {
+  if (profileLink && profileLink.href) {
     const m = profileLink.href.match(/@([a-zA-Z0-9_.-]+)/);
     if (m) handle = m[1];
   }
@@ -61,7 +62,7 @@ CHECK_SESSION_JS = r"""
     }
   }
 
-  const logged_in = !loginBtn && (!!profileLink || !!composeBtn || !!handle);
+  const logged_in = !loginBtn && (!!profileLink || !!composeBtn || !!handle || (navBar && !loginBtn));
 
   return JSON.stringify({
     url: url,
@@ -75,10 +76,17 @@ CHECK_SESSION_JS = r"""
 # JavaScript to open the post composer
 TRIGGER_COMPOSER_JS = r"""
 (() => {
-  const btn = document.querySelector('svg[aria-label="Create"]')?.closest('div[role="button"]')
-    || document.querySelector('svg[aria-label="New thread"]')?.closest('div[role="button"]')
+  // If composer editor is already visible and editable, no need to trigger again
+  const existingEd = document.querySelector('div[contenteditable="true"]');
+  if (existingEd && existingEd.offsetParent !== null) return 'already_open';
+
+  const btn = document.querySelector('svg[aria-label*="Create" i]')?.closest('div[role="button"], a, button')
+    || document.querySelector('svg[aria-label*="New thread" i]')?.closest('div[role="button"], a, button')
+    || document.querySelector('div[role="button"][aria-label*="Create" i]')
+    || document.querySelector('div[role="button"][aria-label*="New thread" i]')
+    || document.querySelector('a[href*="/compose"]')
     || document.querySelector('div[aria-label*="Empty text field"]')
-    || document.querySelector('div[role="button"][aria-label*="New thread"]')
+    || document.querySelector('div[role="button"][aria-label*="Start a thread" i]')
     || [...document.querySelectorAll('div[role="button"], button')].find(d => {
          const t = (d.innerText || '').toLowerCase();
          return t.includes('what’s new') || t.includes("what's new") || t.includes('start a thread') || t.includes('new thread');
@@ -94,12 +102,37 @@ TRIGGER_COMPOSER_JS = r"""
 FOCUS_EDITOR_JS = r"""
 (() => {
   const ed = document.querySelector('div[contenteditable="true"][role="textbox"]')
-    || document.querySelector('div[contenteditable="true"]')
     || document.querySelector('div[data-lexical-editor="true"]')
-    || document.querySelector('div.notranslate[contenteditable="true"]');
-  if (!ed) return 'no_editor';
+    || document.querySelector('div.notranslate[contenteditable="true"]')
+    || document.querySelector('div[role="combobox"][contenteditable="true"]')
+    || document.querySelector('div[contenteditable="true"]')
+    || document.querySelector('div[role="textbox"]')
+    || document.querySelector('p[data-placeholder*="thread" i]');
+  if (!ed) return JSON.stringify({status: 'no_editor'});
+
+  ed.scrollIntoView({block: 'center', inline: 'nearest'});
+  const r = ed.getBoundingClientRect();
+  const coords = {x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2)};
+
   ed.focus();
-  return 'focused';
+  try {
+    ed.click();
+    ed.dispatchEvent(new MouseEvent('mousedown', {bubbles: true, cancelable: true, clientX: coords.x, clientY: coords.y, view: window}));
+    ed.dispatchEvent(new MouseEvent('mouseup', {bubbles: true, cancelable: true, clientX: coords.x, clientY: coords.y, view: window}));
+    ed.dispatchEvent(new Event('focus', { bubbles: true }));
+    const range = document.createRange();
+    range.selectNodeContents(ed);
+    range.collapse(false);
+    const sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+  } catch (e) {}
+
+  return JSON.stringify({
+    status: 'focused',
+    coords: coords,
+    is_active: document.activeElement === ed
+  });
 })()
 """
 
@@ -149,15 +182,16 @@ class ThreadsAdapter(PlatformAdapter):
             base = explicit.strip()
             return base if base.endswith("/") else f"{base}/"
 
-        try:
-            for t in browser.list_tabs():
-                url = t.get("url", "").lower()
-                if "threads.com" in url:
-                    return "https://www.threads.com/"
-                if "threads.net" in url:
-                    return "https://www.threads.net/"
-        except Exception:
-            pass
+        if browser.alive():
+            try:
+                for t in browser.list_tabs():
+                    url = t.get("url", "").lower()
+                    if "threads.com" in url:
+                        return "https://www.threads.com/"
+                    if "threads.net" in url:
+                        return "https://www.threads.net/"
+            except Exception:
+                pass
 
         return THREADS_BASE_URL
 
@@ -174,47 +208,65 @@ class ThreadsAdapter(PlatformAdapter):
         )
         return page
 
-    async def _attach_media(self, page: Session, file_path: Path) -> bool:
-        """Attaches local image to Threads composer via CDP DOM file input."""
-        if not file_path.exists():
+    async def _attach_media(self, page: Session, file_paths: list[Path] | Path) -> bool:
+        """Attaches 1-3 local images to Threads composer via CDP DOM file input with polling retries."""
+        paths = [file_paths] if isinstance(file_paths, Path) else file_paths
+        valid_files = [str(p.resolve()) for p in paths if p.exists()]
+        if not valid_files:
             return False
-        try:
-            doc = await page.send("DOM.getDocument")
-            root_id = doc["root"]["nodeId"]
-            inp = await page.send(
-                "DOM.querySelector",
-                nodeId=root_id,
-                selector='input[type="file"][accept*="image"]',
-            )
-            node_id = inp.get("nodeId")
-            if not node_id:
-                return False
 
-            await page.send(
-                "DOM.setFileInputFiles",
-                files=[str(file_path.resolve())],
-                nodeId=node_id,
-            )
-            await asyncio.sleep(2.5)
-            return True
-        except Exception:
-            return False
+        # Poll with retries up to 12 attempts (~6.0s) for composer modal hydration
+        for _ in range(12):
+            try:
+                doc = await page.send("DOM.getDocument", depth=-1)
+                root_id = doc.get("root", {}).get("nodeId", 0)
+                if not root_id:
+                    await asyncio.sleep(0.5)
+                    continue
+
+                for sel in ['input[type="file"][accept*="image"]', 'input[type="file"]']:
+                    try:
+                        inp = await page.send(
+                            "DOM.querySelector",
+                            nodeId=root_id,
+                            selector=sel,
+                        )
+                        node_id = inp.get("nodeId")
+                        if node_id:
+                            await page.send(
+                                "DOM.setFileInputFiles",
+                                files=valid_files,
+                                nodeId=node_id,
+                            )
+                            await asyncio.sleep(2.5)
+                            return True
+                    except Exception:
+                        continue
+            except Exception:
+                pass
+            await asyncio.sleep(0.5)
+
+        return False
 
     async def _async_check_session(self) -> dict[str, Any]:
         browser.ensure_chrome()
         base_url = self.get_base_url()
         page = await self._open_stealth(base_url)
         try:
+            await browser.settle_page(page, 2.5)
             # Poll for hydration up to 8 seconds
             logged_in = False
             h = None
             for _ in range(16):
-                res_str = await page.eval(CHECK_SESSION_JS)
-                data = json.loads(res_str or "{}")
-                if data.get("logged_in"):
-                    logged_in = True
-                    h = data.get("handle") or self._handle
-                    break
+                try:
+                    res_str = await page.eval(CHECK_SESSION_JS)
+                    data = json.loads(res_str or "{}")
+                    if data.get("logged_in"):
+                        logged_in = True
+                        h = data.get("handle") or self._handle
+                        break
+                except (CDPError, OSError, asyncio.TimeoutError, Exception):
+                    pass
                 await asyncio.sleep(0.5)
 
             return {
@@ -249,58 +301,93 @@ class ThreadsAdapter(PlatformAdapter):
             trig = "not_found"
             for _ in range(10):
                 trig = await page.eval(TRIGGER_COMPOSER_JS)
-                if trig == "clicked":
+                if trig in ("clicked", "already_open"):
                     break
                 await asyncio.sleep(0.5)
 
-            if trig != "clicked":
+            if trig not in ("clicked", "already_open"):
+                arts = await capture_failure_artifacts(page, "threads")
                 return PublishResult(
                     platform="threads",
                     success=False,
                     error="Could not find 'Start a thread' button on threads.net",
+                    artifacts=arts,
                 )
 
             await asyncio.sleep(1.5)
 
-            # Attach media if provided
-            if payload.media_paths:
-                img_path = payload.media_paths[0]
-                attached = await self._attach_media(page, img_path)
-                if not attached:
-                    return PublishResult(
-                        platform="threads",
-                        success=False,
-                        error=f"Failed to attach image {img_path} to Threads composer",
-                    )
-                await asyncio.sleep(1.5)
-
-            # Focus editor with retry loop for animation
-            foc = "no_editor"
+            # 1. Focus editor with retry loop for animation
+            foc_data = {}
             for _ in range(15):
-                foc = await page.eval(FOCUS_EDITOR_JS)
-                if foc == "focused":
+                raw_foc = await page.eval(FOCUS_EDITOR_JS)
+                try:
+                    foc_data = json.loads(raw_foc or "{}")
+                except Exception:
+                    foc_data = {}
+                if foc_data.get("status") == "focused":
                     break
                 await asyncio.sleep(0.5)
 
-            if foc != "focused":
+            if foc_data.get("status") != "focused":
+                arts = await capture_failure_artifacts(page, "threads")
                 return PublishResult(
                     platform="threads",
                     success=False,
                     error="Could not focus Threads post composer editor",
+                    artifacts=arts,
                 )
 
-            # Inject text via CDP Input.insertText
+            # Additional CDP level mouse dispatch if coordinates were detected
+            coords = foc_data.get("coords")
+            if coords and isinstance(coords, dict):
+                cx, cy = coords.get("x", 0), coords.get("y", 0)
+                if cx > 0 and cy > 0:
+                    try:
+                        await page.send(
+                            "Input.dispatchMouseEvent",
+                            type="mousePressed",
+                            x=cx,
+                            y=cy,
+                            button="left",
+                            clickCount=1,
+                        )
+                        await page.send(
+                            "Input.dispatchMouseEvent",
+                            type="mouseReleased",
+                            x=cx,
+                            y=cy,
+                            button="left",
+                            clickCount=1,
+                        )
+                    except Exception:
+                        pass
+
+            # 2. Inject text via CDP Input.insertText
             await page.send("Input.insertText", text=payload.text)
             await asyncio.sleep(1.0)
+
+            # 3. Attach media if provided (after editor is active and populated)
+            if payload.media_paths:
+                attached = await self._attach_media(page, payload.media_paths)
+                if not attached:
+                    print(
+                        f"  [WARN] Threads: Failed to attach images {payload.media_paths}. Proceeding with text-only thread.",
+                        file=sys.stderr,
+                        flush=True,
+                    )
+                else:
+                    await asyncio.sleep(2.0)
 
             # Submit
             sub_res_str = await page.eval(SUBMIT_POST_JS)
             sub_res = json.loads(sub_res_str or "{}")
             if sub_res.get("error"):
+                arts = await capture_failure_artifacts(page, "threads")
                 return PublishResult(
                     platform="threads",
                     success=False,
                     error=f"Threads post submission error: {sub_res.get('error')}",
+                    artifacts=arts,
                 )
 
             # Settle after clicking Post

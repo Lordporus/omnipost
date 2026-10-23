@@ -134,9 +134,25 @@ def profile_dir(cfg: dict | None = None) -> Path:
         legacy_edge = home() / ".tweetytweets" / "edge-profile"
         legacy_chrome = home() / ".tweetytweets" / "chrome-profile"
         default = home() / ".omnipost" / "edge-profile"
-        legacy = legacy_edge if legacy_edge.exists() else (legacy_chrome if legacy_chrome.exists() else legacy_edge)
-        p = legacy if (legacy.exists() and not default.exists()) else default
-    p.mkdir(parents=True, exist_ok=True)
+        try:
+            legacy_edge_exists = legacy_edge.exists()
+        except OSError:
+            legacy_edge_exists = False
+        try:
+            legacy_chrome_exists = legacy_chrome.exists()
+        except OSError:
+            legacy_chrome_exists = False
+        try:
+            default_exists = default.exists()
+        except OSError:
+            default_exists = False
+
+        legacy = legacy_edge if legacy_edge_exists else (legacy_chrome if legacy_chrome_exists else legacy_edge)
+        p = legacy if (legacy_edge_exists or legacy_chrome_exists) and not default_exists else default
+    try:
+        p.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        pass
     return p
 
 

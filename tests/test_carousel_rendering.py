@@ -77,8 +77,11 @@ def test_generate_standard_slides_structure_and_no_duplicate_headline():
 
     # Slide 3: Solution
     assert slides[2]["type"] == "solution"
-    assert "code" in slides[2]
-    assert "PublishingGate" in slides[2]["code"]
+    assert len(slides[2]["bullets"]) >= 1
+
+    # Verify dynamic code support when provided
+    slides_with_code = generate_standard_slides({"headline": "Custom Engine", "code": "class CustomDispatcher: pass"})
+    assert "CustomDispatcher" in slides_with_code[2]["code"]
 
     # Slide 4: Checklist CTA
     assert slides[3]["type"] == "checklist_cta"
