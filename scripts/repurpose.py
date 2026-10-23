@@ -8,6 +8,7 @@ Transforms a single research insight/topic into 4 distinct channel formats:
 """
 from __future__ import annotations
 
+import re
 import sys
 from pathlib import Path
 from typing import Any
@@ -30,7 +31,7 @@ def format_x(headline: str, points: list[str]) -> str:
         # Fall back to headline + first bullet
         text = f"{clean_hl}\n\n• {points[0].strip()}" if points else clean_hl
         if len(text) > 280:
-            text = clean_hl[:275].rstrip()
+            text = clean_hl[:272].rstrip() + "..."
     return text
 
 
@@ -40,43 +41,45 @@ def format_bluesky(headline: str, points: list[str]) -> str:
     bullets = " ".join([f"({idx+1}) {p.strip()}" for idx, p in enumerate(points[:2]) if p.strip()])
     text = f"{clean_hl} {bullets}".strip()
     if len(text) > 295:
-        text = text[:292].rstrip()
+        text = text[:292].rstrip() + "..."
     return text
 
 
-def format_linkedin(headline: str, body: str, points: list[str], takeaway: str = "") -> str:
-    """Format for LinkedIn: authoritative 1,200-2,500 char engineering case study (ceiling 3000)."""
+def format_linkedin(
+    headline: str,
+    body: str,
+    points: list[str],
+    takeaway: str = "",
+    media_type: str | None = None,
+) -> str:
+    """Format for LinkedIn using only topic-derived context, changes, and takeaway."""
     clean_hl = headline.strip()
     clean_body = body.strip()
-    clean_tk = takeaway.strip() if takeaway else "Architect for deterministic state execution before scaling concurrency."
-    
-    lines = [
-        f"Why {clean_hl} Matters in Production",
-        "",
-        clean_body if clean_body else f"Analyzing the architectural decisions and production requirements for {clean_hl}.",
-        "",
-        "The Architectural Bottleneck:",
-        "Most engineering teams hit scaling walls because they rely on brittle abstractions and unverified assumptions. When systems scale under concurrent real-world load, partial network failures, state drift, and coordination overhead quickly compound into cascading failures across worker nodes.",
-        "",
-        "Core Engineering Takeaways & System Patterns:",
-    ]
-    
-    for idx, p in enumerate(points[:3], 1):
-        clean_p = p.strip().lstrip("•-*▸ ")
-        lines.append(f"▸ {clean_p}")
-    
-    lines.extend([
-        "",
-        "Production Principles to Remember:",
-        "▸ Deterministic execution beats retry loops: Never assume an external transaction succeeded without verifiable proof.",
-        "▸ Decoupled state isolation: Isolate failure domains so a stalled pipeline never blocks independent channels.",
-        "▸ Sovereign infrastructure: Local automation eliminates fragile third-party cloud wrappers and recurring API tolls.",
-        "",
-        f"Bottom line: {clean_tk}",
-        "",
-        "Review the visual system breakdown cards below for the architecture walkthrough.",
-    ])
-    
+    clean_points = [str(point).strip().lstrip("•-*▸ ") for point in points if str(point).strip()]
+    clean_tk = takeaway.strip()
+
+    looks_like_sentence = (
+        clean_hl.endswith(("?", "!", "."))
+        or clean_hl.lower().startswith(("why ", "how ", "what ", "when ", "where ", "who "))
+        or len(clean_hl.split()) >= 7
+        or bool(re.search(r"\b(?:is|are|was|were|has|have|can|could|will|would)\b", clean_hl, re.IGNORECASE))
+    )
+    hook = clean_hl if looks_like_sentence else f"{clean_hl}: production architecture and tradeoffs"
+
+    lines = [hook]
+    if clean_body:
+        lines.extend(["", clean_body])
+    if clean_points:
+        lines.extend(["", "What changes in practice:"])
+        lines.extend(f"▸ {point}" for point in clean_points[:3])
+    if clean_tk:
+        lines.extend(["", f"Bottom line: {clean_tk}"])
+
+    if media_type == "carousel":
+        lines.extend(["", "See the carousel below for the full visual breakdown."])
+    elif media_type == "image":
+        lines.extend(["", "See the visual breakdown above."])
+
     text = "\n".join(lines).strip()
     if len(text) > 3000:
         text = text[:2950].rstrip()
@@ -84,17 +87,21 @@ def format_linkedin(headline: str, body: str, points: list[str], takeaway: str =
 
 
 def format_threads(headline: str, takeaway: str = "") -> str:
-    """Format for Meta Threads: 350-480 char conversational technical debate (ceiling 500)."""
+    """Format for Meta Threads: topic takeaway plus a conversational question."""
     clean_hl = headline.strip()
-    clean_tk = takeaway.strip() if takeaway else "What's your experience scaling this in production?"
+    clean_tk = takeaway.strip()
 
-    body = (
-        f"{clean_hl}\n\n"
-        f"Most distributed systems fail due to state drift and unverified retry loops rather than core throughput limits.\n\n"
-        f"{clean_tk} What architectural tradeoffs have you seen in your stack?"
-    )
+    lines = [clean_hl]
+    if clean_tk:
+        lines.extend(
+            ["", clean_tk, "", "What architectural tradeoffs have you seen in your stack?"]
+        )
+    else:
+        lines.extend(["", f"What changes when you apply {clean_hl} in production?"])
+
+    body = "\n".join(lines).strip()
     if len(body) > 490:
-        body = body[:480].rstrip() + "\n\nWhat are your thoughts?"
+        body = body[:470].rstrip() + "\n\nWhat are your thoughts?"
     return body
 
 
@@ -130,11 +137,33 @@ def repurpose_topic(
     takeaway = str(topic_data.get("takeaway") or "")
     category = str(topic_data.get("category") or "AI ARCHITECTURE")
 
-    # Calibrated synthesis for each platform
-    x_text = format_x(headline, points)
-    bsky_text = format_bluesky(headline, points)
-    link_text = format_linkedin(headline, body, points, takeaway)
-    thrd_text = format_threads(headline, takeaway)
+    platforms = topic_data.get("platforms")
+    if not isinstance(platforms, dict):
+        platforms = {}
+
+    def native_text(key: str) -> str:
+        direct = topic_data.get(key)
+        if isinstance(direct, str) and direct.strip():
+            return direct.strip()
+        value = platforms.get(key)
+        if isinstance(value, dict):
+            value = value.get("text")
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+        return ""
+
+    # Calibrated synthesis for each platform, preserving native copy when present.
+    link_media_type = "image" if generate_media else None
+    x_text = native_text("x") or format_x(headline, points)
+    bsky_text = native_text("bluesky") or format_bluesky(headline, points)
+    link_text = native_text("linkedin") or format_linkedin(
+        headline,
+        body,
+        points,
+        takeaway,
+        media_type=link_media_type,
+    )
+    thrd_text = native_text("threads") or format_threads(headline, takeaway)
 
     media_map: dict[str, Any] = {
         "x": [],

@@ -485,26 +485,23 @@ def generate_topic_with_llm(
     model: str | None = None,
     timeout: float = DEFAULT_TIMEOUT,
     cfg: dict[str, Any] | None = None,
-) -> tuple[bool, dict[str, Any]]:
-    """Synthesizes swipe intelligence items into a structured topic dictionary.
+) -> tuple[bool, dict[str, Any] | None]:
+    """Synthesize swipe intelligence into a structured topic dictionary.
 
-    Returns (True, topic_dict) on success, or (False, fallback_dict) on any failure or if
-    LLM is disabled / unconfigured.
+    Returns ``(True, topic_dict)`` on success. On any failure, or when the LLM
+    is disabled/unconfigured, returns ``(False, None)``. The caller owns the
+    deterministic fallback so every path still passes the relevance gate.
     """
-    from scripts.generate import generate_heuristic_topic
-
-    fallback_topic = generate_heuristic_topic(kind, items)
-
     if not items:
-        return False, fallback_topic
+        return False, None
 
     active_provider = resolve_provider(explicit_provider=provider, cfg=cfg)
     if active_provider in ("", "local", "none", "deterministic"):
-        return False, fallback_topic
+        return False, None
 
     active_key = resolve_api_key(active_provider, explicit_key=api_key)
     if not active_key:
-        return False, fallback_topic
+        return False, None
 
     if voice_profile is None:
         voice_profile = load_voice_profile()
@@ -531,4 +528,4 @@ def generate_topic_with_llm(
         KeyError,
         Exception,
     ):
-        return False, fallback_topic
+        return False, None

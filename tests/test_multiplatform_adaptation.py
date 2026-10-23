@@ -60,11 +60,12 @@ def test_multiplatform_repurpose_simultaneous_invariants(core_insight):
     # 3. LinkedIn Invariants
     li_slot = adapted["linkedin"]
     assert li_slot["enabled"] is True
-    assert li_slot["media_type"] == "carousel"
-    assert "Key Engineering Takeaways:" in li_slot["text"]
+    assert li_slot["media_type"] == "image"
+    assert "What changes in practice:" in li_slot["text"]
     assert "▸ Direct WebSocket" in li_slot["text"]
     assert "Bottom line:" in li_slot["text"]
-    assert "Swipe through the architecture carousel" in li_slot["text"]
+    assert "Architectural Bottleneck" not in li_slot["text"]
+    assert "cards below" not in li_slot["text"]
     assert len(li_slot["text"]) > 250
 
     # 4. Threads Invariants
@@ -119,10 +120,10 @@ def test_boundary_truncation_with_extremely_long_insight():
     assert len(bsky_out) <= 300
     assert bsky_out.endswith("...")
 
-    # Threads: strictly <= 500
+    # Threads: strictly <= 500 and still ends on a discussion question
     th_out = format_threads(long_headline, long_takeaway)
     assert len(th_out) <= 500
-    assert th_out.endswith("...")
+    assert th_out.endswith("?")
 
 
 def test_minimal_insight_payload():

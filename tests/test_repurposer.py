@@ -51,9 +51,11 @@ class TestContentRepurposer(unittest.TestCase):
         takeaway = "Build on local tools and open protocols."
         formatted = format_linkedin(headline, body, points, takeaway)
 
-        self.assertIn("Key Engineering Takeaways:", formatted)
+        self.assertIn("What changes in practice:", formatted)
         self.assertIn("▸ Relying on paid APIs", formatted)
-        self.assertIn("architecture carousel below", formatted)
+        self.assertIn("Bottom line: Build on local tools", formatted)
+        self.assertNotIn("Architectural Bottleneck", formatted)
+        self.assertNotIn("architecture carousel below", formatted)
         self.assertGreater(len(formatted), 250)
 
     def test_format_threads_conversational(self):
@@ -81,7 +83,7 @@ class TestContentRepurposer(unittest.TestCase):
         self.assertIn("threads", res)
 
         self.assertTrue(res["x"]["enabled"])
-        self.assertEqual(res["linkedin"]["media_type"], "carousel")
+        self.assertEqual(res["linkedin"]["media_type"], "image")
         self.assertIn("document_title", res["linkedin"])
 
 

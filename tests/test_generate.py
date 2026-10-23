@@ -1,3 +1,6 @@
+import pytest
+
+from scripts.errors import NoRelevantTopic
 from scripts.generate import (
     extract_key_takeaways,
     generate_heuristic_topic,
@@ -33,11 +36,9 @@ def test_generate_topic_from_items_returns_valid_structure():
     assert "takeaway" in topic
 
 
-def test_generate_topic_from_items_empty_fallback():
-    topic = generate_topic_from_items("value", [])
-    assert "headline" in topic
-    assert "points" in topic
-    assert len(topic["points"]) > 0
+def test_generate_topic_from_items_empty_fails_closed():
+    with pytest.raises(NoRelevantTopic):
+        generate_topic_from_items("value", [])
 
 
 def test_load_daily_swipe_missing(tmp_path, monkeypatch):
@@ -49,7 +50,20 @@ def test_load_daily_swipe_missing(tmp_path, monkeypatch):
 
 def test_generate_platform_native_drafts_heuristic_bounds():
     """Validates that generate_platform_native_drafts adheres to character bounds and archetypes."""
-    drafts = generate_platform_native_drafts(kind="ai_update", items=[], use_llm=False)
+    items = [
+        {
+            "source": "hn",
+            "title": "Kubernetes distributed database latency architecture",
+            "url": "https://example.com/kubernetes-latency",
+            "score": 350,
+            "extra": (
+                "The database planner now handles distributed joins with lower latency. "
+                "Teams can reduce query latency by using better statistics and avoiding "
+                "unnecessary distributed scans."
+            ),
+        }
+    ]
+    drafts = generate_platform_native_drafts(kind="ai_update", items=items, use_llm=False)
     
     # 4 distinct platform texts
     assert "x" in drafts

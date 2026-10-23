@@ -27,25 +27,114 @@ try:
     from scripts import generate
     from scripts import repurpose
     from scripts.browser_daemon import ensure_browser_running
+    from scripts.errors import DuplicateTopic, NoRelevantTopic, TopicRejected
+    from scripts.llm import load_voice_profile
+    from scripts.relevance import score_candidates
 except ImportError:
     import settings
     import due
     import generate
     import repurpose
     from browser_daemon import ensure_browser_running
+    from errors import DuplicateTopic, NoRelevantTopic, TopicRejected
+    from llm import load_voice_profile
+    from relevance import score_candidates
+
+
+def _drop_candidate(
+    candidates: list[dict[str, Any]],
+    item: dict[str, Any] | None,
+    voice_profile: str,
+) -> None:
+    """Remove the rejected item, or the highest-scoring accepted item."""
+    if item is not None:
+        for index, candidate in enumerate(candidates):
+            if candidate is item or candidate == item:
+                candidates.pop(index)
+                return
+
+    scored = score_candidates(candidates, voice_profile=voice_profile)
+    accepted = sorted(
+        [(candidate, result) for candidate, result in scored if result.accepted],
+        key=lambda pair: pair[1].score,
+        reverse=True,
+    )
+    if accepted:
+        target = accepted[0][0]
+        for index, candidate in enumerate(candidates):
+            if candidate is target:
+                candidates.pop(index)
+                return
+    if candidates:
+        candidates.pop(0)
 
 
 def populate_daily_plan(plan: dict[str, Any], swipe_items: list[dict[str, Any]], force: bool = False) -> dict[str, Any]:
-    """Iterates through slots in a plan, generating topics, polymorphic drafts, and assets."""
+    """Populate every empty slot with unique, relevant, voice-aligned content."""
+    voice_profile = load_voice_profile()
+    seen_content: set[str] = set()
+    seen_bullets: set[str] = set()
+
     for idx, slot_data in enumerate(plan.get("slots", [])):
         # If text is already populated, skip overwriting unless force is True
         if not force and slot_data.get("text") and slot_data.get("platforms"):
             continue
 
         kind = slot_data.get("kind", "value")
-        # Sub-slice swipe items so each slot gets distinct material
-        item_slice = swipe_items[idx * 3: (idx + 1) * 3] if swipe_items else []
-        topic = generate.generate_topic_from_items(kind, item_slice)
+        # Sub-slice swipe items so each slot gets distinct material.
+        candidates = list(swipe_items[idx * 3: (idx + 1) * 3]) if swipe_items else []
+        attempted_empty = False
+        topic: dict[str, Any] | None = None
+        content_hash = ""
+        bullet_hash = ""
+        rejections: list[str] = []
+        duplicate_seen = False
+
+        while candidates or not attempted_empty:
+            attempted_empty = True
+            try:
+                topic = generate.generate_topic_from_items(
+                    kind,
+                    candidates,
+                    voice_profile=voice_profile,
+                )
+            except TopicRejected as exc:
+                title = str((exc.item or {}).get("title") or "unknown")[:80]
+                rejections.append(f"{exc.reason}:{title}")
+                print(
+                    f"[PIPELINE] Rejected candidate for slot {slot_data.get('slot')}: "
+                    f"{exc.reason} ({title})"
+                )
+                _drop_candidate(candidates, exc.item, voice_profile)
+                continue
+            except NoRelevantTopic as exc:
+                rejections.append(str(exc))
+                break
+
+            content_hash = generate.content_fingerprint(topic)
+            bullet_hash = generate.bullet_fingerprint(topic)
+            if content_hash in seen_content or bullet_hash in seen_bullets:
+                headline = str(topic.get("headline") or "")[:80]
+                duplicate_seen = True
+                rejections.append(f"duplicate_slot_content:{headline}")
+                print(
+                    f"[PIPELINE] Duplicate content rejected for slot {slot_data.get('slot')}: "
+                    f"{headline}"
+                )
+                _drop_candidate(candidates, None, voice_profile)
+                topic = None
+                continue
+            break
+
+        if topic is None:
+            date = plan.get("date") or "unknown-date"
+            slot = slot_data.get("slot") or "unknown-slot"
+            if duplicate_seen and not any(not item.startswith("duplicate_slot_content:") for item in rejections):
+                raise DuplicateTopic(f"duplicate_slot_content: date={date} slot={slot}")
+            reasons = "; ".join(rejections) or "no_candidates"
+            raise NoRelevantTopic(
+                f"no_publishable_candidate_for_slot: date={date} slot={slot} reasons={reasons}"
+            )
 
         poly_data = repurpose.repurpose_topic(
             topic_data=topic,
@@ -55,9 +144,12 @@ def populate_daily_plan(plan: dict[str, Any], swipe_items: list[dict[str, Any]],
             slot=slot_data.get("slot"),
         )
 
+        seen_content.add(content_hash)
+        seen_bullets.add(bullet_hash)
         slot_data["text"] = poly_data["x"]["text"]
         slot_data["headline"] = topic["headline"]
         slot_data["platforms"] = poly_data
+        slot_data["content_hash"] = content_hash
         if poly_data["x"].get("media"):
             slot_data["image"] = poly_data["x"]["media"][0]
 
