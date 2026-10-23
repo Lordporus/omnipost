@@ -297,18 +297,27 @@ async def _insert_text(page: Session, text: str) -> str:
     return await page.eval("(document.querySelector('%s')||{}).innerText || ''" % EDITOR)
 
 
-async def _attach_image(page: Session, path: Path) -> str:
+async def _attach_images(page: Session, paths: list[Path]) -> str:
+    """Attach one or more local images in order to X's file input."""
+    files = [str(Path(path)) for path in paths]
+    if not files:
+        return "no-files"
     doc = await page.send("DOM.getDocument", depth=-1)
     node = await page.send("DOM.querySelector", nodeId=doc["root"]["nodeId"], selector=FILE_INPUT)
     if not node.get("nodeId"):
         return "no-file-input"
-    await page.send("DOM.setFileInputFiles", files=[str(path)], nodeId=node["nodeId"])
+    await page.send("DOM.setFileInputFiles", files=files, nodeId=node["nodeId"])
     for _ in range(30):
         await asyncio.sleep(1.0)
         st = json.loads(await page.eval(COMPOSE_STATE_JS))
         if st.get("btn_found") and not st.get("btn_disabled"):
-            return "attached"
+            return "attached" if len(files) == 1 else f"attached:{len(files)}"
     return "attached-but-button-still-disabled"
+
+
+async def _attach_image(page: Session, path: Path) -> str:
+    """Backward-compatible single-image wrapper."""
+    return await _attach_images(page, [path])
 
 
 async def _click_post(page: Session) -> str:
@@ -432,9 +441,13 @@ async def capture(what: str = "profile", h: str | None = None) -> dict:
 # ------------------------------------------------------------------ posting
 
 async def do_post(text: str, image: Path | None = None, kind: str = "value",
-                  dry_run: bool = False, settle: float = 4.0) -> dict:
+                  dry_run: bool = False, settle: float = 4.0,
+                  images: list[Path] | None = None) -> dict:
     c = cfg()
     st = load_state()
+    media_paths = [Path(path) for path in (images or [])]
+    if image is not None and Path(image) not in media_paths:
+        media_paths.insert(0, Path(image))
     day = next_day(st) if kind == "ai_update" else None
     header = None
     if kind == "ai_update" and c.get("ai_update_enabled", True):
@@ -470,8 +483,14 @@ async def do_post(text: str, image: Path | None = None, kind: str = "value",
                                          "editor": got[:200]}, indent=2))
 
         img_status = None
-        if image:
-            img_status = await _attach_image(page, image)
+        if media_paths:
+            img_status = await _attach_images(page, media_paths)
+            if len(media_paths) > 1:
+                print(
+                    f"  [X] Attached {len(media_paths)} cards: {img_status}",
+                    file=sys.stderr,
+                    flush=True,
+                )
 
         SHOTS.mkdir(parents=True, exist_ok=True)
         shot = SHOTS / "compose.png"

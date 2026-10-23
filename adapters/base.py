@@ -4,6 +4,23 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+try:
+    from scripts.errors import (
+        AdapterError,
+        ComposerOpenError,
+        RateLimitError,
+        SelectorError,
+        VerificationError,
+    )
+except ImportError:  # direct script execution from the scripts/ directory
+    from errors import (  # type: ignore[no-redef]
+        AdapterError,
+        ComposerOpenError,
+        RateLimitError,
+        SelectorError,
+        VerificationError,
+    )
+
 
 @dataclass(frozen=True)
 class PlatformCapabilities:
