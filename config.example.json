@@ -67,6 +67,11 @@
 
   "require_verified_source": true,
 
+  "publish": {
+    "_retry_failed_hint": "false keeps failed posts from being retried automatically; submitted_unverified is never auto-retried.",
+    "retry_failed": false
+  },
+
   "browser": {
     "port": 9222,
     "profile_dir": "",

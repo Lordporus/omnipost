@@ -399,6 +399,11 @@ def _normalize_text_for_comparison(text: str) -> str:
     return re.sub(r"\s+", " ", cleaned).strip()
 
 
+def _is_posted_status(status: Any) -> bool:
+    """Duplicate checks treat verified and unverified submissions as already posted."""
+    return status in ("published", "published_verified", "submitted_unverified")
+
+
 def check_duplicate_post(
     text: str,
     state: dict | None = None,
@@ -415,7 +420,7 @@ def check_duplicate_post(
         if platform:
             # Check if this specific platform was already published in this entry
             plat_data = entry.get("platforms", {}).get(platform.lower())
-            if isinstance(plat_data, dict) and plat_data.get("status") == "published":
+            if isinstance(plat_data, dict) and _is_posted_status(plat_data.get("status")):
                 hist_text = plat_data.get("text") or entry.get("text", "")
                 if hist_text and _normalize_text_for_comparison(hist_text) == norm_candidate:
                     date_str = plat_data.get("at") or entry.get("date") or "history"
@@ -435,7 +440,7 @@ def check_duplicate_post(
 
         platforms = entry.get("platforms", {})
         for plat_name, p_data in platforms.items():
-            if isinstance(p_data, dict) and p_data.get("status") == "published":
+            if isinstance(p_data, dict) and _is_posted_status(p_data.get("status")):
                 p_text = p_data.get("text", "")
                 if p_text and _normalize_text_for_comparison(p_text) == norm_candidate:
                     date_str = p_data.get("at") or entry.get("date") or "history"

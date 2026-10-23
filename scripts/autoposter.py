@@ -59,6 +59,18 @@ def ensure_daily_plan() -> None:
         run_cmd([str(SCRIPTS / "due.py"), "make-plan"])
 
 
+def _retry_failed_enabled() -> bool:
+    """Failed records are retried only when the operator opts in."""
+    try:
+        cfg = settings.load()
+    except Exception:
+        return False
+    publish_cfg = cfg.get("publish", {})
+    if not isinstance(publish_cfg, dict):
+        return False
+    return bool(publish_cfg.get("retry_failed", False))
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--dry-run", action="store_true", help="evaluate due slot without posting")
@@ -115,6 +127,7 @@ def main() -> int:
     st = ledger.load_state()
     date = due_item.get("date") or datetime.now().strftime("%Y-%m-%d")
     poly_platforms = due_item.get("platforms", {})
+    retry_failed = _retry_failed_enabled()
     all_successful = True
     verified_urls: list[str] = []
 
@@ -146,6 +159,32 @@ def main() -> int:
             if done_info.get("url"):
                 verified_urls.append(done_info["url"])
             continue
+
+        key = f"{date}:{slot}:{plat_key}"
+        existing = ledger.get_idempotency_record(st, key)
+        if existing is not None:
+            existing_status = existing.get("status")
+            if not (existing_status == ledger.STATUS_FAILED and retry_failed):
+                print(
+                    f"[{datetime.now().strftime('%H:%M:%S')}] [SKIP] [{p_name}] "
+                    f"Slot {slot} already has idempotency state '{existing_status}'. "
+                    "Unverified submissions are never auto-retried."
+                )
+                continue
+
+        if not ledger.reserve_idempotency(
+            key,
+            plat_key,
+            allow_failed=retry_failed,
+        ):
+            print(
+                f"[{datetime.now().strftime('%H:%M:%S')}] [SKIP] [{p_name}] "
+                f"Slot {slot} was reserved by another publisher. Skipping."
+            )
+            continue
+
+        # Never dispatch on a stale pre-reservation view of state.
+        st = ledger.load_state()
 
         # Check polymorphic platform configuration
         plat_draft = poly_platforms.get(plat_key, {})
@@ -184,23 +223,48 @@ def main() -> int:
         print(f"[{datetime.now().strftime('%H:%M:%S')}] [{p_name}] Publishing slot {slot}...")
         try:
             res = adapter.publish(payload)
-            ledger.record_platform_status(st, date, slot, plat_key, res, text=adapted_text, kind=kind)
-            publish_results[plat_key] = {"success": res.success, "url": res.url, "error": res.error}
-            if res.success:
-                print(f"[{datetime.now().strftime('%H:%M:%S')}] [{p_name}] Published! URL: {res.url or 'N/A'} (verified={res.verified})")
+            ledger.record_platform_status(
+                st,
+                date,
+                slot,
+                plat_key,
+                res,
+                text=adapted_text,
+                kind=kind,
+                idempotency_key=key,
+            )
+            publish_results[plat_key] = {
+                "success": res.success,
+                "verified": res.verified,
+                "url": res.url,
+                "error": res.error,
+            }
+            if res.success and res.verified:
+                print(f"[{datetime.now().strftime('%H:%M:%S')}] [{p_name}] [VERIFIED] URL: {res.url or 'N/A'}")
                 if res.url:
                     verified_urls.append(res.url)
+            elif res.success:
+                all_successful = False
+                print(
+                    f"[{datetime.now().strftime('%H:%M:%S')}] [{p_name}] "
+                    f"[UNVERIFIED] submitted but not read back: {res.error or 'verification_failed'}"
+                )
             else:
                 all_successful = False
-                print(f"[{datetime.now().strftime('%H:%M:%S')}] [{p_name}] Publish failed: {res.error}")
+                print(f"[{datetime.now().strftime('%H:%M:%S')}] [{p_name}] [FAIL] {res.error}")
         except Exception as exc:
             all_successful = False
             ledger.record_platform_status(
-                st, date, slot, plat_key,
+                st,
+                date,
+                slot,
+                plat_key,
                 {"success": False, "verified": False, "error": str(exc)},
-                text=adapted_text, kind=kind
+                text=adapted_text,
+                kind=kind,
+                idempotency_key=key,
             )
-            publish_results[plat_key] = {"success": False, "error": str(exc)}
+            publish_results[plat_key] = {"success": False, "verified": False, "error": str(exc)}
             print(f"[{datetime.now().strftime('%H:%M:%S')}] [{p_name}] Publish exception: {exc}")
 
     if publish_results:
@@ -217,7 +281,10 @@ def main() -> int:
         return 0
     else:
         pending = ledger.get_pending_platforms(st, date, slot, target_platforms)
-        print(f"[{datetime.now().strftime('%H:%M:%S')}] [PARTIAL] Slot {slot} partially published. Remaining channels {pending} will be retried on next tick.")
+        print(
+            f"[{datetime.now().strftime('%H:%M:%S')}] [PARTIAL] Slot {slot} is not fully verified. "
+            f"Remaining channels {pending} require reconciliation or explicit retry."
+        )
         return 1
 
 

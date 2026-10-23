@@ -2,7 +2,14 @@
 """Immediate manual publisher for OmniPost across all active platforms.
 
 Dispatches a single post to all enabled platform adapters (X, Bluesky,
-LinkedIn, Threads) with per-platform character limits and atomic ledger logging.
+LinkedIn, Threads) with per-platform character limits, idempotency reservations,
+killable worker timeouts, and truthful ledger logging.
+
+Exit codes (live):
+  0  every target is published_verified
+  1  at least one target failed
+  2  connectivity is offline / publishing was deferred
+  3  every dispatch completed but at least one target is submitted_unverified
 
 Usage:
   python scripts/publish_now.py --text "Hello from OmniPost!"
@@ -11,18 +18,19 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import json
+import os
+import subprocess
 import sys
+import tempfile
+import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "scripts"))
-
-import concurrent.futures
-import json
-import urllib.request
-from typing import Any
 
 try:
     from scripts import settings, ledger, notify_webhook
@@ -44,6 +52,129 @@ def check_connectivity(probe_url: str = "https://www.google.com/generate_204", t
         return False
 
 
+def _dispatch_worker(
+    adapter: Any,
+    payload: PublishPayload,
+    timeout: float,
+) -> PublishResult:
+    """Run one publish in a killable subprocess and reconcile a timeout."""
+    platform = adapter.platform_name.lower()
+    fd, raw_result_path = tempfile.mkstemp(prefix="omnipost_publish_", suffix=".json")
+    os.close(fd)
+    result_path = Path(raw_result_path)
+    worker_input = {"platform": platform, **payload.to_dict()}
+
+    proc = None
+    try:
+        proc = subprocess.Popen(
+            [
+                sys.executable,
+                "-m",
+                "scripts.publish_worker",
+                "--result-file",
+                str(result_path),
+            ],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            cwd=str(ROOT),
+        )
+        try:
+            stdout, stderr = proc.communicate(
+                json.dumps(worker_input, ensure_ascii=False, default=str),
+                timeout=timeout,
+            )
+        except subprocess.TimeoutExpired:
+            try:
+                proc.kill()
+            except Exception:
+                pass
+            try:
+                stdout, stderr = proc.communicate(timeout=5)
+            except Exception:
+                stdout, stderr = "", ""
+
+            verified = False
+            try:
+                verified = bool(adapter.verify(None, payload.text[:80]))
+            except Exception:
+                verified = False
+
+            return PublishResult(
+                platform=platform,
+                success=True,
+                verified=verified,
+                error=None if verified else "timeout_unreconciled",
+                raw_response={
+                    "timeout": True,
+                    "reconciled": verified,
+                    "stdout": stdout or "",
+                    "stderr": stderr or "",
+                },
+            )
+
+        if proc.returncode != 0:
+            error = (stderr or stdout or f"worker_exit_{proc.returncode}").strip()
+            return PublishResult(
+                platform=platform,
+                success=False,
+                verified=False,
+                error=error,
+                raw_response={"returncode": proc.returncode, "stderr": stderr or ""},
+            )
+
+        try:
+            data = json.loads(result_path.read_text(encoding="utf-8"))
+        except Exception as exc:
+            return PublishResult(
+                platform=platform,
+                success=False,
+                verified=False,
+                error=f"invalid_worker_result: {exc}",
+                raw_response={"stderr": stderr or ""},
+            )
+
+        result = PublishResult.from_dict(data)
+        if not result.platform:
+            result.platform = platform
+        return result
+    finally:
+        try:
+            result_path.unlink(missing_ok=True)
+        except OSError:
+            pass
+
+
+def _status_label(status: str | None) -> str:
+    if status == ledger.STATUS_PUBLISHED_VERIFIED:
+        return "[VERIFIED]"
+    if status == ledger.STATUS_SUBMITTED_UNVERIFIED:
+        return "[UNVERIFIED]"
+    if status == ledger.STATUS_FAILED:
+        return "[FAIL]"
+    return "[PENDING]"
+
+
+def _exit_code_for_state(
+    state: dict,
+    date: str,
+    slot: str,
+    targets: list[str],
+) -> int:
+    statuses = [
+        (ledger.get_platform_status(state, date, slot, platform) or {}).get("status")
+        for platform in targets
+    ]
+    if statuses and all(status == ledger.STATUS_PUBLISHED_VERIFIED for status in statuses):
+        return 0
+    if any(status == ledger.STATUS_FAILED for status in statuses):
+        return 1
+    if any(status == ledger.STATUS_SUBMITTED_UNVERIFIED for status in statuses):
+        return 3
+    return 1
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
@@ -57,6 +188,8 @@ def main() -> int:
     parser.add_argument("--image", help="Optional local image path to attach")
     parser.add_argument("--platforms", help="Comma-separated platforms to target (e.g. linkedin,threads)")
     parser.add_argument("--timeout", type=float, default=80.0, help="Per-platform timeout in seconds (default: 80)")
+    parser.add_argument("--force", action="store_true", help="Override an existing idempotency reservation")
+    parser.add_argument("--retry-failed", action="store_true", help="Explicitly retry failed records (never unverified ones)")
     args = parser.parse_args()
 
     draft_data: dict[str, Any] = {}
@@ -206,18 +339,51 @@ def main() -> int:
         return 0
 
     if not check_connectivity(timeout=3.0):
-        print("[WARN] Internet connection unreachable. Deferring publishing.", flush=True)
-        return 0
+        print("[DEFERRED] offline: internet connection unreachable; no publish was attempted.", flush=True)
+        return 2
 
     st = ledger.load_state()
     today = datetime.now().strftime("%Y-%m-%d")
     slot = draft_data.get("slot") or datetime.now().strftime("%H:%M")
+    targets = [adapter.platform_name.lower() for adapter in adapters]
 
     results: dict[str, PublishResult] = {}
     for adapter in adapters:
         p_name = adapter.platform_name.upper()
         plat_key = adapter.platform_name.lower()
         caps = adapter.capabilities
+        key = f"{today}:{slot}:{plat_key}"
+
+        if not args.force and ledger.is_platform_done(st, today, slot, plat_key):
+            print(f"[SKIP] [{p_name}] slot {slot} is already published_verified.", flush=True)
+            continue
+
+        existing = ledger.get_idempotency_record(st, key)
+        if existing is not None and not args.force:
+            existing_status = existing.get("status")
+            if not (existing_status == ledger.STATUS_FAILED and args.retry_failed):
+                print(
+                    f"[SKIP] [{p_name}] slot {slot} already has idempotency state "
+                    f"'{existing_status}'.",
+                    flush=True,
+                )
+                continue
+
+        if not ledger.reserve_idempotency(
+            key,
+            plat_key,
+            force=args.force,
+            allow_failed=args.retry_failed,
+        ):
+            print(
+                f"[SKIP] [{p_name}] slot {slot} already published/unverified.",
+                flush=True,
+            )
+            continue
+
+        # The reservation is committed in its own transaction; never dispatch on
+        # a stale pre-reservation view of state.
+        st = ledger.load_state()
 
         post_text = tailored_texts.get(plat_key, uniform_text)
         if len(post_text) > caps.max_characters:
@@ -242,63 +408,63 @@ def main() -> int:
 
         print(f"[{p_name}] Publishing (max {args.timeout}s)...", flush=True)
         try:
-            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
-                future = executor.submit(adapter.publish, payload)
-                res = future.result(timeout=args.timeout)
+            res = _dispatch_worker(adapter, payload, args.timeout)
+        except Exception as exc:
+            res = PublishResult(
+                platform=plat_key,
+                success=False,
+                verified=False,
+                error=str(exc),
+            )
 
-            results[plat_key] = res
-            ledger.record_platform_status(
-                st, today, slot, plat_key, res, text=post_text, kind="manual_test"
-            )
-            if res.success:
-                print(f"[{p_name}] SUCCESS!", flush=True)
-                print(f"  URL:      {res.url or 'N/A'}", flush=True)
-                print(f"  Verified: {res.verified}", flush=True)
-            else:
-                print(f"[{p_name}] FAILED: {res.error}", flush=True)
-                notify_webhook.dispatch_webhook(
-                    "failure",
-                    f"[{p_name}] Publishing Failed",
-                    res.error or "Unknown failure",
-                    {"platform": p_name, "error": str(res.error)},
-                )
-        except concurrent.futures.TimeoutError:
-            err_msg = "network_timeout"
-            print(f"[{p_name}] TIMEOUT ALERT: Operation timed out after {args.timeout}s! Skipping to next platform.", flush=True)
-            err_res = PublishResult(platform=plat_key, success=False, error=err_msg)
-            results[plat_key] = err_res
-            ledger.record_platform_status(
-                st, today, slot, plat_key, err_res, text=post_text, kind="manual_test"
-            )
+        results[plat_key] = res
+        ledger.record_platform_status(
+            st,
+            today,
+            slot,
+            plat_key,
+            res,
+            text=post_text,
+            kind="manual_test",
+            idempotency_key=key,
+        )
+
+        if res.success and res.verified:
+            print(f"[VERIFIED] [{p_name}] live", flush=True)
+            print(f"  URL:      {res.url or 'N/A'}", flush=True)
+        elif res.success:
+            print(f"[UNVERIFIED] [{p_name}] submitted but not read back", flush=True)
+            print(f"  Error:    {res.error or 'verification_failed'}", flush=True)
             notify_webhook.dispatch_webhook(
                 "warning",
-                f"⚠️ [{p_name}] Network Timeout Alert",
-                f"Post attempt to {p_name} timed out due to unstable network after {args.timeout}s. Check your feed before retrying.",
-                {"platform": p_name, "status": "network_timeout", "timeout": str(args.timeout)},
+                f"⚠️ [{p_name}] Submitted Unverified",
+                f"{p_name} accepted the post but read-back did not verify it. Do not auto-retry.",
+                {"platform": p_name, "status": ledger.STATUS_SUBMITTED_UNVERIFIED, "error": res.error},
             )
-        except Exception as exc:
-            print(f"[{p_name}] EXCEPTION: {exc}", flush=True)
-            err_res = PublishResult(platform=plat_key, success=False, error=str(exc))
-            results[plat_key] = err_res
-            ledger.record_platform_status(
-                st, today, slot, plat_key, err_res, text=post_text, kind="manual_test"
-            )
+        else:
+            print(f"[FAIL] [{p_name}] {res.error}", flush=True)
             notify_webhook.dispatch_webhook(
                 "failure",
-                f"[{p_name}] Publishing Exception",
-                str(exc),
-                {"platform": p_name, "exception": str(exc)},
+                f"[{p_name}] Publishing Failed",
+                res.error or "Unknown failure",
+                {"platform": p_name, "error": str(res.error)},
             )
 
         print("-" * 50, flush=True)
 
+    final_state = ledger.load_state()
     print("\n================== Summary ==================", flush=True)
-    all_ok = all(r.success for r in results.values())
-    for plat, r in results.items():
-        status_sym = "[PASS]" if r.success else "[FAIL]"
-        print(f"{status_sym} {plat.upper()}: url={r.url} verified={r.verified} error={r.error}", flush=True)
+    for plat_key in targets:
+        status = (ledger.get_platform_status(final_state, today, slot, plat_key) or {}).get("status")
+        record = ledger.get_platform_status(final_state, today, slot, plat_key) or {}
+        print(
+            f"{_status_label(status)} {plat_key.upper()}: "
+            f"url={record.get('url')} verified={record.get('verified')} "
+            f"error={record.get('error')}",
+            flush=True,
+        )
 
-    if not args.dry_run and results:
+    if results:
         handles = {}
         for adapter in adapters:
             plat_k = adapter.platform_name.lower()
@@ -316,9 +482,8 @@ def main() -> int:
             handles=handles,
         )
 
-    return 0 if all_ok else 1
+    return _exit_code_for_state(final_state, today, slot, targets)
 
 
 if __name__ == "__main__":
     sys.exit(main())
-

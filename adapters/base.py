@@ -24,6 +24,25 @@ class PublishPayload:
     media_type: str = "image"  # "image" | "carousel"
     extra_metadata: dict[str, Any] = field(default_factory=dict)
 
+    def to_dict(self) -> dict[str, Any]:
+        """Serialize for the isolated publish-worker JSON contract."""
+        return {
+            "text": self.text,
+            "media_paths": [str(path) for path in self.media_paths],
+            "media_type": self.media_type,
+            "extra_metadata": dict(self.extra_metadata or {}),
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "PublishPayload":
+        """Deserialize a publish-worker payload."""
+        return cls(
+            text=str(data.get("text") or ""),
+            media_paths=[Path(path) for path in (data.get("media_paths") or [])],
+            media_type=str(data.get("media_type") or "image"),
+            extra_metadata=dict(data.get("extra_metadata") or {}),
+        )
+
 
 import base64
 
@@ -38,6 +57,33 @@ class PublishResult:
     error: str | None = None
     artifacts: dict[str, str] = field(default_factory=dict)
     raw_response: dict[str, Any] = field(default_factory=dict)
+
+    def to_dict(self) -> dict[str, Any]:
+        """Serialize for the isolated publish-worker result file."""
+        return {
+            "platform": self.platform,
+            "success": bool(self.success),
+            "post_id": self.post_id,
+            "url": self.url,
+            "verified": bool(self.verified),
+            "error": self.error,
+            "artifacts": dict(self.artifacts or {}),
+            "raw_response": dict(self.raw_response or {}),
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "PublishResult":
+        """Deserialize a publish-worker result."""
+        return cls(
+            platform=str(data.get("platform") or ""),
+            success=bool(data.get("success", False)),
+            post_id=data.get("post_id"),
+            url=data.get("url"),
+            verified=bool(data.get("verified", False)),
+            error=data.get("error"),
+            artifacts=dict(data.get("artifacts") or {}),
+            raw_response=dict(data.get("raw_response") or {}),
+        )
 
 
 async def capture_failure_artifacts(page: Any, platform: str) -> dict[str, str]:

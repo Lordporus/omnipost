@@ -116,17 +116,17 @@ class TestPolymorphicAutoposter(unittest.TestCase):
         mock_x = MagicMock()
         mock_x.platform_name = "x"
         mock_x.capabilities = PlatformCapabilities(max_characters=280)
-        mock_x.publish.return_value = PublishResult(platform="x", success=True, url="https://x.com/1")
+        mock_x.publish.return_value = PublishResult(platform="x", success=True, verified=True, url="https://x.com/1")
 
         mock_bsky = MagicMock()
         mock_bsky.platform_name = "bluesky"
         mock_bsky.capabilities = PlatformCapabilities(max_characters=300)
-        mock_bsky.publish.return_value = PublishResult(platform="bluesky", success=True, url="https://bsky.app/1")
+        mock_bsky.publish.return_value = PublishResult(platform="bluesky", success=True, verified=True, url="https://bsky.app/1")
 
         mock_link = MagicMock()
         mock_link.platform_name = "linkedin"
         mock_link.capabilities = PlatformCapabilities(max_characters=3000)
-        mock_link.publish.return_value = PublishResult(platform="linkedin", success=True, url="https://linkedin.com/1")
+        mock_link.publish.return_value = PublishResult(platform="linkedin", success=True, verified=True, url="https://linkedin.com/1")
 
         mock_thrd = MagicMock()
         mock_thrd.platform_name = "threads"

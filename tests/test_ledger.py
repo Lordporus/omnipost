@@ -1,4 +1,4 @@
-"""Unit tests for Unified State Ledger (Schema v2.0) in scripts/ledger.py."""
+"""Unit tests for Unified State Ledger (Schema v3.0) in scripts/ledger.py."""
 import json
 import unittest
 from pathlib import Path
@@ -44,13 +44,13 @@ class TestStateLedger(unittest.TestCase):
         }
 
         migrated = ledger.migrate_state(legacy_data)
-        self.assertEqual(migrated["version"], "2.0")
+        self.assertEqual(migrated["version"], "3.0")
         self.assertEqual(len(migrated["posts"]), 2)
 
         p1 = migrated["posts"][0]
         self.assertIn("platforms", p1)
         self.assertIn("x", p1["platforms"])
-        self.assertEqual(p1["platforms"]["x"]["status"], "published")
+        self.assertEqual(p1["platforms"]["x"]["status"], "published_verified")
         self.assertEqual(p1["platforms"]["x"]["url"], "https://x.com/testuser/status/1001")
         self.assertTrue(p1["platforms"]["x"]["verified"])
         self.assertEqual(p1["date"], "2026-10-04")
@@ -63,7 +63,7 @@ class TestStateLedger(unittest.TestCase):
     def test_atomic_save_and_load(self):
         """Verify atomic save creates valid file that can be loaded cleanly."""
         data = {
-            "version": "2.0",
+            "version": "3.0",
             "handle": "alice",
             "posts": [],
         }
@@ -72,7 +72,7 @@ class TestStateLedger(unittest.TestCase):
 
         loaded = ledger.load_state(self.test_state_file)
         self.assertEqual(loaded["handle"], "alice")
-        self.assertEqual(loaded["version"], "2.0")
+        self.assertEqual(loaded["version"], "3.0")
 
     def test_record_platform_status_with_publish_result(self):
         """Verify recording PublishResult creates/updates post entry properly."""

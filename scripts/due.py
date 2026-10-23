@@ -134,7 +134,7 @@ def _posted_slots(st: dict, date: str) -> set[str]:
                 # If target platforms are known or any enabled platform is in p_platforms:
                 target_keys = [k for k in enabled_platforms if k in p_platforms] or list(p_platforms.keys())
                 all_done = bool(target_keys) and all(
-                    p_platforms.get(k, {}).get("status") == "published"
+                    p_platforms.get(k, {}).get("status") == ledger.STATUS_PUBLISHED_VERIFIED
                     for k in target_keys
                 )
                 if all_done:

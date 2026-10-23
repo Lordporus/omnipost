@@ -129,7 +129,11 @@ def collect_metrics(days: int = 7, state_path: Path | None = None) -> dict[str, 
         for plat_name, p_data in platforms.items():
             if not isinstance(p_data, dict):
                 continue
-            if p_data.get("status") != "published" or not p_data.get("url"):
+            status = p_data.get("status")
+            is_verified = status == ledger.STATUS_PUBLISHED_VERIFIED or (
+                status == "published" and bool(p_data.get("verified"))
+            )
+            if not is_verified or not p_data.get("url"):
                 continue
 
             url = p_data["url"]

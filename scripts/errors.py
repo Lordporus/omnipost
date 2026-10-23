@@ -1,4 +1,4 @@
-"""Shared typed errors for OmniPost content generation.
+"""Shared typed errors for OmniPost content generation and publish state.
 
 Keeping these in one module prevents each pipeline stage from defining its own
 near-identical exception class and lets callers catch a stable, meaningful type.
@@ -31,3 +31,15 @@ class NoRelevantTopic(ContentError):
 
 class DuplicateTopic(ContentError):
     """A topic duplicates content already assigned to another slot."""
+
+
+class StateError(Exception):
+    """Base class for publish-state failures."""
+
+
+class StateCorruptionError(StateError):
+    """state.json is unreadable and no valid backup could be restored."""
+
+
+class StateLockTimeout(StateError):
+    """The cross-process state lock could not be acquired before the timeout."""

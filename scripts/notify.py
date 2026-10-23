@@ -46,15 +46,32 @@ def send_notification(title: str, message: str, webhook: bool = False) -> None:
 
 def notify_publish(slot: str, results: dict[str, Any]) -> None:
     """Formats and dispatches publication summary across desktop toast and remote webhooks."""
-    successful = [p.upper() for p, res in (results or {}).items() if res.get("success")]
+    verified = [
+        p.upper()
+        for p, res in (results or {}).items()
+        if res.get("success") and res.get("verified", True)
+    ]
+    unverified = [
+        p.upper()
+        for p, res in (results or {}).items()
+        if res.get("success") and not res.get("verified", True)
+    ]
     failed = [p.upper() for p, res in (results or {}).items() if not res.get("success")]
 
-    if successful:
+    if verified:
         title = "OmniPost V2 Published"
-        msg = f"Slot {slot} published to: {', '.join(successful)}"
+        msg = f"Slot {slot} verified on: {', '.join(verified)}"
+        if unverified:
+            msg += f" (Unverified: {', '.join(unverified)})"
         if failed:
             msg += f" (Failed: {', '.join(failed)})"
-        event_type = "publish_partial" if failed else "publish_success"
+        event_type = "publish_partial" if (failed or unverified) else "publish_success"
+    elif unverified:
+        title = "OmniPost Publish Unverified"
+        msg = f"Slot {slot} submitted but unverified on: {', '.join(unverified)}"
+        if failed:
+            msg += f" (Failed: {', '.join(failed)})"
+        event_type = "publish_partial" if failed else "publish_unverified"
     elif failed:
         title = "OmniPost Publish Warning"
         msg = f"Slot {slot} failed on: {', '.join(failed)}"
@@ -73,7 +90,12 @@ def notify_publish(slot: str, results: dict[str, Any]) -> None:
             event_type=event_type,
             title=title,
             message=msg,
-            metadata={"slot": slot, "successful": successful, "failed": failed},
+            metadata={
+                "slot": slot,
+                "verified": verified,
+                "unverified": unverified,
+                "failed": failed,
+            },
         )
     except Exception as exc:
         print(f"[NOTIFY] Webhook dispatch error: {exc}", file=sys.stderr)

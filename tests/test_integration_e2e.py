@@ -140,7 +140,7 @@ def test_full_e2e_pipeline_simulation(tmp_path):
     for p in target_platforms:
         p_status = ledger.get_platform_status(saved_state, date_str, slot_time, p)
         assert p_status is not None
-        assert p_status["status"] == "published"
+        assert p_status["status"] == "published_verified"
         assert p_status["verified"] is True
         assert p_status["url"] is not None
 
