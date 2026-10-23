@@ -45,5 +45,48 @@
 - [x] **REQ-SRC-01:** Implement Hard Rule 3b ("Read Before You Write") verifying that post claims trace directly to scraped research sources.
 - [x] **REQ-WIZARD-01:** Expand onboarding wizard ceremony with live character limit measurement (`post.py measure --save`) and mandatory supervised first-post verification.
 
+### Phase 11: Content Integrity & Relevance Gate
+- [ ] **REQ-RELEVANCE-01:** Score every research item against an AI/engineering taxonomy, blocklist, and voice profile; reject items below threshold before generation.
+- [ ] **REQ-FAILCLOSED-01:** Requeue or skip items without a usable source summary; never synthesize the generic `"Analyzing architectural tradeoffs..."` placeholder.
+- [ ] **REQ-TAKEAWAY-01:** Derive takeaways from topic content; never use a source domain, `"Verified Reference"`, or an unrelated hardcoded sentence.
+- [ ] **REQ-BOILERPLATE-01:** Remove hardcoded LinkedIn paragraphs and ungrammatical `"Why {headline} Matters in Production"` titles; derive every section from the topic.
+- [ ] **REQ-UNIQUENESS-01:** Enforce cross-slot uniqueness for bullets, takeaways, and post text within a day.
+
+### Phase 12: Truthful Publish State & Idempotency
+- [ ] **REQ-STATE-VERIFIED-01:** Record `published_verified`, `submitted_unverified`, or `failed`; only `published_verified` counts as done.
+- [ ] **REQ-IDEMPOTENCY-01:** Key every dispatch by `(date, slot, platform)` and reconcile before retrying a timeout.
+- [ ] **REQ-STATE-LOCK-01:** Serialize `state.json` read-modify-write across processes with a bounded lock.
+- [ ] **REQ-STATE-RECOVERY-01:** Quarantine corrupt state, restore from backup, and never overwrite it with an empty state.
+- [ ] **REQ-TIMEOUT-CANCEL-01:** Cancel a timed-out publish instead of waiting for the worker; never record failed until reconciliation completes.
+
+### Phase 13: Platform Adapter Recovery & Permalinks
+- [ ] **REQ-LINK-COMPOSER-02:** Detect the LinkedIn composer with scoped selectors and wait for the dialog/editor; remove the generic tertiary-button fallback.
+- [ ] **REQ-LINK-RATE-02:** Read `platforms.linkedin.at`, use timezone-aware parsing, and fail closed on rate-limit errors.
+- [ ] **REQ-THRD-PERMALINK-01:** Return the real Threads post permalink or report unverified; never return the profile URL as the post URL.
+- [ ] **REQ-X-MEDIA-01:** Attach all rendered cards up to each platform's `max_images`, including X.
+- [ ] **REQ-ADAPTER-ERROR-01:** Raise typed adapter errors with actionable context instead of broad silent catches.
+
+### Phase 14: Platform Copy Calibration & Media Contract
+- [ ] **REQ-CHAR-LIMITS-02:** Implement one limit utility for X weighted characters, Bluesky graphemes, Threads 500, and LinkedIn 3,000.
+- [ ] **REQ-TRUNCATION-01:** Truncate on word boundaries with an ellipsis; never cut mid-word.
+- [ ] **REQ-COPY-MIN-01:** Enforce platform minimums (X 220, Bluesky 240, Threads 350, LinkedIn 1,500 when source depth supports it).
+- [ ] **REQ-CAROUSEL-CONTRACT-01:** Choose image vs PDF carousel explicitly per platform and wire or remove the PDF capability.
+
+### Phase 15: 9:16 Storybook Renderer & Deterministic Assets
+- [ ] **REQ-RENDER-916-01:** Render 1080x1920 cards (2160x3840 at 2x) with header, hero, and footer bands.
+- [ ] **REQ-STORY-SLIDES-01:** Derive every slide's headline, body, and bullets from the topic; remove hardcoded slides 2–3.
+- [ ] **REQ-FONT-DETERMINISM-01:** Embed or vendor fonts, wait for fonts/images, and render offline without fixed sleeps.
+- [ ] **REQ-ASSET-FAIL-01:** Fail the draft when a required card asset cannot be rendered; never silently publish text-only.
+- [ ] **REQ-CARD-TESTS-01:** Add dimension, offline, and topic-differentiation golden tests.
+
+### Phase 16: Privacy, Error Taxonomy & CI Guardrails
+- [ ] **REQ-ARTIFACT-PRIVACY-01:** Write artifacts under `ROOT/shots`, redact PII/tokens, cap retention, and never attach raw DOM to notifications.
+- [ ] **REQ-ERROR-TAXONOMY-01:** Replace broad silent exceptions with typed errors and contextual logging.
+- [ ] **REQ-CI-CONTRACT-01:** Add fixture-DOM selector tests, 9:16 golden tests, and a manual-gated live smoke job.
+
+### Phase 17: End-to-End Overhaul Verification & Live Drop
+- [ ] **REQ-E2E-OVERHAUL-01:** Prove relevance, uniqueness, limits, 9:16 assets, and duplicate safety in a deterministic dry-run.
+- [ ] **REQ-LIVE-VERIFY-01:** Run one controlled live drop, record verified URLs where available, and publish a telemetry report.
+
 
 

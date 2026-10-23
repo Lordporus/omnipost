@@ -1,13 +1,29 @@
+---
+gsd_state_version: "1.0"
+milestone: v2.0
+status: ready
+last_updated: "2026-10-23T12:00:00.000Z"
+state_head: 15bbcc12f0c3dcc05996904d9dc760542bb16e5c
+progress:
+  total_phases: 17
+  completed_phases: 10
+  total_plans: 38
+  completed_plans: 31
+---
+
+Total Phases: 17
+
 # GSD State Memory
 
 ## Current Position
-- Milestone: V2.1 Production Wisdom & Hardening
-- Completed Phases: Phase 1 (Adapters & Bluesky), Phase 2 (Visual Pipeline), Phase 3 (LinkedIn CDP Adapter), Phase 4 (Meta Threads CDP Adapter & Content Repurposer), Phase 5 (Unified Ledger & Cross-Platform Engagement), Phase 6 (Production Wisdom & Enforcement-First Hardening)
-- Active Phase: All phases in Milestone V2.1 complete
-- Status: All 6 phases executed and verified (184 tests passing)
 
+- Milestone: OmniPost System Overhaul (Phases 11–17)
+- Completed Phases: Phase 1 through Phase 10 (all verified)
+- Active Phase: Phase 11 — Content Integrity & Relevance Gate
+- Status: Phase 11 is planned and ready to execute. Phases 12–17 are planned and sequenced behind it.
 
 ## Key Decisions
+
 - Preserve working V1.0.1 X implementation unconditionally (`adapters/x.py` wraps `post.py`).
 - Implement Bluesky natively via AT Protocol HTTP XRPC without browser overhead.
 - Require UTF-8 byte slice calculation for Bluesky RichText facets.
@@ -18,4 +34,5 @@
 - Use polymorphic draft structure (`platforms` dictionary in draft JSON) with backward-compatible fallback to single `text`.
 
 ## Blockers
+
 - None.
