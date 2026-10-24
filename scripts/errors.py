@@ -56,6 +56,15 @@ class CopyValidationError(ContentError):
         super().__init__(message)
 
 
+class RenderError(Exception):
+    """A visual asset could not be produced.
+
+    Raised when a topic cannot supply enough distinct slide content or when the
+    browser capture fails. Callers must let this block the draft rather than
+    silently falling back to a text-only post.
+    """
+
+
 class StateError(Exception):
     """Base class for publish-state failures."""
 
