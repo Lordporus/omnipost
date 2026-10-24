@@ -13,8 +13,10 @@ from scripts.generate import (
     generate_topic_from_items,
 )
 from scripts.pipeline import populate_daily_plan
+from scripts.platform_limits import LIMITS, count_for
 from scripts.relevance import score_candidates, score_item
 from scripts.repurpose import format_linkedin, format_threads
+from tests.copy_fixtures import RICH_BODY, RICH_POINTS
 
 
 ENGINEERING_ITEM = {
@@ -145,8 +147,12 @@ def test_takeaway_never_domain():
 def test_linkedin_has_no_hardcoded_boilerplate():
     text = format_linkedin(
         "Why Docker is weird",
-        "A practical production note about container runtimes.",
-        ["Relying on host networking hides port conflicts", "Pin the runtime version"],
+        RICH_BODY,
+        [
+            "Relying on host networking hides port conflicts",
+            "Pin the runtime version",
+            *RICH_POINTS,
+        ],
         "Test the runtime boundary before scaling.",
         media_type="image",
     )
@@ -158,16 +164,20 @@ def test_linkedin_has_no_hardcoded_boilerplate():
     assert "Production Principles to Remember" not in text
     assert "cards below" not in text
     assert "See the visual breakdown above." in text
+    assert LIMITS["linkedin"]["min"] <= count_for("linkedin", text) <= LIMITS["linkedin"]["max"]
 
 
 def test_threads_has_no_verified_reference_or_state_drift():
     text = format_threads(
         "Why local inference is getting practical",
         "Paying OpenAI for every token is no longer the default choice.",
+        "Local quantized models now run on commodity laptops with predictable latency. " * 3,
+        ["Direct device access removes per-token API billing."],
     )
     assert "Paying OpenAI for every token" in text
     assert "Verified Reference" not in text
     assert "state drift and unverified retry loops" not in text.lower()
+    assert LIMITS["threads"]["min"] <= count_for("threads", text) <= LIMITS["threads"]["hard_max"]
     assert text.rstrip().endswith("?")
 
 

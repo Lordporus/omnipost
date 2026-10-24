@@ -47,7 +47,10 @@ def _state_path(tmp_path, monkeypatch) -> Path:
     return path
 
 
-def _draft(tmp_path, text: str = "A deterministic idempotency test post.") -> Path:
+_DEFAULT_DRAFT_TEXT = ("A deterministic idempotency test post. " * 7).strip()
+
+
+def _draft(tmp_path, text: str = _DEFAULT_DRAFT_TEXT) -> Path:
     path = tmp_path / "draft.json"
     path.write_text(
         json.dumps({"slot": "13:00", "text": text}),

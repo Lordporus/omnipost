@@ -1,10 +1,10 @@
 """Polymorphic Content Repurposer for OmniPost V2.
 
 Transforms a single research insight/topic into 4 distinct channel formats:
-1. X (Twitter): 280-char punchy hook + bullet summary + optional 16:9 card
-2. Bluesky: 300-char technical insight + byte-facet friendly URLs
-3. LinkedIn: 1,000–2,500 char case study with framework breakdown + 1080x1080 PDF carousel
-4. Meta Threads: 400-char conversational question/hook
+1. X (Twitter): 220-275 weighted chars + punchy bullets + optional 16:9 card
+2. Bluesky: 240-295 graphemes + byte-facet friendly URLs
+3. LinkedIn: 1,500-2,500 code points + optional 1080x1080 PDF carousel
+4. Meta Threads: 350-480 code points (hard ceiling 500) + conversational CTA
 """
 from __future__ import annotations
 
@@ -19,30 +19,34 @@ if str(ROOT) not in sys.path:
 
 from render import create_carousel_pdf, create_infocard
 
+try:  # package import (tests, pipeline)
+    from scripts.errors import CopyValidationError, MediaContractError
+    from scripts.platform_limits import LIMITS, count_for, fit, truncate_words, validate
+except ImportError:  # direct script execution
+    from errors import CopyValidationError, MediaContractError
+    from platform_limits import LIMITS, count_for, fit, truncate_words, validate
+
 
 def format_x(headline: str, points: list[str]) -> str:
-    """Format for X (Twitter Free Tier): strictly 240-275 chars (ceiling 280) with punchy bullets."""
-    clean_hl = headline.strip()
-    bullet_lines = [f"• {p.strip()}" for p in points[:2] if p.strip()]
+    """Format for X: 220-275 weighted characters with punchy bullets."""
+    clean_hl = str(headline or "").strip()
+    bullet_lines = [f"• {str(point).strip()}" for point in points[:3] if str(point).strip()]
     body = "\n".join(bullet_lines)
 
     text = f"{clean_hl}\n\n{body}".strip()
-    if len(text) > 280:
-        # Fall back to headline + first bullet
-        text = f"{clean_hl}\n\n• {points[0].strip()}" if points else clean_hl
-        if len(text) > 280:
-            text = clean_hl[:272].rstrip() + "..."
-    return text
+    return fit("x", text)
 
 
 def format_bluesky(headline: str, points: list[str]) -> str:
-    """Format for Bluesky: strictly 260-295 chars (ceiling 300) with technical depth."""
-    clean_hl = headline.strip()
-    bullets = " ".join([f"({idx+1}) {p.strip()}" for idx, p in enumerate(points[:2]) if p.strip()])
+    """Format for Bluesky: 240-295 graphemes with technical depth."""
+    clean_hl = str(headline or "").strip()
+    bullets = " ".join(
+        f"({idx + 1}) {str(point).strip()}"
+        for idx, point in enumerate(points[:3])
+        if str(point).strip()
+    )
     text = f"{clean_hl} {bullets}".strip()
-    if len(text) > 295:
-        text = text[:292].rstrip() + "..."
-    return text
+    return fit("bluesky", text)
 
 
 def format_linkedin(
@@ -53,10 +57,14 @@ def format_linkedin(
     media_type: str | None = None,
 ) -> str:
     """Format for LinkedIn using only topic-derived context, changes, and takeaway."""
-    clean_hl = headline.strip()
-    clean_body = body.strip()
-    clean_points = [str(point).strip().lstrip("•-*▸ ") for point in points if str(point).strip()]
-    clean_tk = takeaway.strip()
+    clean_hl = str(headline or "").strip()
+    clean_body = str(body or "").strip()
+    clean_points = [
+        str(point).strip().lstrip("•-*▸ ")
+        for point in points
+        if str(point).strip()
+    ]
+    clean_tk = str(takeaway or "").strip()
 
     looks_like_sentence = (
         clean_hl.endswith(("?", "!", "."))
@@ -71,7 +79,7 @@ def format_linkedin(
         lines.extend(["", clean_body])
     if clean_points:
         lines.extend(["", "What changes in practice:"])
-        lines.extend(f"▸ {point}" for point in clean_points[:3])
+        lines.extend(f"▸ {point}" for point in clean_points)
     if clean_tk:
         lines.extend(["", f"Bottom line: {clean_tk}"])
 
@@ -81,28 +89,52 @@ def format_linkedin(
         lines.extend(["", "See the visual breakdown above."])
 
     text = "\n".join(lines).strip()
-    if len(text) > 3000:
-        text = text[:2950].rstrip()
-    return text
+    return fit("linkedin", text)
 
 
-def format_threads(headline: str, takeaway: str = "") -> str:
-    """Format for Meta Threads: topic takeaway plus a conversational question."""
-    clean_hl = headline.strip()
-    clean_tk = takeaway.strip()
+def format_threads(
+    headline: str,
+    takeaway: str = "",
+    body: str = "",
+    points: list[str] | None = None,
+) -> str:
+    """Format for Meta Threads: 350-480 characters with the CTA included."""
+    clean_hl = str(headline or "").strip()
+    clean_tk = str(takeaway or "").strip()
+    clean_body = str(body or "").strip()
+    clean_points = [str(point).strip() for point in (points or []) if str(point).strip()]
 
-    lines = [clean_hl]
+    sections = [clean_hl]
+    if clean_body:
+        sections.append(clean_body)
+    if clean_points:
+        sections.append("\n".join(f"• {point}" for point in clean_points[:3]))
     if clean_tk:
-        lines.extend(
-            ["", clean_tk, "", "What architectural tradeoffs have you seen in your stack?"]
-        )
-    else:
-        lines.extend(["", f"What changes when you apply {clean_hl} in production?"])
+        sections.append(clean_tk)
+    insight = "\n\n".join(section for section in sections if section).strip()
 
-    body = "\n".join(lines).strip()
-    if len(body) > 490:
-        body = body[:470].rstrip() + "\n\nWhat are your thoughts?"
-    return body
+    cta = "What architectural tradeoffs have you seen in your stack?"
+    cta_suffix = f"\n\n{cta}"
+    cta_cost = count_for("threads", cta_suffix)
+    insight_budget = LIMITS["threads"]["max"] - cta_cost
+    if count_for("threads", insight) > insight_budget:
+        insight = truncate_words(insight, insight_budget, "threads")
+
+    return fit("threads", f"{insight}{cta_suffix}".strip())
+
+
+def _calibrated_native_text(platform: str, text: str) -> str:
+    """Return native copy only when it already satisfies the platform limits."""
+    candidate = str(text or "").strip()
+    if not candidate:
+        return ""
+    try:
+        if count_for(platform, candidate) > LIMITS[platform]["max"]:
+            candidate = fit(platform, candidate)
+        validate(platform, candidate)
+        return candidate
+    except CopyValidationError:
+        return ""
 
 
 def repurpose_topic(
@@ -120,13 +152,12 @@ def repurpose_topic(
         generate_media: If True, renders infocard PNG and carousel PDF to disk.
         author: Attribution handle.
         slot: Specific slot string (e.g. 20:00) for unique asset naming.
-        author: Attribution handle.
         
     Returns:
         Polymorphic slot dictionary ready for drafts/YYYY-MM-DD.json.
     """
-    headline = topic_data.get("headline", "Engineering Insight")
-    body = topic_data.get("body", "")
+    headline = str(topic_data.get("headline") or "Engineering Insight").strip()
+    body = str(topic_data.get("body") or "")
     raw_points = topic_data.get("points")
     if isinstance(raw_points, list):
         points = [str(p) for p in raw_points if str(p).strip()]
@@ -152,34 +183,52 @@ def repurpose_topic(
             return value.strip()
         return ""
 
-    # Calibrated synthesis for each platform, preserving native copy when present.
-    link_media_type = "image" if generate_media else None
-    x_text = native_text("x") or format_x(headline, points)
-    bsky_text = native_text("bluesky") or format_bluesky(headline, points)
-    link_text = native_text("linkedin") or format_linkedin(
+    carousel = topic_data.get("carousel")
+    if not isinstance(carousel, dict):
+        carousel = {}
+    carousel_slides = carousel.get("slides") if isinstance(carousel.get("slides"), list) else []
+    explicit_media_type = str(topic_data.get("media_type") or "").strip().lower()
+    requested_carousel = explicit_media_type == "carousel" or (
+        explicit_media_type not in ("image", "carousel")
+        and generate_media
+        and bool(carousel_slides)
+    )
+    link_media_type = "carousel" if requested_carousel else "image"
+
+    # Calibrated synthesis for each platform. Native copy is preserved only when
+    # it already fits the platform contract; otherwise the formatter rebuilds it.
+    x_text = _calibrated_native_text("x", native_text("x")) or format_x(headline, points)
+    bsky_text = _calibrated_native_text("bluesky", native_text("bluesky")) or format_bluesky(
+        headline, points
+    )
+    link_text = _calibrated_native_text(
+        "linkedin", native_text("linkedin")
+    ) or format_linkedin(
         headline,
         body,
         points,
         takeaway,
         media_type=link_media_type,
     )
-    thrd_text = native_text("threads") or format_threads(headline, takeaway)
+    thrd_text = _calibrated_native_text(
+        "threads", native_text("threads")
+    ) or format_threads(headline, takeaway, body, points)
 
     media_map: dict[str, Any] = {
         "x": [],
         "bluesky": [],
         "linkedin": [],
+        "threads": [],
     }
+    date_tag = (date_str or "daily").replace("-", "")
+    slot_tag = (slot or "default").replace(":", "")
 
     if generate_media:
-        date_tag = (date_str or "daily").replace("-", "")
-        slot_tag = (slot or "default").replace(":", "")
-
-        # Generate 1 to 3 retina PNG visual cards based on content depth
+        # Generate 1 to 3 retina PNG visual cards based on content depth.
         card_dir = ROOT / "scratch" / "cards"
         card_dir.mkdir(parents=True, exist_ok=True)
         base_name = f"card_{date_tag}_{slot_tag}"
-        
+
         try:
             from render.cards import generate_topic_cards
             rendered_cards = generate_topic_cards(
@@ -191,10 +240,11 @@ def repurpose_topic(
             rel_card_paths = [str(p.relative_to(ROOT)) for p in rendered_cards]
             media_map["x"] = rel_card_paths
             media_map["bluesky"] = rel_card_paths
-            media_map["linkedin"] = rel_card_paths
             media_map["threads"] = rel_card_paths
-        except Exception as exc:
-            # Fallback to single 16:9 infocard
+            if not requested_carousel:
+                media_map["linkedin"] = rel_card_paths
+        except Exception:
+            # Fallback to single 16:9 infocard.
             card_dir = ROOT / "scratch" / "infocards"
             card_dir.mkdir(parents=True, exist_ok=True)
             card_path = card_dir / f"card_{date_tag}_{slot_tag}.png"
@@ -209,10 +259,68 @@ def repurpose_topic(
                 rel_path = str(card_path.relative_to(ROOT))
                 media_map["x"] = [rel_path]
                 media_map["bluesky"] = [rel_path]
-                media_map["linkedin"] = [rel_path]
                 media_map["threads"] = [rel_path]
+                if not requested_carousel:
+                    media_map["linkedin"] = [rel_path]
             except Exception:
                 pass
+
+    document_title = ""
+    if requested_carousel:
+        if not generate_media:
+            raise MediaContractError(
+                "LinkedIn carousel requested but media generation is disabled.",
+                platform="linkedin",
+                stage="media_contract",
+            )
+        if not carousel_slides:
+            raise MediaContractError(
+                "LinkedIn carousel requested but no carousel slides are available.",
+                platform="linkedin",
+                stage="media_contract",
+            )
+
+        carousel_title = str(carousel.get("title") or headline).strip() or "OmniPost Carousel"
+        pdf_dir = ROOT / "scratch" / "carousels"
+        pdf_dir.mkdir(parents=True, exist_ok=True)
+        pdf_path = pdf_dir / f"linkedin_{date_tag}_{slot_tag}.pdf"
+        try:
+            generated_pdf = create_carousel_pdf(
+                slides=carousel_slides,
+                title=carousel_title,
+                tag=category,
+                author=author,
+                output_path=pdf_path,
+            )
+        except Exception as exc:
+            raise MediaContractError(
+                f"LinkedIn carousel rendering failed: {exc}",
+                platform="linkedin",
+                stage="media_contract",
+            ) from exc
+
+        generated_path = Path(generated_pdf)
+        if generated_path.suffix.lower() != ".pdf":
+            raise MediaContractError(
+                "LinkedIn carousel rendering did not produce a PDF path.",
+                platform="linkedin",
+                stage="media_contract",
+            )
+        try:
+            media_path = str(generated_path.relative_to(ROOT))
+        except ValueError:
+            media_path = str(generated_path)
+        media_map["linkedin"] = [media_path]
+        document_title = carousel_title
+
+    linkedin_payload: dict[str, Any] = {
+        "enabled": True,
+        "text": link_text,
+        "media": media_map.get("linkedin", []),
+        "media_type": link_media_type,
+    }
+    if link_media_type == "carousel":
+        linkedin_payload["document_title"] = document_title
 
     return {
         "x": {
@@ -227,13 +335,7 @@ def repurpose_topic(
             "media": media_map.get("bluesky", []),
             "media_type": "image",
         },
-        "linkedin": {
-            "enabled": True,
-            "text": link_text,
-            "media": media_map.get("linkedin", []),
-            "media_type": "image",
-            "document_title": headline[:50],
-        },
+        "linkedin": linkedin_payload,
         "threads": {
             "enabled": True,
             "text": thrd_text,

@@ -6,6 +6,7 @@ from unittest.mock import MagicMock, patch
 
 from adapters.base import PlatformCapabilities, PublishPayload, PublishResult
 from scripts import autoposter
+from scripts.platform_limits import LIMITS, count_for
 from scripts.repurpose import (
     format_bluesky,
     format_linkedin,
@@ -13,6 +14,7 @@ from scripts.repurpose import (
     format_x,
     repurpose_topic,
 )
+from tests.copy_fixtures import RICH_BODY, RICH_POINTS, rich_topic
 
 
 class TestContentRepurposer(unittest.TestCase):
@@ -35,47 +37,46 @@ class TestContentRepurposer(unittest.TestCase):
         points = [
             "Strict Pydantic schemas prevent malformed tool inputs.",
             "Atomic ledgers isolate network failures.",
+            "Deterministic replay makes every retry auditable and safe.",
         ]
         formatted = format_bluesky(headline, points)
-        self.assertLessEqual(len(formatted), 300)
+        self.assertLessEqual(count_for("bluesky", formatted), 300)
+        self.assertGreaterEqual(count_for("bluesky", formatted), LIMITS["bluesky"]["min"])
         self.assertIn("(1)", formatted)
         self.assertIn("(2)", formatted)
 
     def test_format_linkedin_storytelling_and_cta(self):
         headline = "Why your engineering team should rethink its AI stack."
-        body = "We spent 3 months deploying autonomous agents across multiple social channels. Here is what broke:"
         points = [
             "Relying on paid APIs gets expensive quickly ($200+/mo).",
             "Single-network copy fails to resonate on multi-platform feeds.",
+            *RICH_POINTS,
         ]
         takeaway = "Build on local tools and open protocols."
-        formatted = format_linkedin(headline, body, points, takeaway)
+        formatted = format_linkedin(headline, RICH_BODY, points, takeaway)
 
         self.assertIn("What changes in practice:", formatted)
         self.assertIn("▸ Relying on paid APIs", formatted)
         self.assertIn("Bottom line: Build on local tools", formatted)
         self.assertNotIn("Architectural Bottleneck", formatted)
         self.assertNotIn("architecture carousel below", formatted)
-        self.assertGreater(len(formatted), 250)
+        self.assertGreaterEqual(count_for("linkedin", formatted), LIMITS["linkedin"]["min"])
+        self.assertLessEqual(count_for("linkedin", formatted), LIMITS["linkedin"]["max"])
 
     def test_format_threads_conversational(self):
         headline = "Local AI models are now faster than cloud APIs on modern hardware."
         takeaway = "Are you still paying OpenAI per token, or running local models?"
-        formatted = format_threads(headline, takeaway)
-        self.assertLessEqual(len(formatted), 500)
+        body = "Local inference now runs on commodity hardware with quantized kernels. " * 2
+        points = ["Direct device access removes per-token API billing."]
+        formatted = format_threads(headline, takeaway, body, points)
+        self.assertLessEqual(count_for("threads", formatted), 500)
+        self.assertGreaterEqual(count_for("threads", formatted), LIMITS["threads"]["min"])
         self.assertIn("paying OpenAI", formatted)
 
     @patch("scripts.repurpose.create_carousel_pdf")
     @patch("scripts.repurpose.create_infocard")
     def test_repurpose_topic_structure(self, mock_card, mock_carousel):
-        topic_data = {
-            "headline": "Autonomous Agents Architecture",
-            "body": "Detailed case study on deterministic pipelines.",
-            "points": ["Rule 1", "Rule 2", "Rule 3"],
-            "takeaway": "Reliability requires code-level constraints.",
-            "category": "ENGINEERING",
-        }
-        res = repurpose_topic(topic_data, generate_media=False)
+        res = repurpose_topic(rich_topic(), generate_media=False)
 
         self.assertIn("x", res)
         self.assertIn("bluesky", res)
@@ -84,7 +85,16 @@ class TestContentRepurposer(unittest.TestCase):
 
         self.assertTrue(res["x"]["enabled"])
         self.assertEqual(res["linkedin"]["media_type"], "image")
-        self.assertIn("document_title", res["linkedin"])
+        self.assertNotIn("document_title", res["linkedin"])
+        for platform in ("x", "bluesky", "threads", "linkedin"):
+            self.assertGreaterEqual(
+                count_for(platform, res[platform]["text"]),
+                LIMITS[platform]["min"],
+            )
+            self.assertLessEqual(
+                count_for(platform, res[platform]["text"]),
+                LIMITS[platform]["hard_max"],
+            )
 
 
 class TestPolymorphicAutoposter(unittest.TestCase):

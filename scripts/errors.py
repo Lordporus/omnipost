@@ -33,6 +33,29 @@ class DuplicateTopic(ContentError):
     """A topic duplicates content already assigned to another slot."""
 
 
+class CopyValidationError(ContentError):
+    """Platform copy is outside its measured minimum or maximum limits.
+
+    ``platform``, ``count``, and ``limits`` are kept as attributes so callers
+    can log or requeue a candidate without parsing the message.
+    """
+
+    def __init__(
+        self,
+        message: str = "",
+        *,
+        platform: str = "",
+        count: int | None = None,
+        limits: dict[str, int] | None = None,
+        **details: Any,
+    ):
+        self.platform = platform
+        self.count = count
+        self.limits: dict[str, int] = dict(limits or {})
+        self.context: dict[str, Any] = dict(details)
+        super().__init__(message)
+
+
 class StateError(Exception):
     """Base class for publish-state failures."""
 
@@ -69,6 +92,27 @@ class AdapterError(Exception):
         self.context: dict[str, Any] = dict(context or {})
         self.context.update(details)
         super().__init__(message)
+
+
+class MediaContractError(AdapterError):
+    """A payload's media type does not match the attached media paths."""
+
+    def __init__(
+        self,
+        message: str = "",
+        *,
+        platform: str = "",
+        stage: str = "media_contract",
+        context: dict[str, Any] | None = None,
+        **details: Any,
+    ):
+        super().__init__(
+            message,
+            platform=platform,
+            stage=stage,
+            context=context,
+            **details,
+        )
 
 
 class SelectorError(AdapterError):

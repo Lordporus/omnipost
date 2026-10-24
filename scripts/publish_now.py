@@ -34,10 +34,14 @@ sys.path.insert(0, str(ROOT / "scripts"))
 
 try:
     from scripts import settings, ledger, notify_webhook
+    from scripts.errors import CopyValidationError
+    from scripts.platform_limits import LIMITS, count_for, fit
 except ImportError:
     import settings
     import ledger
     import notify_webhook
+    from errors import CopyValidationError
+    from platform_limits import LIMITS, count_for, fit
 
 from adapters.base import PublishPayload, PublishResult
 
@@ -97,7 +101,7 @@ def _dispatch_worker(
 
             verified = False
             try:
-                verified = bool(adapter.verify(None, payload.text[:80]))
+                verified = bool(adapter.verify(None, payload.text[0:80]))
             except Exception:
                 verified = False
 
@@ -331,9 +335,21 @@ def main() -> int:
                 status = adapter.check_session()
 
             t_content = tailored_texts.get(plat_key, uniform_text)
+            limits = LIMITS.get(plat_key)
+            if limits:
+                measured = count_for(plat_key, t_content)
+                fits = limits["min"] <= measured <= limits["max"]
+                limit_text = (
+                    f"{measured}/{limits['max']}c; "
+                    f"target {limits['min']}-{limits['max']}"
+                )
+            else:
+                measured = len(t_content)
+                fits = measured <= caps.max_characters
+                limit_text = f"{measured}/{caps.max_characters}c"
             print(f"[{p_name}] Session: {'OK' if status.get('ok') else 'FAIL'}", flush=True)
             print(f"  Account: {status.get('handle')}", flush=True)
-            print(f"  Fits limit: {len(t_content) <= caps.max_characters} ({len(t_content)}/{caps.max_characters}c)", flush=True)
+            print(f"  Fits limit: {fits} ({limit_text})", flush=True)
             print(f"  Preview: {t_content[:80]}...", flush=True)
             print(f"  Ready to post: {status.get('ok')}\n", flush=True)
         return 0
@@ -386,9 +402,93 @@ def main() -> int:
         st = ledger.load_state()
 
         post_text = tailored_texts.get(plat_key, uniform_text)
-        if len(post_text) > caps.max_characters:
-            print(f"[{p_name}] Text exceeds limit ({caps.max_characters}c). Trimming.", flush=True)
-            post_text = post_text[: caps.max_characters - 3].rstrip() + "..."
+        limits = LIMITS.get(plat_key)
+        if limits:
+            measured = count_for(plat_key, post_text)
+            if measured > limits["max"]:
+                try:
+                    fitted = fit(plat_key, post_text)
+                except CopyValidationError as exc:
+                    res = PublishResult(
+                        platform=plat_key,
+                        success=False,
+                        verified=False,
+                        error=str(exc),
+                    )
+                    results[plat_key] = res
+                    ledger.record_platform_status(
+                        st,
+                        today,
+                        slot,
+                        plat_key,
+                        res,
+                        text=post_text,
+                        kind="manual_test",
+                        idempotency_key=key,
+                    )
+                    print(f"[FAIL] [{p_name}] {exc}", flush=True)
+                    notify_webhook.dispatch_webhook(
+                        "failure",
+                        f"[{p_name}] Copy Validation Failed",
+                        str(exc),
+                        {"platform": p_name, "error": str(exc)},
+                    )
+                    print("-" * 50, flush=True)
+                    continue
+                fitted_count = count_for(plat_key, fitted)
+                print(
+                    f"[{p_name}] Copy exceeds target ({measured}>{limits['max']}); "
+                    f"fitted to {fitted_count}.",
+                    flush=True,
+                )
+                post_text = fitted
+                measured = fitted_count
+
+            if measured < limits["min"]:
+                exc = CopyValidationError(
+                    (
+                        f"{plat_key} copy is {measured} units; minimum is "
+                        f"{limits['min']} (target {limits['min']}-{limits['max']})"
+                    ),
+                    platform=plat_key,
+                    count=measured,
+                    limits=limits,
+                )
+                res = PublishResult(
+                    platform=plat_key,
+                    success=False,
+                    verified=False,
+                    error=str(exc),
+                )
+                results[plat_key] = res
+                ledger.record_platform_status(
+                    st,
+                    today,
+                    slot,
+                    plat_key,
+                    res,
+                    text=post_text,
+                    kind="manual_test",
+                    idempotency_key=key,
+                )
+                print(f"[FAIL] [{p_name}] {exc}", flush=True)
+                notify_webhook.dispatch_webhook(
+                    "failure",
+                    f"[{p_name}] Copy Validation Failed",
+                    str(exc),
+                    {"platform": p_name, "error": str(exc)},
+                )
+                print("-" * 50, flush=True)
+                continue
+
+            print(
+                f"[{p_name}] Copy: {measured}/{limits['max']} "
+                f"({limits['min']}-{limits['max']} target)",
+                flush=True,
+            )
+        else:
+            measured = len(post_text)
+            print(f"[{p_name}] Copy: {measured}/{caps.max_characters}c", flush=True)
 
         plat_media = list(media_paths)
         if plat_key in tailored_media:

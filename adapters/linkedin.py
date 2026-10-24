@@ -30,8 +30,15 @@ from adapters.base import (
 from scripts import browser, settings
 from scripts.browser import CDPError, Session
 
+try:  # package import (tests, publish worker)
+    from scripts.errors import MediaContractError
+except ImportError:  # direct script execution
+    from errors import MediaContractError
+
 ROOT = Path(__file__).resolve().parent.parent
 STATE_PATH = ROOT / "state.json"
+
+_IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".webp"}
 
 
 def _parse_iso_utc(value: Any) -> datetime:
@@ -125,6 +132,40 @@ def _focus_status(value: Any) -> str:
             return _focus_status(parsed)
         return text
     return ""
+
+
+def _select_linkedin_media(payload: PublishPayload) -> tuple[str, Path | None]:
+    """Resolve LinkedIn's media precedence without touching the browser.
+
+    D-07: images win whenever they are attached. A PDF is selected only when
+    ``media_type == "carousel"`` and no images are attached. A carousel request
+    without a PDF is a contract error, not a silent text-only fallback.
+    """
+    image_targets = [
+        path for path in payload.media_paths if path.suffix.lower() in _IMAGE_SUFFIXES
+    ]
+    if image_targets:
+        return "images", None
+
+    pdf_targets = [
+        path for path in payload.media_paths if path.suffix.lower() == ".pdf"
+    ]
+    if payload.media_type == "carousel":
+        if not pdf_targets:
+            raise MediaContractError(
+                "LinkedIn carousel requested but no .pdf path was provided.",
+                platform="linkedin",
+                stage="media_contract",
+            )
+        return "document", pdf_targets[0]
+
+    if pdf_targets:
+        raise MediaContractError(
+            "LinkedIn image payload contains a PDF path; set media_type='carousel'.",
+            platform="linkedin",
+            stage="media_contract",
+        )
+    return "text", None
 
 
 # Stealth script to mask automated browser flags
@@ -754,9 +795,12 @@ class LinkedInAdapter(PlatformAdapter):
                     context={"trigger": trigger, "focus_status": focus_status},
                 )
 
-            # 2. Attach Images if provided.
-            image_targets = [p for p in payload.media_paths if p.suffix.lower() in (".png", ".jpg", ".jpeg", ".webp")]
-            if image_targets:
+            # 2. Resolve media precedence, then attach exactly one media mode.
+            media_mode, pdf_target = _select_linkedin_media(payload)
+            image_targets = [
+                p for p in payload.media_paths if p.suffix.lower() in _IMAGE_SUFFIXES
+            ] if media_mode == "images" else []
+            if media_mode == "images":
                 attached_img = await self._attach_images(page, image_targets)
                 if not attached_img:
                     artifacts = await capture_failure_artifacts(page, "linkedin")
@@ -787,26 +831,23 @@ class LinkedInAdapter(PlatformAdapter):
                             context={"trigger": trigger, "focus_status": focus_status},
                         )
 
-            # 3. Attach Carousel PDF if requested or if .pdf file provided and no images attached.
-            has_pdf = bool(payload.media_paths and payload.media_paths[0].suffix.lower() == ".pdf")
-            if not image_targets and (payload.media_type == "carousel" or has_pdf) and payload.media_paths:
-                pdf_target = payload.media_paths[0]
-                if pdf_target.suffix.lower() == ".pdf":
-                    doc_title = payload.extra_metadata.get("document_title") or payload.text.split("\n")[0][:60]
-                    attached = await self._attach_document(page, pdf_target, doc_title)
-                    if not attached:
-                        artifacts = await capture_failure_artifacts(page, "linkedin")
-                        return PublishResult(
-                            platform="linkedin",
-                            success=False,
-                            error=(
-                                "Failed to attach PDF carousel document; refusing to "
-                                "publish a text-only substitute. "
-                                f"screenshot={artifacts.get('screenshot')}"
-                            ),
-                            artifacts=artifacts,
-                        )
-                    await asyncio.sleep(1.5)
+            # 3. Attach Carousel PDF only when the media contract selected it.
+            elif media_mode == "document" and pdf_target is not None:
+                doc_title = payload.extra_metadata.get("document_title") or payload.text.split("\n")[0][:60]
+                attached = await self._attach_document(page, pdf_target, doc_title)
+                if not attached:
+                    artifacts = await capture_failure_artifacts(page, "linkedin")
+                    return PublishResult(
+                        platform="linkedin",
+                        success=False,
+                        error=(
+                            "Failed to attach PDF carousel document; refusing to "
+                            "publish a text-only substitute. "
+                            f"screenshot={artifacts.get('screenshot')}"
+                        ),
+                        artifacts=artifacts,
+                    )
+                await asyncio.sleep(1.5)
 
             # Inject text via CDP Input.insertText.
             await page.send("Input.insertText", text=payload.text)

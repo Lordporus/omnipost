@@ -12,6 +12,8 @@ from __future__ import annotations
 import pytest
 
 from adapters.bluesky import extract_facets
+from scripts.errors import CopyValidationError
+from scripts.platform_limits import LIMITS, count_for
 from scripts.repurpose import (
     format_bluesky,
     format_linkedin,
@@ -19,21 +21,12 @@ from scripts.repurpose import (
     format_x,
     repurpose_topic,
 )
+from tests.copy_fixtures import rich_topic
 
 
 @pytest.fixture
 def core_insight():
-    return {
-        "headline": "Browser Automation Over DevTools Protocol Eliminates $200/mo API Bills",
-        "body": "Modern platforms like X and LinkedIn charge enterprise rates for automation APIs that throttle creators. By controlling local headless Chrome over CDP websockets, sovereign developers retain 100% control with zero recurring SaaS costs.",
-        "points": [
-            "Direct WebSocket transport bypasses Selenium and Playwright bloat",
-            "Page.printToPDF renders native vector carousels locally in 400ms",
-            "Read-back profile inspection verifies published post state without paid APIs",
-        ],
-        "takeaway": "Build sovereign developer tools before subscribing to cloud middleware.",
-        "category": "DISTRIBUTED SYSTEMS",
-    }
+    return rich_topic()
 
 
 def test_multiplatform_repurpose_simultaneous_invariants(core_insight):
@@ -48,31 +41,45 @@ def test_multiplatform_repurpose_simultaneous_invariants(core_insight):
     # 1. X Invariants
     x_slot = adapted["x"]
     assert x_slot["enabled"] is True
-    assert len(x_slot["text"]) <= 280
+    assert LIMITS["x"]["min"] <= count_for("x", x_slot["text"]) <= LIMITS["x"]["hard_max"]
     assert "• Direct WebSocket" in x_slot["text"] or "Browser Automation" in x_slot["text"]
 
     # 2. Bluesky Invariants
     bsky_slot = adapted["bluesky"]
     assert bsky_slot["enabled"] is True
-    assert len(bsky_slot["text"]) <= 300
+    assert (
+        LIMITS["bluesky"]["min"]
+        <= count_for("bluesky", bsky_slot["text"])
+        <= LIMITS["bluesky"]["hard_max"]
+    )
     assert "(1)" in bsky_slot["text"]
 
     # 3. LinkedIn Invariants
     li_slot = adapted["linkedin"]
     assert li_slot["enabled"] is True
     assert li_slot["media_type"] == "image"
+    assert "document_title" not in li_slot
     assert "What changes in practice:" in li_slot["text"]
     assert "▸ Direct WebSocket" in li_slot["text"]
     assert "Bottom line:" in li_slot["text"]
     assert "Architectural Bottleneck" not in li_slot["text"]
     assert "cards below" not in li_slot["text"]
-    assert len(li_slot["text"]) > 250
+    assert (
+        LIMITS["linkedin"]["min"]
+        <= count_for("linkedin", li_slot["text"])
+        <= LIMITS["linkedin"]["max"]
+    )
 
     # 4. Threads Invariants
     th_slot = adapted["threads"]
     assert th_slot["enabled"] is True
-    assert len(th_slot["text"]) <= 500
-    assert "Build sovereign" in th_slot["text"] or "experience" in th_slot["text"]
+    assert (
+        LIMITS["threads"]["min"]
+        <= count_for("threads", th_slot["text"])
+        <= LIMITS["threads"]["hard_max"]
+    )
+    assert "Browser Automation" in th_slot["text"]
+    assert th_slot["text"].rstrip().endswith("?")
 
 
 def test_bluesky_richtext_facet_byte_offset_calculation():
@@ -105,39 +112,43 @@ def test_bluesky_richtext_facet_byte_offset_calculation():
 
 
 def test_boundary_truncation_with_extremely_long_insight():
-    """Verify that unusually long inputs are safely truncated without breaking platform length limits."""
-    long_headline = "A" * 350
-    long_points = ["B" * 200, "C" * 200, "D" * 200]
-    long_takeaway = "E" * 300
+    """Verify long inputs truncate on word boundaries without breaking limits."""
+    long_headline = " ".join(["Architecture"] * 50)
+    long_points = [
+        " ".join(["Benchmark"] * 20),
+        " ".join(["Observability"] * 20),
+        " ".join(["Reliability"] * 20),
+    ]
+    long_takeaway = " ".join(["Deterministic"] * 30)
 
-    # X: strictly <= 280
+    # X: strictly <= 280, word-boundary ellipsis.
     x_out = format_x(long_headline, long_points)
-    assert len(x_out) <= 280
+    assert count_for("x", x_out) <= LIMITS["x"]["hard_max"]
     assert x_out.endswith("...")
 
-    # Bluesky: strictly <= 300
+    # Bluesky: strictly <= 300, word-boundary ellipsis.
     bsky_out = format_bluesky(long_headline, long_points)
-    assert len(bsky_out) <= 300
+    assert count_for("bluesky", bsky_out) <= LIMITS["bluesky"]["hard_max"]
     assert bsky_out.endswith("...")
 
-    # Threads: strictly <= 500 and still ends on a discussion question
-    th_out = format_threads(long_headline, long_takeaway)
-    assert len(th_out) <= 500
+    # Threads: strictly <= 500 and still ends on a discussion question.
+    th_out = format_threads(long_headline, long_takeaway, points=long_points)
+    assert count_for("threads", th_out) <= LIMITS["threads"]["hard_max"]
     assert th_out.endswith("?")
 
 
 def test_minimal_insight_payload():
-    """Verify formatters handle minimal payload (no bullets or empty takeaway) without errors."""
+    """A topic too thin to meet the minimum is rejected, never padded."""
     minimal_hl = "Simple Architecture Note"
-    
-    x_res = format_x(minimal_hl, [])
-    assert x_res == "Simple Architecture Note"
-    assert len(x_res) <= 280
 
-    bsky_res = format_bluesky(minimal_hl, [])
-    assert bsky_res == "Simple Architecture Note"
-    assert len(bsky_res) <= 300
+    with pytest.raises(CopyValidationError):
+        format_x(minimal_hl, [])
 
-    th_res = format_threads(minimal_hl, "")
-    assert "Simple Architecture Note" in th_res
-    assert len(th_res) <= 500
+    with pytest.raises(CopyValidationError):
+        format_bluesky(minimal_hl, [])
+
+    with pytest.raises(CopyValidationError):
+        format_threads(minimal_hl, "")
+
+    with pytest.raises(CopyValidationError):
+        format_linkedin(minimal_hl, "Short body.", [], "Short takeaway.")

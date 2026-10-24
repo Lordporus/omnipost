@@ -118,23 +118,28 @@ def test_generate_platform_native_drafts_with_items():
 
 
 def test_repurpose_preserves_platform_native_texts():
-    """Verifies that repurpose_topic preserves existing platform-native texts."""
+    """Native copy is preserved when it already fits the platform contract."""
     from scripts.repurpose import repurpose_topic
+    from tests.copy_fixtures import valid_text
 
+    native_x = valid_text("x")
+    native_bluesky = valid_text("bluesky")
+    native_threads = valid_text("threads")
+    native_linkedin = valid_text("linkedin")
     custom_native = {
         "headline": "Sovereign AI Infrastructure",
         "body": "Detailed body text...",
         "points": ["Point 1", "Point 2"],
         "takeaway": "Build sovereign.",
         "category": "INFRASTRUCTURE",
-        "x": "Native X hook with 0 hashtags and sharp insight.",
-        "bluesky": "Native Bluesky technical analysis.",
-        "threads": "Are you running local CDP yet?",
-        "linkedin": "Comprehensive LinkedIn framework breakdown.",
+        "x": native_x,
+        "bluesky": native_bluesky,
+        "threads": native_threads,
+        "linkedin": native_linkedin,
     }
     slot_dict = repurpose_topic(custom_native, generate_media=False)
-    assert slot_dict["x"]["text"] == "Native X hook with 0 hashtags and sharp insight."
-    assert slot_dict["bluesky"]["text"] == "Native Bluesky technical analysis."
-    assert slot_dict["threads"]["text"] == "Are you running local CDP yet?"
-    assert slot_dict["linkedin"]["text"] == "Comprehensive LinkedIn framework breakdown."
+    assert slot_dict["x"]["text"] == native_x
+    assert slot_dict["bluesky"]["text"] == native_bluesky
+    assert slot_dict["threads"]["text"] == native_threads
+    assert slot_dict["linkedin"]["text"] == native_linkedin
 

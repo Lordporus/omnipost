@@ -76,18 +76,12 @@ def test_full_e2e_pipeline_simulation(tmp_path):
     state = ledger.load_state(state_file)
 
     # 1. Mock Research Insight
-    raw_insight = {
-        "headline": "Sovereign Engineering: Running Headless Chrome Locally",
-        "body": "Running browser automation over direct DevTools Protocol websockets eliminates third-party SaaS middleman fees and unifies cross-posting.",
-        "points": [
-            "Local CDP gives 100% control over the real browser session",
-            "Zero monthly subscription overhead",
-            "Hardware-accelerated PDF generation via Page.printToPDF",
-        ],
-        "takeaway": "Direct protocol automation beats heavy API SDKs.",
-        "category": "ARCHITECTURE",
-        "source": "https://developer.chrome.com/docs/devtools",
-    }
+    from tests.copy_fixtures import rich_topic
+
+    raw_insight = rich_topic(
+        headline="Sovereign Engineering: Running Headless Chrome Locally",
+        source="https://developer.chrome.com/docs/devtools",
+    )
 
     # 2. Polymorphic Repurpose
     polymorphic_slot = repurpose_topic(raw_insight, generate_media=False)

@@ -27,7 +27,12 @@ try:
     from scripts import generate
     from scripts import repurpose
     from scripts.browser_daemon import ensure_browser_running
-    from scripts.errors import DuplicateTopic, NoRelevantTopic, TopicRejected
+    from scripts.errors import (
+        CopyValidationError,
+        DuplicateTopic,
+        NoRelevantTopic,
+        TopicRejected,
+    )
     from scripts.llm import load_voice_profile
     from scripts.relevance import score_candidates
 except ImportError:
@@ -36,7 +41,7 @@ except ImportError:
     import generate
     import repurpose
     from browser_daemon import ensure_browser_running
-    from errors import DuplicateTopic, NoRelevantTopic, TopicRejected
+    from errors import CopyValidationError, DuplicateTopic, NoRelevantTopic, TopicRejected
     from llm import load_voice_profile
     from relevance import score_candidates
 
@@ -85,6 +90,7 @@ def populate_daily_plan(plan: dict[str, Any], swipe_items: list[dict[str, Any]],
         candidates = list(swipe_items[idx * 3: (idx + 1) * 3]) if swipe_items else []
         attempted_empty = False
         topic: dict[str, Any] | None = None
+        poly_data: dict[str, Any] | None = None
         content_hash = ""
         bullet_hash = ""
         rejections: list[str] = []
@@ -124,9 +130,29 @@ def populate_daily_plan(plan: dict[str, Any], swipe_items: list[dict[str, Any]],
                 _drop_candidate(candidates, None, voice_profile)
                 topic = None
                 continue
+
+            try:
+                poly_data = repurpose.repurpose_topic(
+                    topic_data=topic,
+                    date_str=plan.get("date"),
+                    generate_media=True,
+                    author=f"@{settings.load().get('handle', 'Lordporus')} • OmniPost",
+                    slot=slot_data.get("slot"),
+                )
+            except CopyValidationError as exc:
+                headline = str(topic.get("headline") or "")[:80]
+                rejections.append(f"copy_validation:{exc}")
+                print(
+                    f"[PIPELINE] Copy validation rejected candidate for slot "
+                    f"{slot_data.get('slot')}: {exc} ({headline})"
+                )
+                _drop_candidate(candidates, None, voice_profile)
+                topic = None
+                poly_data = None
+                continue
             break
 
-        if topic is None:
+        if topic is None or poly_data is None:
             date = plan.get("date") or "unknown-date"
             slot = slot_data.get("slot") or "unknown-slot"
             if duplicate_seen and not any(not item.startswith("duplicate_slot_content:") for item in rejections):
@@ -135,14 +161,6 @@ def populate_daily_plan(plan: dict[str, Any], swipe_items: list[dict[str, Any]],
             raise NoRelevantTopic(
                 f"no_publishable_candidate_for_slot: date={date} slot={slot} reasons={reasons}"
             )
-
-        poly_data = repurpose.repurpose_topic(
-            topic_data=topic,
-            date_str=plan.get("date"),
-            generate_media=True,
-            author=f"@{settings.load().get('handle', 'Lordporus')} • OmniPost",
-            slot=slot_data.get("slot"),
-        )
 
         seen_content.add(content_hash)
         seen_bullets.add(bullet_hash)

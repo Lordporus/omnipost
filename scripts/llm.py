@@ -20,6 +20,11 @@ ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+try:  # package import (tests, pipeline)
+    from scripts.errors import CopyValidationError
+except ImportError:  # direct script execution
+    from errors import CopyValidationError
+
 DEFAULT_TIMEOUT = 15.0
 USER_AGENT = "OmniPost-Synthesizer/2.0"
 
@@ -243,10 +248,25 @@ def parse_llm_json(raw_text: str) -> dict[str, Any]:
 
     from scripts.repurpose import format_x, format_bluesky, format_linkedin, format_threads
 
-    text_x = str(data.get("x") or format_x(headline, points)).strip()
-    text_bsky = str(data.get("bluesky") or format_bluesky(headline, points)).strip()
-    text_li = str(data.get("linkedin") or format_linkedin(headline, body, points, takeaway)).strip()
-    text_th = str(data.get("threads") or format_threads(headline, takeaway)).strip()
+    def safe_format(native: Any, formatter: Any) -> str:
+        """Keep native copy, or format only when the source can meet minimums."""
+        native_text = str(native or "").strip()
+        if native_text:
+            return native_text
+        try:
+            return str(formatter()).strip()
+        except CopyValidationError:
+            # The topic is too thin for this platform. Keep the field empty so
+            # the pipeline's CopyValidationError requeue path can decide.
+            return ""
+
+    text_x = safe_format(data.get("x"), lambda: format_x(headline, points))
+    text_bsky = safe_format(data.get("bluesky"), lambda: format_bluesky(headline, points))
+    text_li = safe_format(
+        data.get("linkedin"),
+        lambda: format_linkedin(headline, body, points, takeaway),
+    )
+    text_th = safe_format(data.get("threads"), lambda: format_threads(headline, takeaway))
 
     res: dict[str, Any] = {
         "headline": headline,
