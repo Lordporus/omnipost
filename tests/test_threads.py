@@ -52,15 +52,17 @@ class TestThreadsAdapter(unittest.TestCase):
         self.assertIn("Not logged in", res["error"])
 
     @patch.object(ThreadsAdapter, "_async_verify", return_value=True)
+    @patch("adapters.threads.asyncio.sleep", new_callable=AsyncMock)
     @patch("scripts.browser.settle_page", new_callable=AsyncMock)
     @patch("adapters.threads.ThreadsAdapter._open_stealth")
     @patch("scripts.browser.ensure_chrome")
-    def test_publish_text_success(self, mock_ensure, mock_open, mock_settle, mock_verify):
+    def test_publish_text_success(self, mock_ensure, mock_open, mock_settle, mock_sleep, mock_verify):
         mock_page = AsyncMock()
         mock_page.eval.side_effect = [
             "clicked",                      # TRIGGER_COMPOSER_JS
             "focused",                      # FOCUS_EDITOR_JS
             json.dumps({"clicked": True}),  # SUBMIT_POST_JS
+            "https://www.threads.net/@lordporus_ai/post/ABC123",  # THREADS_PERMALINK_JS
         ]
         mock_open.return_value = mock_page
 
@@ -70,36 +72,44 @@ class TestThreadsAdapter(unittest.TestCase):
         self.assertEqual(res.platform, "threads")
         self.assertTrue(res.success)
         self.assertTrue(res.verified)
-        self.assertIn(res.url, ["https://www.threads.net/@lordporus_ai", "https://www.threads.com/@lordporus_ai"])
+        self.assertEqual(res.url, "https://www.threads.net/@lordporus_ai/post/ABC123")
+        self.assertEqual(res.post_id, "ABC123")
+        mock_verify.assert_not_called()
         mock_page.send.assert_any_call("Input.insertText", text="Hello Threads world from OmniPost V2!")
 
     def test_threads_base_url(self):
         from adapters.threads import THREADS_BASE_URL
         self.assertEqual(THREADS_BASE_URL, "https://www.threads.net/")
 
+    @patch("scripts.settings.load", return_value={})
+    @patch("scripts.browser.alive", return_value=True)
     @patch("scripts.browser.list_tabs", return_value=[{"url": "https://www.threads.com/@lordporus"}])
-    def test_get_base_url_detects_com(self, mock_tabs):
+    def test_get_base_url_detects_com(self, mock_tabs, mock_alive, mock_load):
         url = self.adapter.get_base_url()
         self.assertEqual(url, "https://www.threads.com/")
 
+    @patch("scripts.settings.load", return_value={})
+    @patch("scripts.browser.alive", return_value=True)
     @patch("scripts.browser.list_tabs", return_value=[{"url": "https://www.threads.net/@lordporus"}])
-    def test_get_base_url_detects_net(self, mock_tabs):
+    def test_get_base_url_detects_net(self, mock_tabs, mock_alive, mock_load):
         url = self.adapter.get_base_url()
         self.assertEqual(url, "https://www.threads.net/")
 
     @patch.object(ThreadsAdapter, "_attach_media", new_callable=AsyncMock)
     @patch.object(ThreadsAdapter, "_async_verify", return_value=True)
+    @patch("adapters.threads.asyncio.sleep", new_callable=AsyncMock)
     @patch("scripts.browser.settle_page", new_callable=AsyncMock)
     @patch("adapters.threads.ThreadsAdapter._open_stealth")
     @patch("scripts.browser.ensure_chrome")
     def test_publish_with_image_attachment(
-        self, mock_ensure, mock_open, mock_settle, mock_verify, mock_attach
+        self, mock_ensure, mock_open, mock_settle, mock_sleep, mock_verify, mock_attach
     ):
         mock_page = AsyncMock()
         mock_page.eval.side_effect = [
             "clicked",
             "focused",
             json.dumps({"clicked": True}),
+            "https://www.threads.net/@lordporus_ai/post/IMG123",
         ]
         mock_open.return_value = mock_page
         mock_attach.return_value = True
@@ -115,7 +125,7 @@ class TestThreadsAdapter(unittest.TestCase):
             )
             res = self.adapter.publish(payload)
             self.assertTrue(res.success)
-            mock_attach.assert_called_once_with(mock_page, dummy_img)
+            mock_attach.assert_called_once_with(mock_page, [dummy_img])
         finally:
             if dummy_img.exists():
                 dummy_img.unlink()

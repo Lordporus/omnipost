@@ -14,6 +14,9 @@ class TestLinkedInAdapter(unittest.TestCase):
 
     def setUp(self):
         self.adapter = LinkedInAdapter(port=9444)
+        self._sleep_patcher = patch("adapters.linkedin.asyncio.sleep", new_callable=AsyncMock)
+        self._sleep_patcher.start()
+        self.addCleanup(self._sleep_patcher.stop)
 
     def test_capabilities(self):
         caps = self.adapter.capabilities
@@ -59,9 +62,15 @@ class TestLinkedInAdapter(unittest.TestCase):
         mock_state_path.read_text.return_value = json.dumps({
             "posts": [
                 {
-                    "at": recent_time,
+                    "at": "2026-01-01T00:00:00+00:00",
                     "platform": "linkedin",
-                    "verified": True,
+                    "platforms": {
+                        "linkedin": {
+                            "at": recent_time,
+                            "status": "published_verified",
+                            "verified": True,
+                        }
+                    },
                 }
             ]
         })
@@ -77,9 +86,14 @@ class TestLinkedInAdapter(unittest.TestCase):
         mock_state_path.read_text.return_value = json.dumps({
             "posts": [
                 {
-                    "at": old_time,
-                    "platform": "linkedin",
-                    "verified": True,
+                    "at": "2026-01-01T00:00:00+00:00",
+                    "platforms": {
+                        "linkedin": {
+                            "at": old_time,
+                            "status": "published_verified",
+                            "verified": True,
+                        }
+                    },
                 }
             ]
         })
@@ -97,9 +111,11 @@ class TestLinkedInAdapter(unittest.TestCase):
         mock_page = AsyncMock()
         # Mock eval responses for trigger, focus, submit
         mock_page.eval.side_effect = [
-            "clicked",               # TRIGGER_COMPOSER_JS
+            {"result": "clicked", "selector": 'button[id*="share-box"]', "candidates": 1},
             "focused",               # FOCUS_EDITOR_JS
+            None,                    # input/change dispatch eval
             json.dumps({"clicked": True}),  # SUBMIT_POST_JS
+            "success_toast_detected",  # TOAST_QUERY_JS
         ]
         mock_open.return_value = mock_page
 
@@ -119,8 +135,9 @@ class TestLinkedInAdapter(unittest.TestCase):
     def test_publish_text_with_toast_urn_success(self, mock_ensure, mock_open, mock_settle, mock_verify, mock_rate):
         mock_page = AsyncMock()
         mock_page.eval.side_effect = [
-            "clicked",               # TRIGGER_COMPOSER_JS
+            {"result": "clicked", "selector": 'button[id*="share-box"]', "candidates": 1},
             "focused",               # FOCUS_EDITOR_JS
+            None,                    # input/change dispatch eval
             json.dumps({"clicked": True}),  # SUBMIT_POST_JS
             "https://www.linkedin.com/feed/update/urn:li:activity:7251892837492819201/",  # TOAST_QUERY_JS
         ]
@@ -145,8 +162,9 @@ class TestLinkedInAdapter(unittest.TestCase):
     def test_publish_text_with_toast_text_success(self, mock_ensure, mock_open, mock_settle, mock_verify, mock_rate):
         mock_page = AsyncMock()
         mock_page.eval.side_effect = [
-            "clicked",               # TRIGGER_COMPOSER_JS
+            {"result": "clicked", "selector": 'button[id*="share-box"]', "candidates": 1},
             "focused",               # FOCUS_EDITOR_JS
+            None,                    # input/change dispatch eval
             json.dumps({"clicked": True}),  # SUBMIT_POST_JS
             "success_toast_detected",  # TOAST_QUERY_JS
         ]

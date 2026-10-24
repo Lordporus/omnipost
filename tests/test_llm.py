@@ -312,9 +312,7 @@ def test_llm_timeout_fallback():
             timeout=DEFAULT_TIMEOUT,
         )
         assert ok is False
-        assert "headline" in topic
-        assert "points" in topic
-        assert len(topic["points"]) > 0
+        assert topic is None
 
 
 def test_llm_http_error_fallback():
@@ -336,8 +334,7 @@ def test_llm_http_error_fallback():
             api_key="bad-key",
         )
         assert ok is False
-        assert "headline" in topic
-        assert "points" in topic
+        assert topic is None
 
 
 def test_voice_profile_prompt_integration():
@@ -405,7 +402,7 @@ def test_llm_url_error_and_malformed_json_fallback():
     with patch("urllib.request.urlopen", side_effect=urllib.error.URLError("DNS resolution failed")):
         ok, topic = generate_topic_with_llm(items=items, provider="gemini", api_key="test-key")
         assert ok is False
-        assert "headline" in topic
+        assert topic is None
 
     # Malformed JSON in HTTP response
     mock_resp = MagicMock()
@@ -414,7 +411,7 @@ def test_llm_url_error_and_malformed_json_fallback():
         mock_urlopen.return_value.__enter__.return_value = mock_resp
         ok, topic = generate_topic_with_llm(items=items, provider="openai", api_key="test-key")
         assert ok is False
-        assert "headline" in topic
+        assert topic is None
 
 
 def test_parse_llm_json_platform_native_archetypes():

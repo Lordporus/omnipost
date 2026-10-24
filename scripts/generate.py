@@ -6,50 +6,88 @@ Supports zero-cost deterministic synthesis with an extensible LLM provider hook.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 from pathlib import Path
 from typing import Any
 
+try:  # package import (tests, pipeline)
+    from scripts.errors import DuplicateTopic, NoRelevantTopic, TopicRejected
+    from scripts.relevance import score_candidates, score_item
+except ImportError:  # direct script execution
+    from errors import DuplicateTopic, NoRelevantTopic, TopicRejected
+    from relevance import score_candidates, score_item
+
 ROOT = Path(__file__).resolve().parent.parent
 
 
-def extract_key_takeaways(text: str, exclude_title: str = "") -> list[str]:
-    """Extracts punchy bullet-point takeaways from summary text, guaranteeing >= 3 unique points.
-    
-    Strictly excludes the headline or close variations to ban content echoing.
-    """
-    fallback_defaults = [
-        "Deterministic state execution outperforms retry loops.",
-        "Decoupled state management ensures crash resilience.",
-        "Verification of published state prevents double dispatch.",
+def _clean_point(text: str) -> str:
+    clean = re.sub(r"^[\s•\-*▸\d.)]+", "", str(text or "")).strip()
+    return clean.strip(" \t\r\n,;:.!?")
+
+
+def _normalise_point(text: str) -> str:
+    return re.sub(r"\s+", " ", re.sub(r"[^\w\s]", " ", str(text or "").lower())).strip()
+
+
+def _sentence_candidates(text: str) -> list[str]:
+    sentences = [
+        s.strip()
+        for s in re.split(r"(?<=[.!?])\s+|\n+", str(text or ""))
+        if len(s.strip()) > 15
     ]
-    raw_sentences = [s.strip() for s in re.split(r"[.!?]\s+", text) if len(s.strip()) > 15]
+    candidates = list(sentences)
+    for sentence in sentences:
+        for clause in re.split(r"[;:]\s*|,\s+|\s+(?:and|but|while|because|with)\s+", sentence):
+            clause = clause.strip()
+            if len(clause) > 15:
+                candidates.append(clause)
 
-    exclude_norm = exclude_title.strip().lower()
+    # A single dense sentence still needs to yield grounded points. Sliding
+    # windows keep every bullet traceable to the source summary.
+    words = re.findall(r"[\w'+-]+", str(text or ""))
+    for width in (8, 6, 5, 4):
+        if len(words) < width:
+            continue
+        step = max(1, width // 2)
+        for i in range(0, len(words) - width + 1, step):
+            chunk = " ".join(words[i : i + width]).strip()
+            if len(chunk) > 20:
+                candidates.append(chunk)
+    return candidates
+
+
+def extract_key_takeaways(
+    text: str,
+    exclude_title: str = "",
+    item: dict[str, Any] | None = None,
+    require_three: bool = True,
+) -> list[str]:
+    """Extract topic-grounded bullet points from summary text.
+
+    Every returned point must come from the supplied summary. There is no
+    fallback list: if the source cannot support three distinct points, callers
+    either accept fewer (``require_three=False``) or reject the item.
+    """
+    exclude_norm = _normalise_point(exclude_title)
     seen: set[str] = set()
-    if exclude_norm:
-        seen.add(exclude_norm)
-
     points: list[str] = []
-    for s in raw_sentences:
-        clean_s = s.rstrip(".!?").strip()
-        norm_s = clean_s.lower()
-        # Ban exact match or significant substring overlap with title
-        if norm_s and norm_s not in seen:
-            if exclude_norm and (norm_s in exclude_norm or exclude_norm in norm_s):
-                continue
-            seen.add(norm_s)
-            points.append(clean_s)
 
-    for fb in fallback_defaults:
+    for candidate in _sentence_candidates(text):
+        clean = _clean_point(candidate)
+        norm = _normalise_point(clean)
+        if not norm or norm in seen:
+            continue
+        if exclude_norm and (norm in exclude_norm or exclude_norm in norm):
+            continue
+        seen.add(norm)
+        points.append(clean)
         if len(points) >= 3:
             break
-        clean_fb = fb.rstrip(".!?").strip()
-        if clean_fb.lower() not in seen:
-            seen.add(clean_fb.lower())
-            points.append(clean_fb)
 
+    if require_three and len(points) < 3:
+        raise TopicRejected("insufficient_takeaways", item)
     return points[:3]
 
 
@@ -71,7 +109,7 @@ def determine_card_count(topic_data: dict[str, Any]) -> int:
 
 
 def _ensure_carousel_integrity(topic: dict[str, Any], kind: str = "tech_insight") -> dict[str, Any]:
-    """Guarantees every slide in carousel has semantic headers, valid bodies, and non-empty bullets."""
+    """Guarantee every slide has a header, body, and grounded non-empty bullets."""
     if not isinstance(topic, dict):
         return topic
 
@@ -81,8 +119,18 @@ def _ensure_carousel_integrity(topic: dict[str, Any], kind: str = "tech_insight"
     raw_points = topic.get("points") or []
     points = [str(p).strip() for p in raw_points if str(p).strip()]
     if len(points) < 3:
-        points = extract_key_takeaways(body or headline)
-    takeaway = str(topic.get("takeaway") or "Build sovereign infrastructure before scaling agents.").strip()
+        points = extract_key_takeaways(
+            body or headline,
+            exclude_title=headline,
+            require_three=False,
+        )
+    if not points:
+        raise TopicRejected("insufficient_takeaways")
+
+    takeaway = str(topic.get("takeaway") or points[-1]).strip() or points[-1]
+
+    def grounded(start: int, count: int) -> list[str]:
+        return [points[(start + offset) % len(points)] for offset in range(count)]
 
     carousel = topic.get("carousel")
     if not isinstance(carousel, dict) or not isinstance(carousel.get("slides"), list) or len(carousel.get("slides")) < 4:
@@ -91,31 +139,27 @@ def _ensure_carousel_integrity(topic: dict[str, Any], kind: str = "tech_insight"
             "slides": [
                 {
                     "header": headline[:60],
-                    "body": f"Architectural breakdown of {headline} and its production impact.",
+                    "body": body[:200] if body else points[0],
                     "tag": category,
-                    "bullets": points[:2] if len(points) >= 2 else ["Deterministic design pattern", "Decoupled state management"],
+                    "bullets": grounded(0, 2),
                 },
                 {
                     "header": "Core Architectural Friction",
-                    "body": body[:200] if body else "Production failure recovery and distributed state management.",
+                    "body": body[:200] if body else points[0],
                     "tag": "BOTTLENECK",
-                    "bullets": [points[0]] if points else ["Unverified state cascades across services"],
+                    "bullets": grounded(0, 1),
                 },
                 {
                     "header": "Implementation Pattern",
-                    "body": points[1] if len(points) > 1 else "State machine verification pattern",
+                    "body": points[1] if len(points) > 1 else points[0],
                     "tag": "IMPLEMENTATION",
-                    "bullets": points[1:3] if len(points) > 2 else ["Deterministic execution beats flaky retry loops"],
+                    "bullets": grounded(1, 2),
                 },
                 {
                     "header": "Production Verification Checklist",
                     "body": f"Key takeaway: {takeaway}",
                     "tag": "CHECKLIST",
-                    "bullets": [
-                        "Atomic state persistence",
-                        "Isolated failure recovery",
-                        "Verified credential boundaries",
-                    ],
+                    "bullets": grounded(2, 2),
                 },
             ],
         }
@@ -126,16 +170,6 @@ def _ensure_carousel_integrity(topic: dict[str, Any], kind: str = "tech_insight"
         "Core Architectural Friction",
         "Implementation Pattern",
         "Production Verification Checklist",
-    ]
-    default_bullets = [
-        points[:2] if len(points) >= 2 else ["Deterministic design pattern", "Decoupled state management"],
-        [points[0]] if points else ["Unverified state cascades across services"],
-        points[1:3] if len(points) > 2 else ["Deterministic execution beats flaky retry loops"],
-        [
-            "Atomic state persistence",
-            "Isolated failure recovery",
-            "Verified credential boundaries",
-        ],
     ]
 
     for idx, slide in enumerate(carousel["slides"]):
@@ -148,149 +182,63 @@ def _ensure_carousel_integrity(topic: dict[str, Any], kind: str = "tech_insight"
         else:
             slide["header"] = cleaned_hdr
 
+        if not str(slide.get("body") or "").strip():
+            slide["body"] = points[idx % len(points)]
+
         existing_bullets = slide.get("bullets")
         if not isinstance(existing_bullets, list) or len(existing_bullets) == 0:
-            slide["bullets"] = default_bullets[min(idx, len(default_bullets) - 1)]
+            slide["bullets"] = grounded(idx, 2)
 
     return topic
+
+
+def _summary_for_item(item: dict[str, Any]) -> str:
+    if not isinstance(item, dict):
+        return ""
+    for key in ("summary", "description", "content"):
+        value = item.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    extra = item.get("extra")
+    if isinstance(extra, str):
+        return extra.strip()
+    if isinstance(extra, dict):
+        for key in ("summary", "text", "description", "content"):
+            value = extra.get(key)
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+    return ""
+
+
+def _validate_summary(item: dict[str, Any], title: str, summary: str) -> str:
+    clean = str(summary or "").strip()
+    title_norm = _normalise_point(title)
+    summary_norm = _normalise_point(clean)
+    if (
+        len(clean) < 40
+        or not summary_norm
+        or summary_norm == title_norm
+        or summary_norm.strip(".!? ") == title_norm.strip(".!? ")
+    ):
+        raise TopicRejected("missing_summary", item)
+    return clean
 
 
 def generate_heuristic_topic(kind: str, items: list[dict[str, Any]]) -> dict[str, Any]:
     """Generates a structured topic dictionary deterministically without LLM API calls."""
     if not items:
-        # High-signal fallback aligned with AI/Engineering theme
-        headline = "Why Deterministic Execution Wins in Autonomous Agent Architecture"
-        body = (
-            "Engineering autonomous syndicates requires rock-solid reliability. Relying solely on raw prompt "
-            "engineering creates brittle workflows. Combining state machines with atomic ledgers ensures zero duplicate "
-            "posts and transparent retries."
-        )
-        points = [
-            "Atomic JSON ledgers prevent duplicate posts during partial outages.",
-            "Direct CDP automation eliminates costly 3rd party API subscriptions.",
-            "Polymorphic repurposing converts 1 technical insight into 4 channel formats.",
-        ]
-        takeaway = "Build deterministic foundations before scaling autonomous agents."
-        category = "AI ARCHITECTURE"
-
-        x_text = (
-            "Deterministic state machines beat brittle LLM retry loops every single time in production. "
-            "Combine atomic ledgers with local CDP automation to eliminate duplicate posts and flaky API failures."
-        )
-        bluesky_text = (
-            "Autonomous syndicates don't need cloud SaaS wrappers. Running local CDP against persistent browser "
-            "sessions with atomic JSON state solves rate limits and duplicate posts for $0."
-        )
-        threads_text = (
-            "Most AI agents fail because developers rely solely on raw prompt loops instead of deterministic state machines. "
-            "Have you hit duplicate post or retry hell in production yet?"
-        )
-        linkedin_text = (
-            f"{headline}\n\n"
-            f"{body}\n\n"
-            "3 Architecture Rules for Sovereign Automation:\n"
-            + "\n".join([f"▸ {p}" for p in points])
-            + f"\n\nBottom line: {takeaway}"
-        )
-        carousel = {
-            "title": headline[:70],
-            "slides": [
-                {
-                    "header": headline[:60],
-                    "body": "Architectural breakdown of deterministic agent systems and production reliability.",
-                    "tag": category,
-                    "bullets": points[:2] if len(points) >= 2 else [
-                        "Deterministic design pattern",
-                        "Decoupled state management",
-                    ],
-                },
-                {
-                    "header": "Core Architectural Friction",
-                    "body": "Why probabilistic LLM retry loops fail under high concurrency and real network conditions.",
-                    "tag": "BOTTLENECK",
-                    "bullets": [points[0]] if points else [
-                        "Unverified state cascades across services",
-                    ],
-                },
-                {
-                    "header": "Implementation Pattern",
-                    "body": points[1] if len(points) > 1 else "State machine verification pattern",
-                    "tag": "IMPLEMENTATION",
-                    "bullets": points[1:3] if len(points) > 2 else [
-                        "Deterministic execution beats flaky retry loops",
-                    ],
-                },
-                {
-                    "header": "Production Verification Checklist",
-                    "body": f"Key takeaway: {takeaway}",
-                    "tag": "CHECKLIST",
-                    "bullets": [
-                        "Atomic state persistence",
-                        "Isolated failure recovery",
-                        "Verified credential boundaries",
-                    ],
-                },
-            ],
-        }
-
-        return {
-            "headline": headline,
-            "body": body,
-            "points": points,
-            "takeaway": takeaway,
-            "category": category,
-            "x": x_text,
-            "bluesky": bluesky_text,
-            "threads": threads_text,
-            "linkedin": linkedin_text,
-            "carousel": carousel,
-            "platforms": {
-                "x": x_text,
-                "bluesky": bluesky_text,
-                "threads": threads_text,
-                "linkedin": linkedin_text,
-            },
-        }
+        raise NoRelevantTopic("no_items")
 
     # Sort items by score/relevance
     sorted_items = sorted(items, key=lambda x: int(x.get("score") or 0), reverse=True)
     top_item = sorted_items[0]
     title = str(top_item.get("title") or "Engineering Update").strip()
-    raw_extra = top_item.get("extra")
-    if isinstance(raw_extra, str):
-        summary = raw_extra
-    elif isinstance(raw_extra, dict):
-        summary = str(raw_extra.get("summary") or raw_extra.get("text") or raw_extra.get("title") or title)
-    else:
-        summary = str(top_item.get("summary") or title)
-
-    # Anti-Echo Protection: If summary is just the title repeated or under 40 chars, synthesize rich context
-    clean_summary = summary.strip()
-    if not clean_summary or clean_summary.lower() == title.lower() or len(clean_summary) < 40:
-        summary = (
-            f"Analyzing architectural tradeoffs, latency considerations, and state machine "
-            f"reliability for {title} in production systems."
-        )
-
-    points = extract_key_takeaways(summary, exclude_title=title)
+    summary = _validate_summary(top_item, title, _summary_for_item(top_item))
+    points = extract_key_takeaways(summary, exclude_title=title, item=top_item)
 
     category = "AI UPDATE" if kind == "ai_update" else "TECH INSIGHT"
-    body = summary[:300] if len(summary) > 40 else f"Architectural breakdown of {title} with production implementation guidelines."
-
-    raw_url = str(top_item.get("url") or "").strip()
-    source_name = str(top_item.get("source") or "web").strip()
-    domain = ""
-    if raw_url:
-        domain_match = re.search(r"https?://(?:www\.)?([^/]+)", raw_url)
-        if domain_match:
-            domain = domain_match.group(1)
-
-    if domain:
-        takeaway = f"{domain} • Verified Reference"
-    elif source_name and source_name.lower() != "web":
-        takeaway = f"{source_name.upper()} • Verified Reference"
-    else:
-        takeaway = "Build sovereign infrastructure before scaling agents."
+    body = summary[:300]
+    takeaway = points[-1]
 
     # Craft 4 platform-native archetypes
     # X: <280 chars, punchy 1-2 liner, no hashtags
@@ -308,45 +256,43 @@ def generate_heuristic_topic(kind: str, items: list[dict[str, Any]]) -> dict[str
     if len(threads_text) > 480:
         threads_text = threads_text[:450].strip() + "\n\nWhat are your thoughts?"
 
-    # LinkedIn: 600-1200 chars framework breakdown
+    # LinkedIn: topic-derived context, practical changes, and bottom line.
     linkedin_text = (
         f"{title}\n\n"
         f"{body}\n\n"
-        "Key Engineering Takeaways:\n"
+        "What changes in practice:\n"
         + "\n".join([f"▸ {p}" for p in points])
         + f"\n\nBottom line: {takeaway}"
     )
+    if len(linkedin_text) > 3000:
+        linkedin_text = linkedin_text[:2950].rstrip()
 
     carousel = {
         "title": title[:70],
         "slides": [
             {
                 "header": title[:60],
-                "body": f"Architectural breakdown of {title} and its production impact.",
+                "body": body[:200],
                 "tag": category,
-                "bullets": points[:2] if len(points) >= 2 else ["Deterministic design pattern", "Decoupled state management"],
+                "bullets": points[:2],
             },
             {
                 "header": "Core Architectural Friction",
-                "body": body[:200],
+                "body": points[0],
                 "tag": "BOTTLENECK",
-                "bullets": [points[0]] if points else ["Unverified state cascades across services"],
+                "bullets": [points[0]],
             },
             {
                 "header": "Implementation Pattern",
-                "body": points[1] if len(points) > 1 else "State machine verification pattern",
+                "body": points[1],
                 "tag": "IMPLEMENTATION",
-                "bullets": points[1:3] if len(points) > 2 else ["Deterministic execution beats flaky retry loops"],
+                "bullets": points[1:3],
             },
             {
                 "header": "Production Verification Checklist",
                 "body": f"Key takeaway: {takeaway}",
                 "tag": "CHECKLIST",
-                "bullets": [
-                    "Atomic state persistence",
-                    "Isolated failure recovery",
-                    "Verified credential boundaries",
-                ],
+                "bullets": points[2:3] + [takeaway],
             },
         ],
     }
@@ -398,32 +344,110 @@ def generate_platform_native_drafts(
     )
 
 
+def _fingerprint_text(text: Any) -> str:
+    normalised = re.sub(r"[^\w\s]", " ", str(text or "").lower())
+    return re.sub(r"\s+", " ", normalised).strip()
+
+
+def _fingerprint_parts(topic: dict[str, Any]) -> list[str]:
+    parts = sorted(
+        _fingerprint_text(point)
+        for point in (topic.get("points") or [])
+        if _fingerprint_text(point)
+    )
+    platforms = topic.get("platforms")
+    for key in ("x", "bluesky", "threads", "linkedin"):
+        text = platforms.get(key) if isinstance(platforms, dict) else None
+        if not isinstance(text, str) or not text.strip():
+            text = topic.get(key)
+        if isinstance(text, str) and text.strip():
+            parts.append(_fingerprint_text(text))
+    return parts
+
+
+def content_fingerprint(topic: dict[str, Any]) -> str:
+    """Stable digest of a topic's bullets and per-platform post text."""
+    payload = "\n".join(_fingerprint_parts(topic))
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def bullet_fingerprint(topic: dict[str, Any]) -> str:
+    """Stable digest of the sorted bullet set, independent of headline and order."""
+    points = sorted(
+        _fingerprint_text(point)
+        for point in (topic.get("points") or [])
+        if _fingerprint_text(point)
+    )
+    return hashlib.sha256("\n".join(points).encode("utf-8")).hexdigest()
+
+
+def _topic_is_relevant(topic: dict[str, Any], voice_profile: str | None = None) -> bool:
+    probe = {
+        "title": str(topic.get("headline") or ""),
+        "summary": str(topic.get("body") or ""),
+    }
+    return score_item(probe, voice_profile=voice_profile).accepted
+
+
+def _sanitize_takeaway(topic: dict[str, Any]) -> dict[str, Any]:
+    points = [str(point).strip() for point in (topic.get("points") or []) if str(point).strip()]
+    takeaway = str(topic.get("takeaway") or "").strip()
+    bare_domain = bool(re.fullmatch(r"[\w.-]+\.[a-z]{2,}", takeaway.lower()))
+    if (not takeaway or bare_domain or "verified reference" in takeaway.lower()) and points:
+        topic["takeaway"] = points[-1]
+    return topic
+
+
 def generate_topic_from_items(
     kind: str,
     items: list[dict[str, Any]],
     use_llm: bool = True,
     voice_profile: str | None = None,
 ) -> dict[str, Any]:
-    """Generates a structured topic dictionary from a list of collected swipe items.
+    """Generate a structured topic from the highest-scoring relevant item.
 
-    Attempts synthesis via modern multi-LLM engine if configured, falling back to
-    deterministic heuristic generation on failure or when LLM is unconfigured.
+    Both the LLM output and the deterministic fallback must pass the same
+    relevance gate. There is no unverified path to a topic dict.
     """
     if not items:
-        topic = generate_heuristic_topic(kind, items)
-        return _ensure_carousel_integrity(topic, kind)
+        raise NoRelevantTopic("no_items")
+
+    scored = score_candidates(items, voice_profile=voice_profile)
+    accepted = sorted(
+        [(item, result) for item, result in scored if result.accepted],
+        key=lambda pair: pair[1].score,
+        reverse=True,
+    )
+    if not accepted:
+        details = "; ".join(
+            f"{str(item.get('title') or '')[:60]}: {', '.join(result.reasons)}"
+            for item, result in scored
+        )
+        raise NoRelevantTopic(f"no_relevant_items: {details}")
+
+    source_item = accepted[0][0]
 
     if use_llm:
-        from scripts.llm import generate_topic_with_llm
-        ok, topic = generate_topic_with_llm(
-            items=items,
-            kind=kind,
-            voice_profile=voice_profile,
-        )
-        if ok and topic:
-            return _ensure_carousel_integrity(topic, kind)
+        try:
+            from scripts.llm import generate_topic_with_llm
 
-    topic = generate_heuristic_topic(kind, items)
+            ok, topic = generate_topic_with_llm(
+                items=[source_item],
+                kind=kind,
+                voice_profile=voice_profile,
+            )
+        except Exception:
+            ok, topic = False, None
+
+        if ok and isinstance(topic, dict):
+            _sanitize_takeaway(topic)
+            if _topic_is_relevant(topic, voice_profile):
+                return _ensure_carousel_integrity(topic, kind)
+
+    topic = generate_heuristic_topic(kind, [source_item])
+    _sanitize_takeaway(topic)
+    if not _topic_is_relevant(topic, voice_profile):
+        raise TopicRejected("off_topic_topic", source_item)
     return _ensure_carousel_integrity(topic, kind)
 
 

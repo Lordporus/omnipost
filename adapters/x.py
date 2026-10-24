@@ -1,14 +1,17 @@
 import asyncio
+import sys
 from pathlib import Path
 from typing import Any
 
 from adapters.base import (
+    AdapterError,
     PlatformAdapter,
     PlatformCapabilities,
     PublishPayload,
     PublishResult,
 )
 from scripts import post, settings
+from scripts.browser import CDPError
 
 
 class XAdapter(PlatformAdapter):
@@ -57,18 +60,33 @@ class XAdapter(PlatformAdapter):
             }
 
     def publish(self, payload: PublishPayload) -> PublishResult:
-        """Publish post to X via CDP composer automation."""
-        image_path: Path | None = None
-        if payload.media_paths:
-            image_path = payload.media_paths[0]
+        """Publish post to X via CDP composer automation.
 
+        Every rendered card is passed through in order, up to the platform's
+        four-image cap. A single image keeps the original ``image=`` call path.
+        """
+        media_paths = [Path(path) for path in payload.media_paths[: self.capabilities.max_images]]
         try:
-            res = asyncio.run(
-                post.do_post(
-                    text=payload.text,
-                    image=image_path,
+            if len(media_paths) > 1:
+                print(
+                    f"  [X] Attaching {len(media_paths)} cards (cap {self.capabilities.max_images})",
+                    file=sys.stderr,
+                    flush=True,
                 )
-            )
+                res = asyncio.run(
+                    post.do_post(
+                        text=payload.text,
+                        images=media_paths,
+                    )
+                )
+            else:
+                image_path: Path | None = media_paths[0] if media_paths else None
+                res = asyncio.run(
+                    post.do_post(
+                        text=payload.text,
+                        image=image_path,
+                    )
+                )
 
             success = bool(res.get("posted"))
             err = res.get("error")
@@ -86,11 +104,13 @@ class XAdapter(PlatformAdapter):
                 error=err,
                 raw_response=res,
             )
-        except Exception as exc:
+        except AdapterError:
+            raise
+        except (CDPError, OSError, asyncio.TimeoutError) as exc:
             return PublishResult(
                 platform="x",
                 success=False,
-                error=str(exc),
+                error=f"{type(exc).__name__}: {exc}",
             )
 
     def verify(self, post_id: str | None, text_snippet: str) -> bool:

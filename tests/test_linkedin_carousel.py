@@ -13,6 +13,9 @@ class TestLinkedInCarouselAndVerification(unittest.TestCase):
 
     def setUp(self):
         self.adapter = LinkedInAdapter(port=9444)
+        self._sleep_patcher = patch("adapters.linkedin.asyncio.sleep", new_callable=AsyncMock)
+        self._sleep_patcher.start()
+        self.addCleanup(self._sleep_patcher.stop)
 
     @patch("adapters.linkedin.LinkedInAdapter._attach_document", new_callable=AsyncMock)
     @patch.object(LinkedInAdapter, "_check_rate_limit", return_value=(True, None))
@@ -25,9 +28,11 @@ class TestLinkedInCarouselAndVerification(unittest.TestCase):
     ):
         mock_page = AsyncMock()
         mock_page.eval.side_effect = [
-            "clicked",                      # TRIGGER_COMPOSER_JS
+            {"result": "clicked", "selector": 'button[id*="share-box"]', "candidates": 1},
             "focused",                      # FOCUS_EDITOR_JS
+            None,                           # input/change dispatch eval
             json.dumps({"clicked": True}),  # SUBMIT_POST_JS
+            "success_toast_detected",       # TOAST_QUERY_JS
         ]
         mock_open.return_value = mock_page
         mock_attach.return_value = True
@@ -62,7 +67,10 @@ class TestLinkedInCarouselAndVerification(unittest.TestCase):
         self, mock_ensure, mock_open, mock_settle, mock_rate, mock_attach
     ):
         mock_page = AsyncMock()
-        mock_page.eval.return_value = "clicked"
+        mock_page.eval.side_effect = [
+            {"result": "clicked", "selector": 'button[id*="share-box"]', "candidates": 1},
+            "focused",  # FOCUS_EDITOR_JS
+        ]
         mock_open.return_value = mock_page
         mock_attach.return_value = False
 

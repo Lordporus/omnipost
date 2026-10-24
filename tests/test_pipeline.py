@@ -12,14 +12,23 @@ def test_populate_daily_plan_fills_empty_slots():
             {"slot": "16:00", "kind": "ai_update", "text": "", "due_at": "2026-10-06T16:20:00"},
         ]
     }
-    sample_topic = {
-        "headline": "Autonomous Engineering",
-        "body": "System details",
-        "points": ["Point A", "Point B"],
-        "takeaway": "Takeaway C",
-        "category": "TECH"
-    }
-    with patch("scripts.generate.generate_topic_from_items", return_value=sample_topic), \
+    sample_topics = [
+        {
+            "headline": "Autonomous Engineering",
+            "body": "System details",
+            "points": ["Point A", "Point B"],
+            "takeaway": "Takeaway C",
+            "category": "TECH",
+        },
+        {
+            "headline": "Distributed Database Latency",
+            "body": "Different system details",
+            "points": ["Point D", "Point E"],
+            "takeaway": "Takeaway F",
+            "category": "TECH",
+        },
+    ]
+    with patch("scripts.generate.generate_topic_from_items", side_effect=sample_topics), \
          patch("scripts.repurpose.repurpose_topic") as mock_repurpose:
         mock_repurpose.return_value = {
             "x": {"text": "X text", "enabled": True},
@@ -78,7 +87,7 @@ def test_run_daily_pipeline(tmp_path):
 
         mock_make_plan.side_effect = fake_make_plan
 
-        def fake_populate(plan, items):
+        def fake_populate(plan, items, force=False):
             plan["slots"][0]["text"] = "Populated text"
             return plan
 
