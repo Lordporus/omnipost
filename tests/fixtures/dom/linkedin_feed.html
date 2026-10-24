@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="UTF-8"><title>LinkedIn feed fixture</title></head>
+<body>
+  <nav class="global-nav">
+    <a href="/feed/">Home</a>
+    <button class="artdeco-button artdeco-button--tertiary" aria-label="Like">Like</button>
+    <button class="artdeco-button artdeco-button--tertiary" aria-label="Comment">Comment</button>
+  </nav>
+
+  <main>
+    <div class="share-box-feed-entry__wrapper">
+      <button id="share-box-feed-entry-trigger" class="share-box-feed-entry__trigger">
+        Start a post
+      </button>
+    </div>
+
+    <div role="dialog" class="artdeco-modal">
+      <div class="share-box">
+        <div contenteditable="true" role="textbox" class="ql-editor"></div>
+        <input type="file" accept="image/png,image/jpeg" />
+        <button class="share-actions__primary-action">Post</button>
+      </div>
+    </div>
+  </main>
+</body>
+</html>

@@ -137,6 +137,17 @@ def test_offline_render():
     assert 'href="http' not in html
 
 
+def test_embedded_font_css_present():
+    """All three vendored faces are embedded, so rendering needs no network."""
+    from render.cards import _font_css
+
+    css = _font_css()
+    assert 'font-family: "Geist"' in css
+    assert 'font-family: "Geist Mono"' in css
+    assert css.count("data:font/woff2;base64,") == 3
+    assert "https://" not in css
+
+
 def test_no_fixed_sleep():
     """Capture must wait on readiness, not a fixed sleep."""
     src = Path(cards.__file__).read_text(encoding="utf-8")

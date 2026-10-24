@@ -1,0 +1,62 @@
+name: Live Smoke
+
+# Manual only. Never runs on push or pull_request. Defaults to a dry run; a live
+# publish requires the operator to flip live_publish to true and to have the
+# platform session secrets configured on the repository.
+on:
+  workflow_dispatch:
+    inputs:
+      live_publish:
+        description: "Actually publish (false = dry run)"
+        type: boolean
+        default: false
+      platforms:
+        description: "Comma-separated platforms (e.g. bluesky or x,linkedin)"
+        type: string
+        default: "bluesky"
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    name: Live smoke (${{ inputs.live_publish && 'LIVE' || 'dry-run' }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    env:
+      CI: "true"
+      HEADLESS: "1"
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+      DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+      # Platform session secrets, injected by the operator for a live run.
+      BLUESKY_HANDLE: ${{ secrets.BLUESKY_HANDLE }}
+      BLUESKY_APP_PASSWORD: ${{ secrets.BLUESKY_APP_PASSWORD }}
+      X_COOKIES: ${{ secrets.X_COOKIES }}
+      LINKEDIN_COOKIES: ${{ secrets.LINKEDIN_COOKIES }}
+      THREADS_COOKIES: ${{ secrets.THREADS_COOKIES }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run supervised smoke
+        shell: bash
+        run: |
+          ARGS=(--fresh --platforms "${{ inputs.platforms }}")
+          if [ "${{ inputs.live_publish }}" != "true" ]; then
+            ARGS+=(--dry-run)
+          fi
+          python scripts/publish_now.py "${ARGS[@]}"

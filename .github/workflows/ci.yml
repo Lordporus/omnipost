@@ -40,3 +40,7 @@ jobs:
 
       - name: Run test suite
         run: pytest -v
+
+      - name: Run contract, privacy, and golden tests
+        run: |
+          pytest tests/test_selector_contracts.py tests/test_artifact_privacy.py tests/test_storybook_render.py tests/test_carousel_rendering.py -q
