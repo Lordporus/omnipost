@@ -81,13 +81,17 @@ class TestThreadsAdapter(unittest.TestCase):
         from adapters.threads import THREADS_BASE_URL
         self.assertEqual(THREADS_BASE_URL, "https://www.threads.net/")
 
+    @patch("scripts.settings.load", return_value={})
+    @patch("scripts.browser.alive", return_value=True)
     @patch("scripts.browser.list_tabs", return_value=[{"url": "https://www.threads.com/@lordporus"}])
-    def test_get_base_url_detects_com(self, mock_tabs):
+    def test_get_base_url_detects_com(self, mock_tabs, mock_alive, mock_load):
         url = self.adapter.get_base_url()
         self.assertEqual(url, "https://www.threads.com/")
 
+    @patch("scripts.settings.load", return_value={})
+    @patch("scripts.browser.alive", return_value=True)
     @patch("scripts.browser.list_tabs", return_value=[{"url": "https://www.threads.net/@lordporus"}])
-    def test_get_base_url_detects_net(self, mock_tabs):
+    def test_get_base_url_detects_net(self, mock_tabs, mock_alive, mock_load):
         url = self.adapter.get_base_url()
         self.assertEqual(url, "https://www.threads.net/")
 
