@@ -166,10 +166,10 @@ class BlueskyAdapter(PlatformAdapter):
             try:
                 err_json = json.loads(err_body)
                 msg = err_json.get("message", err_body)
-            except Exception:
+            except (ValueError, TypeError):
                 msg = err_body
             raise RuntimeError(f"XRPC {endpoint} failed ({err.code}): {msg}") from err
-        except Exception as exc:
+        except (urllib.error.URLError, OSError, ValueError, TimeoutError) as exc:
             raise RuntimeError(f"XRPC {endpoint} connection error: {exc}") from exc
 
     def _ensure_session(self) -> dict[str, Any]:
@@ -205,7 +205,7 @@ class BlueskyAdapter(PlatformAdapter):
                 "did": session.get("did"),
                 "error": None,
             }
-        except Exception as exc:
+        except (RuntimeError, OSError, ValueError, KeyError, urllib.error.URLError) as exc:
             return {
                 "ok": False,
                 "platform": "bluesky",
@@ -310,7 +310,7 @@ class BlueskyAdapter(PlatformAdapter):
                 verified=verified,
                 raw_response={"uri": uri, "cid": cid},
             )
-        except Exception as exc:
+        except (RuntimeError, OSError, ValueError, KeyError, urllib.error.URLError) as exc:
             return PublishResult(
                 platform="bluesky",
                 success=False,
@@ -339,5 +339,5 @@ class BlueskyAdapter(PlatformAdapter):
                 data = json.loads(resp.read().decode("utf-8"))
                 val = data.get("value", {})
                 return bool(val.get("text"))
-        except Exception:
+        except (urllib.error.URLError, OSError, ValueError, KeyError, TimeoutError):
             return False
