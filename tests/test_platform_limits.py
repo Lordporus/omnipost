@@ -201,7 +201,9 @@ def test_linkedin_carousel_contract(tmp_path, monkeypatch):
     pdf_path = tmp_path / "linkedin_deck.pdf"
     pdf_path.write_bytes(b"%PDF-1.4\n")
 
-    monkeypatch.setattr("render.cards.generate_topic_cards", lambda **kwargs: [])
+    card_path = tmp_path / "card_1.png"
+    card_path.write_bytes(b"\x89PNG\r\n\x1a\nstorybook")
+    monkeypatch.setattr("render.cards.generate_topic_cards", lambda **kwargs: [card_path])
     monkeypatch.setattr(
         "scripts.repurpose.create_carousel_pdf",
         lambda **kwargs: pdf_path,

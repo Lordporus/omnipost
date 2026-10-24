@@ -3,261 +3,318 @@
 <head>
   <meta charset="UTF-8">
   <title>{{TITLE}}</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700;800;900&family=Geist+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
   <style>
+    {{FONT_CSS}}
+
     :root {
-      --bg-canvas: #080A0F;
-      --bg-card: #0F131D;
-      --bg-card-elevated: #151A27;
-      --border-card: rgba(255, 255, 255, 0.08);
-      --border-card-highlight: rgba(0, 229, 153, 0.35);
+      --bg-canvas: #0D1117;
+      --bg-panel: #121926;
+      --bg-panel-elevated: #16203260;
+      --border-panel: rgba(230, 237, 243, 0.10);
+      --border-emerald: rgba(0, 229, 153, 0.38);
 
-      --text-primary: #FFFFFF;
-      --text-secondary: #94A3B8;
-      --text-muted: #64748B;
+      --text-primary: #E6EDF3;
+      --text-secondary: #9FB0C3;
+      --text-muted: #6B7C8F;
 
-      --accent-primary: #00E599;
-      --accent-muted: rgba(0, 229, 153, 0.12);
-      --accent-gradient: linear-gradient(135deg, #00E599 0%, #00B4D8 100%);
+      --emerald: #00E599;
+      --violet: #8B5CF6;
+      --amber: #F59E0B;
+      --emerald-soft: rgba(0, 229, 153, 0.12);
 
       --font-sans: "Geist", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-      --font-mono: "Geist Mono", monospace;
+      --font-mono: "Geist Mono", ui-monospace, "Cascadia Code", monospace;
     }
 
-    * {
-      box-sizing: border-box;
-      margin: 0;
-      padding: 0;
-    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
 
     html, body {
       width: 1080px;
-      height: 1080px;
+      height: 1920px;
       overflow: hidden;
       background-color: var(--bg-canvas);
       font-family: var(--font-sans);
       color: var(--text-primary);
       -webkit-font-smoothing: antialiased;
+      text-rendering: geometricPrecision;
     }
 
     .card {
-      width: 1080px;
-      height: 1080px;
       position: relative;
-      display: flex;
-      flex-direction: column;
-      justify-content: space-between;
-      padding: 72px 80px;
-      background: radial-gradient(circle at 85% 15%, #10192A 0%, var(--bg-canvas) 75%);
-      border: 1px solid var(--border-card);
+      width: 1080px;
+      height: 1920px;
       overflow: hidden;
+      display: grid;
+      grid-template-rows: 288px minmax(0, 1fr) 192px;
+      padding: 0 80px;
+      background:
+        radial-gradient(circle at 82% 8%, rgba(139, 92, 246, 0.16) 0%, transparent 46%),
+        radial-gradient(circle at 10% 96%, rgba(0, 229, 153, 0.10) 0%, transparent 44%),
+        var(--bg-canvas);
     }
 
-    /* Subtle ambient technical grid texture */
+    /* Faint 24px technical grid */
     .card::before {
       content: "";
       position: absolute;
-      top: 0;
-      left: 0;
-      right: 0;
-      bottom: 0;
-      background-image: 
-        linear-gradient(rgba(255, 255, 255, 0.02) 1px, transparent 1px),
-        linear-gradient(90deg, rgba(255, 255, 255, 0.02) 1px, transparent 1px);
-      background-size: 48px 48px;
+      inset: 0;
+      background-image:
+        linear-gradient(rgba(230, 237, 243, 0.035) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(230, 237, 243, 0.035) 1px, transparent 1px);
+      background-size: 24px 24px;
       pointer-events: none;
-      z-index: 1;
+      z-index: 0;
     }
 
+    .card > * { position: relative; z-index: 1; }
+
+    /* ---------- Header band (~15%) ---------- */
     .header {
       display: flex;
-      justify-content: space-between;
       align-items: center;
-      z-index: 10;
+      justify-content: space-between;
+      gap: 24px;
+      border-bottom: 2px solid var(--border-emerald);
+      padding: 40px 0 28px;
     }
 
-    .badge-group {
+    .brand {
       display: flex;
       align-items: center;
-      gap: 16px;
+      gap: 18px;
+      min-width: 0;
     }
 
-    .badge {
-      font-size: 14px;
-      font-weight: 700;
-      letter-spacing: 0.12em;
-      text-transform: uppercase;
-      color: var(--accent-primary);
-      background: var(--accent-muted);
-      border: 1px solid var(--border-card-highlight);
-      padding: 6px 18px;
-      border-radius: 999px;
+    .brand-dot {
+      width: 14px;
+      height: 14px;
+      border-radius: 50%;
+      background: var(--emerald);
+      box-shadow: 0 0 18px var(--emerald);
+      flex-shrink: 0;
     }
 
-    .author-badge {
-      font-size: 15px;
+    .brand-name {
+      font-size: 26px;
       font-weight: 600;
-      color: var(--text-muted);
-      letter-spacing: 0.04em;
+      letter-spacing: -0.01em;
+      color: var(--text-primary);
+      white-space: nowrap;
     }
 
-    .slide-counter {
-      font-size: 16px;
-      font-weight: 700;
-      color: var(--text-muted);
-      font-variant-numeric: tabular-nums;
-      background: rgba(255, 255, 255, 0.04);
-      padding: 6px 16px;
-      border-radius: 8px;
-      border: 1px solid var(--border-card);
+    .brand-handle {
       font-family: var(--font-mono);
+      font-size: 22px;
+      color: var(--text-muted);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
 
-    .content-container {
-      z-index: 10;
-      flex: 1;
+    .header-meta {
+      display: flex;
+      align-items: center;
+      gap: 18px;
+      flex-shrink: 0;
+    }
+
+    .tag-pill {
+      font-family: var(--font-mono);
+      font-size: 20px;
+      font-weight: 600;
+      letter-spacing: 0.10em;
+      text-transform: uppercase;
+      color: var(--emerald);
+      background: var(--emerald-soft);
+      border: 1px solid var(--border-emerald);
+      border-radius: 999px;
+      padding: 10px 24px;
+      max-width: 420px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .pagination {
+      font-family: var(--font-mono);
+      font-size: 24px;
+      font-weight: 600;
+      font-variant-numeric: tabular-nums;
+      color: var(--text-secondary);
+      background: rgba(230, 237, 243, 0.05);
+      border: 1px solid var(--border-panel);
+      border-radius: 10px;
+      padding: 10px 20px;
+      white-space: nowrap;
+    }
+
+    /* ---------- Hero band (~50%) ---------- */
+    .hero {
       display: flex;
       flex-direction: column;
       justify-content: center;
-      margin: 28px 0;
+      gap: 36px;
+      padding: 52px 0;
+      min-height: 0;
     }
 
-    /* Wide H1 heading: max 2 lines rule */
-    .card-title {
-      font-size: 52px;
-      font-weight: 900;
-      line-height: 1.18;
-      letter-spacing: -0.03em;
-      color: #FFFFFF;
-      margin-bottom: 24px;
-      max-width: 920px;
+    .headline {
+      font-size: 78px;
+      font-weight: 600;
+      line-height: 1.08;
+      letter-spacing: -0.035em;
+      color: var(--text-primary);
+      text-wrap: balance;
+      overflow-wrap: anywhere;
     }
 
     .card-body {
-      font-size: 24px;
+      font-size: 34px;
       font-weight: 400;
-      line-height: 1.6;
+      line-height: 1.52;
       color: var(--text-secondary);
-      margin-bottom: 28px;
-      max-width: 900px;
+      overflow-wrap: anywhere;
     }
 
-    /* Bento panel container */
+    /* Diagram / comparison panel */
     .panel {
-      background: var(--bg-card);
-      border: 1px solid var(--border-card);
-      border-radius: 18px;
-      padding: 36px 44px;
-      box-shadow: 0 20px 40px -15px rgba(0, 0, 0, 0.6);
-      display: flex;
-      flex-direction: column;
-      gap: 20px;
-    }
-
-    .panel-highlight {
-      border-color: var(--border-card-highlight);
-      background: radial-gradient(circle at 10% 20%, #162032 0%, var(--bg-card) 90%);
+      display: grid;
+      grid-template-columns: minmax(0, 1fr);
+      gap: 26px;
+      background:
+        linear-gradient(135deg, rgba(0, 229, 153, 0.08) 0%, transparent 55%),
+        var(--bg-panel);
+      border: 1px solid var(--border-panel);
+      border-left: 4px solid var(--emerald);
+      border-radius: 22px;
+      padding: 40px 44px;
+      box-shadow: 0 28px 60px -28px rgba(0, 0, 0, 0.75);
+      overflow-wrap: anywhere;
     }
 
     .panel-tag {
       display: inline-flex;
       align-items: center;
-      gap: 10px;
-      font-size: 13px;
-      font-weight: 800;
+      gap: 12px;
+      font-family: var(--font-mono);
+      font-size: 20px;
+      font-weight: 600;
       letter-spacing: 0.14em;
       text-transform: uppercase;
-      color: var(--accent-primary);
-      font-family: var(--font-mono);
+      color: var(--emerald);
     }
 
     .panel-pulse {
-      width: 8px;
-      height: 8px;
+      width: 10px;
+      height: 10px;
       border-radius: 50%;
-      background: var(--accent-primary);
-      box-shadow: 0 0 10px var(--accent-primary);
+      background: var(--emerald);
+      box-shadow: 0 0 12px var(--emerald);
+      flex-shrink: 0;
     }
 
     .bullets {
       list-style: none;
       display: flex;
       flex-direction: column;
-      gap: 20px;
+      gap: 24px;
     }
 
     .bullet-item {
-      font-size: 22px;
-      line-height: 1.5;
-      color: var(--text-primary);
-      display: flex;
-      align-items: flex-start;
+      display: grid;
+      grid-template-columns: 30px minmax(0, 1fr);
+      align-items: start;
       gap: 16px;
+      font-size: 30px;
+      line-height: 1.44;
+      color: var(--text-primary);
+      overflow-wrap: anywhere;
     }
 
     .bullet-icon-svg {
+      margin-top: 8px;
+      color: var(--emerald);
       flex-shrink: 0;
-      margin-top: 4px;
-      color: var(--accent-primary);
     }
 
+    /* ---------- Footer band (~10%) ---------- */
     .footer {
       display: flex;
+      align-items: center;
       justify-content: space-between;
-      align-items: center;
-      padding-top: 24px;
-      border-top: 1px solid rgba(255, 255, 255, 0.06);
-      z-index: 10;
+      gap: 24px;
+      border-top: 1px solid var(--border-panel);
+      padding: 28px 0 40px;
     }
 
-    .footer-brand {
-      font-size: 14px;
-      color: var(--text-muted);
-      font-weight: 500;
+    .footer-source {
       display: flex;
-      align-items: center;
-      gap: 10px;
-      font-family: var(--font-mono);
+      flex-direction: column;
+      gap: 8px;
+      min-width: 0;
     }
 
-    .footer-pill {
-      font-size: 13px;
+    .source-domain {
+      font-family: var(--font-mono);
+      font-size: 24px;
       font-weight: 600;
-      color: var(--accent-primary);
-      background: var(--accent-muted);
-      padding: 6px 14px;
-      border-radius: 6px;
-      border: 1px solid var(--border-card-highlight);
+      color: var(--emerald);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .source-timestamp {
+      font-family: var(--font-mono);
+      font-size: 20px;
+      color: var(--text-muted);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .page-label {
+      font-family: var(--font-mono);
+      font-size: 20px;
+      font-weight: 600;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--text-secondary);
+      border: 1px solid var(--border-panel);
+      border-radius: 8px;
+      padding: 10px 18px;
+      white-space: nowrap;
+      flex-shrink: 0;
     }
   </style>
 </head>
 <body>
   <div class="card">
-    <div class="header">
-      <div class="badge-group">
-        <span class="badge">{{TAG}}</span>
-        <span class="author-badge">{{AUTHOR}}</span>
+    <header class="header">
+      <div class="brand">
+        <span class="brand-dot"></span>
+        <span class="brand-name">OmniPost</span>
+        <span class="brand-handle">{{AUTHOR}}</span>
       </div>
-      <span class="slide-counter">{{COUNTER}}</span>
-    </div>
+      <div class="header-meta">
+        <span class="tag-pill">{{TAG}}</span>
+        <span class="pagination">{{COUNTER}}</span>
+      </div>
+    </header>
 
-    <div class="content-container">
-      <h1 class="card-title">{{HEADLINE}}</h1>
+    <main class="hero">
+      <h1 class="headline">{{HEADLINE}}</h1>
       {{BODY_HTML}}
-      
       {{PANEL_HTML}}
-    </div>
+    </main>
 
-    <div class="footer">
-      <div class="footer-brand">
-        <span>OmniPost Engine</span>
-        <span>•</span>
-        <span>Verified Systems Design</span>
+    <footer class="footer">
+      <div class="footer-source">
+        <span class="source-domain">{{SOURCE}}</span>
+        <span class="source-timestamp">{{TIMESTAMP}}</span>
       </div>
-      <div class="footer-pill">Production Architecture</div>
-    </div>
+      <span class="page-label">{{PAGE_LABEL}}</span>
+    </footer>
   </div>
 </body>
 </html>

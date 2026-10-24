@@ -17,13 +17,13 @@ ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from render import create_carousel_pdf, create_infocard
+from render import create_carousel_pdf
 
 try:  # package import (tests, pipeline)
-    from scripts.errors import CopyValidationError, MediaContractError
+    from scripts.errors import CopyValidationError, MediaContractError, RenderError
     from scripts.platform_limits import LIMITS, count_for, fit, truncate_words, validate
 except ImportError:  # direct script execution
-    from errors import CopyValidationError, MediaContractError
+    from errors import CopyValidationError, MediaContractError, RenderError
     from platform_limits import LIMITS, count_for, fit, truncate_words, validate
 
 
@@ -149,7 +149,7 @@ def repurpose_topic(
     Args:
         topic_data: Dict containing 'headline', 'body', 'points' (list), and optional 'takeaway'.
         date_str: Target date string (defaults to today).
-        generate_media: If True, renders infocard PNG and carousel PDF to disk.
+        generate_media: If True, renders 9:16 storybook cards and carousel PDF to disk.
         author: Attribution handle.
         slot: Specific slot string (e.g. 20:00) for unique asset naming.
         
@@ -224,46 +224,39 @@ def repurpose_topic(
     slot_tag = (slot or "default").replace(":", "")
 
     if generate_media:
-        # Generate 1 to 3 retina PNG visual cards based on content depth.
+        # Generate 1 to 3 topic-derived 9:16 storybook cards. A render failure
+        # raises RenderError and blocks the draft; there is no silent text-only
+        # fallback.
+        from render.cards import generate_topic_cards
+
         card_dir = ROOT / "scratch" / "cards"
         card_dir.mkdir(parents=True, exist_ok=True)
         base_name = f"card_{date_tag}_{slot_tag}"
 
-        try:
-            from render.cards import generate_topic_cards
-            rendered_cards = generate_topic_cards(
-                topic_data=topic_data,
-                base_name=base_name,
-                output_dir=card_dir,
-                author=author,
-            )
-            rel_card_paths = [str(p.relative_to(ROOT)) for p in rendered_cards]
-            media_map["x"] = rel_card_paths
-            media_map["bluesky"] = rel_card_paths
-            media_map["threads"] = rel_card_paths
-            if not requested_carousel:
-                media_map["linkedin"] = rel_card_paths
-        except Exception:
-            # Fallback to single 16:9 infocard.
-            card_dir = ROOT / "scratch" / "infocards"
-            card_dir.mkdir(parents=True, exist_ok=True)
-            card_path = card_dir / f"card_{date_tag}_{slot_tag}.png"
-            try:
-                create_infocard(
-                    title=headline,
-                    body="\n".join([f"• {p}" for p in points[:3]]),
-                    tag=category,
-                    author=author,
-                    output_path=card_path,
-                )
-                rel_path = str(card_path.relative_to(ROOT))
-                media_map["x"] = [rel_path]
-                media_map["bluesky"] = [rel_path]
-                media_map["threads"] = [rel_path]
-                if not requested_carousel:
-                    media_map["linkedin"] = [rel_path]
-            except Exception:
-                pass
+        rendered_cards = generate_topic_cards(
+            topic_data=topic_data,
+            base_name=base_name,
+            output_dir=card_dir,
+            author=author,
+        )
+
+        rel_card_paths: list[str] = []
+        for rendered in rendered_cards:
+            card_path = Path(rendered)
+            if card_path.is_file() and card_path.stat().st_size > 0:
+                try:
+                    rel_card_paths.append(str(card_path.relative_to(ROOT)))
+                except ValueError:
+                    rel_card_paths.append(str(card_path))
+
+        if not rel_card_paths:
+            raise RenderError("no_renderable_media")
+
+        media_map["x"] = rel_card_paths
+        media_map["bluesky"] = rel_card_paths
+        media_map["threads"] = rel_card_paths
+        if not requested_carousel:
+            media_map["linkedin"] = rel_card_paths
 
     document_title = ""
     if requested_carousel:

@@ -74,8 +74,7 @@ class TestContentRepurposer(unittest.TestCase):
         self.assertIn("paying OpenAI", formatted)
 
     @patch("scripts.repurpose.create_carousel_pdf")
-    @patch("scripts.repurpose.create_infocard")
-    def test_repurpose_topic_structure(self, mock_card, mock_carousel):
+    def test_repurpose_topic_structure(self, mock_carousel):
         res = repurpose_topic(rich_topic(), generate_media=False)
 
         self.assertIn("x", res)
