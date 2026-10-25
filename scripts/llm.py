@@ -29,7 +29,7 @@ DEFAULT_TIMEOUT = 15.0
 USER_AGENT = "OmniPost-Synthesizer/2.0"
 
 DEFAULT_MODELS: dict[str, str] = {
-    "gemini": "gemini-2.5-flash",
+    "gemini": "gemini-3.5-flash",
     "openai": "gpt-4o-mini",
     "claude": "claude-3-5-sonnet-20241022",
     "anthropic": "claude-3-5-sonnet-20241022",

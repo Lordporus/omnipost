@@ -204,10 +204,23 @@ def run_daily_pipeline(date_str: str | None = None, force: bool = False) -> Path
                 from scripts import research
             except ImportError:
                 import research
-            swipe_items = research.hn(points=100, hours=24)
+            swipe_items = research.hn(points=100, hours=24) or []
+            try:
+                rss_items, _ = research.rss(hours=48)
+                swipe_items += (rss_items or [])
+            except Exception as rss_err:
+                print(f"[PIPELINE] RSS collection notice: {rss_err}")
         except Exception as exc:
             print(f"[PIPELINE] Swipe collection notice: {exc}")
             swipe_items = []
+
+        if swipe_items:
+            try:
+                swipe_file = ROOT / "swipe" / f"{target_date}.json"
+                swipe_file.parent.mkdir(parents=True, exist_ok=True)
+                swipe_file.write_text(json.dumps(swipe_items, indent=2, ensure_ascii=False), encoding="utf-8")
+            except Exception:
+                pass
 
     # 3. Ensure plan exists
     plan_file = ROOT / "drafts" / f"{target_date}.json"
