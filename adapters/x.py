@@ -122,5 +122,5 @@ class XAdapter(PlatformAdapter):
                 if head in post._norm(p.get("text", "")):
                     return True
             return False
-        except Exception:
+        except (CDPError, OSError, asyncio.TimeoutError, ValueError):
             return False

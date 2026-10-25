@@ -194,6 +194,11 @@ def main() -> int:
     parser.add_argument("--timeout", type=float, default=80.0, help="Per-platform timeout in seconds (default: 80)")
     parser.add_argument("--force", action="store_true", help="Override an existing idempotency reservation")
     parser.add_argument("--retry-failed", action="store_true", help="Explicitly retry failed records (never unverified ones)")
+    parser.add_argument(
+        "--verify-content",
+        action="store_true",
+        help="Validate generated draft copy and platform limits without posting or opening a browser",
+    )
     args = parser.parse_args()
 
     draft_data: dict[str, Any] = {}
@@ -278,6 +283,22 @@ def main() -> int:
     if not uniform_text and not tailored_texts:
         print("[ERROR] Post text or valid --draft must be provided.", flush=True)
         return 1
+
+    if args.verify_content:
+        summary: dict[str, Any] = {"draft": args.draft, "platforms": {}}
+        for plat in ["x", "bluesky", "linkedin", "threads"]:
+            text = tailored_texts.get(plat, uniform_text)
+            if not text:
+                continue
+            limits = LIMITS.get(plat)
+            measured = count_for(plat, text)
+            summary["platforms"][plat] = {
+                "chars": measured,
+                "limits": limits,
+                "fits": bool(limits and limits["min"] <= measured <= limits["max"]),
+            }
+        print(json.dumps(summary, indent=2, ensure_ascii=False), flush=True)
+        return 0
 
     media_paths = []
     if args.image:

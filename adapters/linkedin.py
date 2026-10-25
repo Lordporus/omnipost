@@ -515,7 +515,7 @@ class LinkedInAdapter(PlatformAdapter):
         """Check whether LinkedIn session is active in the automation browser."""
         try:
             return asyncio.run(self._async_check_session())
-        except Exception as exc:
+        except (CDPError, OSError, asyncio.TimeoutError, ValueError, RuntimeError) as exc:
             return {
                 "ok": False,
                 "platform": "linkedin",
@@ -544,7 +544,7 @@ class LinkedInAdapter(PlatformAdapter):
                     node_id = inp.get("nodeId")
                     if node_id:
                         break
-            except Exception:
+            except (CDPError, OSError, asyncio.TimeoutError, ValueError):
                 pass
             await asyncio.sleep(0.3)
 
@@ -574,7 +574,7 @@ class LinkedInAdapter(PlatformAdapter):
                         node_id = inp.get("nodeId")
                         if node_id:
                             break
-                except Exception:
+                except (CDPError, OSError, asyncio.TimeoutError, ValueError):
                     pass
                 await asyncio.sleep(0.4)
 
@@ -588,7 +588,7 @@ class LinkedInAdapter(PlatformAdapter):
                 files=valid_files,
                 nodeId=node_id,
             )
-        except Exception:
+        except (CDPError, OSError, ValueError):
             return False
 
         await asyncio.sleep(2.0)
@@ -643,7 +643,7 @@ class LinkedInAdapter(PlatformAdapter):
                     node_id = inp.get("nodeId")
                     if node_id:
                         break
-            except Exception:
+            except (CDPError, OSError, asyncio.TimeoutError, ValueError):
                 pass
             await asyncio.sleep(0.4)
 
@@ -689,7 +689,7 @@ class LinkedInAdapter(PlatformAdapter):
                         node_id = inp.get("nodeId")
                         if node_id:
                             break
-                except Exception:
+                except (CDPError, OSError, asyncio.TimeoutError, ValueError):
                     pass
                 await asyncio.sleep(0.4)
 
@@ -716,7 +716,7 @@ class LinkedInAdapter(PlatformAdapter):
             if not title_done:
                 await capture_failure_artifacts(page, "linkedin")
             return title_done
-        except Exception:
+        except (CDPError, OSError, asyncio.TimeoutError, ValueError):
             await capture_failure_artifacts(page, "linkedin")
             return False
 
@@ -979,7 +979,7 @@ class LinkedInAdapter(PlatformAdapter):
                     try:
                         raw = await page.eval(check_js)
                         posts = json.loads(raw or "[]")
-                    except Exception:
+                    except (CDPError, OSError, asyncio.TimeoutError, ValueError):
                         posts = []
 
                     for p in posts:
@@ -990,12 +990,12 @@ class LinkedInAdapter(PlatformAdapter):
 
             finally:
                 await page.__aexit__(None, None, None)
-        except Exception:
+        except (CDPError, OSError, asyncio.TimeoutError, ValueError):
             return False
 
     def verify(self, post_id: str | None, text_snippet: str) -> bool:
         """Synchronous wrapper for activity verification."""
         try:
             return asyncio.run(self._async_verify(post_id, text_snippet))
-        except Exception:
+        except (CDPError, OSError, asyncio.TimeoutError, ValueError, RuntimeError):
             return False

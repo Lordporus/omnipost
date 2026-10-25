@@ -290,7 +290,7 @@ class ThreadsAdapter(PlatformAdapter):
                         return "https://www.threads.com/"
                     if "threads.net" in url:
                         return "https://www.threads.net/"
-            except Exception:
+            except (CDPError, OSError, ValueError):
                 pass
 
         return THREADS_BASE_URL
@@ -340,9 +340,9 @@ class ThreadsAdapter(PlatformAdapter):
                             )
                             await asyncio.sleep(2.5)
                             return True
-                    except Exception:
+                    except (CDPError, OSError, asyncio.TimeoutError, ValueError):
                         continue
-            except Exception:
+            except (CDPError, OSError, ValueError):
                 pass
             await asyncio.sleep(0.5)
 
@@ -382,7 +382,7 @@ class ThreadsAdapter(PlatformAdapter):
         """Check whether Threads session is active in the automation browser."""
         try:
             return asyncio.run(self._async_check_session())
-        except Exception as exc:
+        except (AdapterError, CDPError, OSError, asyncio.TimeoutError, RuntimeError, ValueError) as exc:
             return {
                 "ok": False,
                 "platform": "threads",
