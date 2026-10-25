@@ -1,3 +1,6 @@
+import pytest
+
+from scripts.errors import NoRelevantTopic
 from scripts.generate import (
     extract_key_takeaways,
     generate_heuristic_topic,
@@ -33,11 +36,9 @@ def test_generate_topic_from_items_returns_valid_structure():
     assert "takeaway" in topic
 
 
-def test_generate_topic_from_items_empty_fallback():
-    topic = generate_topic_from_items("value", [])
-    assert "headline" in topic
-    assert "points" in topic
-    assert len(topic["points"]) > 0
+def test_generate_topic_from_items_empty_fails_closed():
+    with pytest.raises(NoRelevantTopic):
+        generate_topic_from_items("value", [])
 
 
 def test_load_daily_swipe_missing(tmp_path, monkeypatch):
@@ -49,7 +50,20 @@ def test_load_daily_swipe_missing(tmp_path, monkeypatch):
 
 def test_generate_platform_native_drafts_heuristic_bounds():
     """Validates that generate_platform_native_drafts adheres to character bounds and archetypes."""
-    drafts = generate_platform_native_drafts(kind="ai_update", items=[], use_llm=False)
+    items = [
+        {
+            "source": "hn",
+            "title": "Kubernetes distributed database latency architecture",
+            "url": "https://example.com/kubernetes-latency",
+            "score": 350,
+            "extra": (
+                "The database planner now handles distributed joins with lower latency. "
+                "Teams can reduce query latency by using better statistics and avoiding "
+                "unnecessary distributed scans."
+            ),
+        }
+    ]
+    drafts = generate_platform_native_drafts(kind="ai_update", items=items, use_llm=False)
     
     # 4 distinct platform texts
     assert "x" in drafts
@@ -104,23 +118,28 @@ def test_generate_platform_native_drafts_with_items():
 
 
 def test_repurpose_preserves_platform_native_texts():
-    """Verifies that repurpose_topic preserves existing platform-native texts."""
+    """Native copy is preserved when it already fits the platform contract."""
     from scripts.repurpose import repurpose_topic
+    from tests.copy_fixtures import valid_text
 
+    native_x = valid_text("x")
+    native_bluesky = valid_text("bluesky")
+    native_threads = valid_text("threads")
+    native_linkedin = valid_text("linkedin")
     custom_native = {
         "headline": "Sovereign AI Infrastructure",
         "body": "Detailed body text...",
         "points": ["Point 1", "Point 2"],
         "takeaway": "Build sovereign.",
         "category": "INFRASTRUCTURE",
-        "x": "Native X hook with 0 hashtags and sharp insight.",
-        "bluesky": "Native Bluesky technical analysis.",
-        "threads": "Are you running local CDP yet?",
-        "linkedin": "Comprehensive LinkedIn framework breakdown.",
+        "x": native_x,
+        "bluesky": native_bluesky,
+        "threads": native_threads,
+        "linkedin": native_linkedin,
     }
     slot_dict = repurpose_topic(custom_native, generate_media=False)
-    assert slot_dict["x"]["text"] == "Native X hook with 0 hashtags and sharp insight."
-    assert slot_dict["bluesky"]["text"] == "Native Bluesky technical analysis."
-    assert slot_dict["threads"]["text"] == "Are you running local CDP yet?"
-    assert slot_dict["linkedin"]["text"] == "Comprehensive LinkedIn framework breakdown."
+    assert slot_dict["x"]["text"] == native_x
+    assert slot_dict["bluesky"]["text"] == native_bluesky
+    assert slot_dict["threads"]["text"] == native_threads
+    assert slot_dict["linkedin"]["text"] == native_linkedin
 

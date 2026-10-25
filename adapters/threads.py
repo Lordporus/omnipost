@@ -16,10 +16,13 @@ from pathlib import Path
 from typing import Any
 
 from adapters.base import (
+    AdapterError,
+    ComposerOpenError,
     PlatformAdapter,
     PlatformCapabilities,
     PublishPayload,
     PublishResult,
+    SelectorError,
     capture_failure_artifacts,
 )
 from scripts import browser, settings
@@ -148,6 +151,103 @@ SUBMIT_POST_JS = r"""
 })()
 """
 
+# Prefer the success toast, then the latest activity item. Never fall back to the
+# profile URL: that is not a post permalink and would make an unverified result
+# look verified.
+THREADS_PERMALINK_JS = r"""
+(() => {
+  const absolute = (href) => {
+    try { return new URL(href, location.href).href; } catch (e) { return href; }
+  };
+  const postHref = (anchor) => {
+    const href = anchor.getAttribute('href') || anchor.href || '';
+    return /\/post\//.test(href) ? absolute(href) : null;
+  };
+
+  const toastScopes = [
+    'div[role="alert"]',
+    '[data-testid*="toast"]',
+    '[class*="toast"]',
+    '[class*="Toast"]'
+  ];
+  for (const scopeSelector of toastScopes) {
+    for (const scope of document.querySelectorAll(scopeSelector)) {
+      for (const anchor of scope.querySelectorAll('a[href*="/post/"]')) {
+        const href = postHref(anchor);
+        if (href) return href;
+      }
+    }
+  }
+
+  const activityScopes = [
+    'div[data-pressable-container="true"]',
+    'article',
+    'div[role="main"]'
+  ];
+  for (const scopeSelector of activityScopes) {
+    for (const scope of document.querySelectorAll(scopeSelector)) {
+      for (const anchor of scope.querySelectorAll('a[href*="/post/"]')) {
+        const href = postHref(anchor);
+        if (href) return href;
+      }
+    }
+  }
+  return null;
+})()
+"""
+
+
+def _extract_permalink(value: Any) -> str | None:
+    """Extract a Threads /post/ URL from a CDP or mocked eval response."""
+    if isinstance(value, str):
+        text = value.strip()
+        if not text or text.lower() in {"null", "none", "undefined"}:
+            return None
+        try:
+            parsed = json.loads(text)
+        except (TypeError, ValueError):
+            parsed = None
+        if isinstance(parsed, (dict, list, str)):
+            found = _extract_permalink(parsed)
+            if found:
+                return found
+        return text if "/post/" in text else None
+    if isinstance(value, dict):
+        for key in ("url", "permalink", "href", "post_url"):
+            found = _extract_permalink(value.get(key))
+            if found:
+                return found
+        return None
+    if isinstance(value, (list, tuple)):
+        for item in value:
+            found = _extract_permalink(item)
+            if found:
+                return found
+    return None
+
+
+def _post_id_from_permalink(url: str | None) -> str | None:
+    if not url:
+        return None
+    match = re.search(r"/post/([^/?#]+)", url)
+    return match.group(1) if match else None
+
+
+def _threads_focus_data(value: Any) -> dict[str, Any]:
+    """Normalize the focus result from mocked or real CDP eval."""
+    if isinstance(value, dict):
+        return value
+    if isinstance(value, str):
+        text = value.strip()
+        try:
+            parsed = json.loads(text)
+        except (TypeError, ValueError):
+            return {"status": text}
+        if isinstance(parsed, dict):
+            return parsed
+        return {"status": str(parsed)}
+    return {}
+
 
 class ThreadsAdapter(PlatformAdapter):
     """Adapter for Meta Threads using Chrome/Edge DevTools Protocol automation."""
@@ -190,7 +290,7 @@ class ThreadsAdapter(PlatformAdapter):
                         return "https://www.threads.com/"
                     if "threads.net" in url:
                         return "https://www.threads.net/"
-            except Exception:
+            except (CDPError, OSError, ValueError):
                 pass
 
         return THREADS_BASE_URL
@@ -240,9 +340,9 @@ class ThreadsAdapter(PlatformAdapter):
                             )
                             await asyncio.sleep(2.5)
                             return True
-                    except Exception:
+                    except (CDPError, OSError, asyncio.TimeoutError, ValueError):
                         continue
-            except Exception:
+            except (CDPError, OSError, ValueError):
                 pass
             await asyncio.sleep(0.5)
 
@@ -265,7 +365,7 @@ class ThreadsAdapter(PlatformAdapter):
                         logged_in = True
                         h = data.get("handle") or self._handle
                         break
-                except (CDPError, OSError, asyncio.TimeoutError, Exception):
+                except (CDPError, OSError, asyncio.TimeoutError):
                     pass
                 await asyncio.sleep(0.5)
 
@@ -282,13 +382,38 @@ class ThreadsAdapter(PlatformAdapter):
         """Check whether Threads session is active in the automation browser."""
         try:
             return asyncio.run(self._async_check_session())
-        except Exception as exc:
+        except (AdapterError, CDPError, OSError, asyncio.TimeoutError, RuntimeError, ValueError) as exc:
             return {
                 "ok": False,
                 "platform": "threads",
                 "handle": None,
                 "error": str(exc),
             }
+
+    def _profile_url(self) -> str:
+        """Return the profile URL used only for read-back verification."""
+        base = self.get_base_url().rstrip("/")
+        clean_h = self._handle.lstrip("@") if self._handle else ""
+        return f"{base}/@{clean_h}" if clean_h else f"{base}/"
+
+    async def _poll_for_permalink(
+        self,
+        page: Session,
+        attempts: int = 5,
+        interval: float = 1.0,
+    ) -> str | None:
+        """Poll the toast and latest activity for a real /post/ permalink."""
+        for attempt in range(attempts):
+            if attempt:
+                await asyncio.sleep(interval)
+            try:
+                raw = await page.eval(THREADS_PERMALINK_JS)
+            except (CDPError, OSError, asyncio.TimeoutError):
+                raw = None
+            permalink = _extract_permalink(raw)
+            if permalink:
+                return permalink
+        return None
 
     async def _async_publish(self, payload: PublishPayload) -> PublishResult:
         browser.ensure_chrome()
@@ -307,33 +432,40 @@ class ThreadsAdapter(PlatformAdapter):
 
             if trig not in ("clicked", "already_open"):
                 arts = await capture_failure_artifacts(page, "threads")
-                return PublishResult(
+                raise ComposerOpenError(
+                    "Could not find or open the Threads composer: "
+                    f"trigger={trig!r}, screenshot={arts.get('screenshot')}",
                     platform="threads",
-                    success=False,
-                    error="Could not find 'Start a thread' button on threads.net",
+                    stage="composer_open",
+                    selectors=[
+                        'svg[aria-label*="Create" i]',
+                        'div[role="button"][aria-label*="New thread" i]',
+                        'a[href*="/compose"]',
+                    ],
+                    context={"trigger": trig},
                     artifacts=arts,
                 )
 
             await asyncio.sleep(1.5)
 
             # 1. Focus editor with retry loop for animation
-            foc_data = {}
+            foc_data: dict[str, Any] = {}
             for _ in range(15):
                 raw_foc = await page.eval(FOCUS_EDITOR_JS)
-                try:
-                    foc_data = json.loads(raw_foc or "{}")
-                except Exception:
-                    foc_data = {}
+                foc_data = _threads_focus_data(raw_foc)
                 if foc_data.get("status") == "focused":
                     break
                 await asyncio.sleep(0.5)
 
             if foc_data.get("status") != "focused":
                 arts = await capture_failure_artifacts(page, "threads")
-                return PublishResult(
+                raise ComposerOpenError(
+                    "Could not focus the Threads composer editor: "
+                    f"status={foc_data.get('status')!r}, screenshot={arts.get('screenshot')}",
                     platform="threads",
-                    success=False,
-                    error="Could not focus Threads post composer editor",
+                    stage="composer_ready",
+                    selector='div[contenteditable="true"][role="textbox"]',
+                    context={"focus": foc_data},
                     artifacts=arts,
                 )
 
@@ -359,7 +491,7 @@ class ThreadsAdapter(PlatformAdapter):
                             button="left",
                             clickCount=1,
                         )
-                    except Exception:
+                    except (CDPError, OSError, asyncio.TimeoutError):
                         pass
 
             # 2. Inject text via CDP Input.insertText
@@ -383,28 +515,40 @@ class ThreadsAdapter(PlatformAdapter):
             sub_res = json.loads(sub_res_str or "{}")
             if sub_res.get("error"):
                 arts = await capture_failure_artifacts(page, "threads")
-                return PublishResult(
+                raise SelectorError(
+                    f"Threads post submission error: {sub_res.get('error')}",
                     platform="threads",
-                    success=False,
-                    error=f"Threads post submission error: {sub_res.get('error')}",
+                    stage="submit",
+                    selector='div[role="button"][aria-label*="Post"]',
+                    context={"submit": sub_res},
                     artifacts=arts,
                 )
 
-            # Settle after clicking Post
+            # Settle after clicking Post, then look for the real permalink.
             await asyncio.sleep(4.0)
+            permalink = await self._poll_for_permalink(page)
+            verified = bool(permalink)
+            verification_source = "permalink" if permalink else None
+            if not permalink:
+                verified = await self._async_verify(None, payload.text)
+                verification_source = "readback" if verified else "unverified"
 
-            # Read back verification
-            verified = await self._async_verify(None, payload.text)
-
-            clean_h = self._handle.lstrip("@") if self._handle else ""
-            post_url = f"{base_url}@{clean_h}" if clean_h else base_url
+            profile_url = self._profile_url()
+            raw_response: dict[str, Any] = {
+                "submitted": True,
+                "profile_url": profile_url,
+                "verification_source": verification_source,
+            }
+            if permalink:
+                raw_response["permalink"] = permalink
 
             return PublishResult(
                 platform="threads",
                 success=True,
-                url=post_url,
+                post_id=_post_id_from_permalink(permalink),
+                url=permalink,
                 verified=verified,
-                raw_response={"submitted": True},
+                raw_response=raw_response,
             )
         finally:
             await page.__aexit__(None, None, None)
@@ -413,22 +557,29 @@ class ThreadsAdapter(PlatformAdapter):
         """Publish post text and media to Threads via CDP."""
         try:
             return asyncio.run(self._async_publish(payload))
-        except Exception as exc:
+        except AdapterError as exc:
             return PublishResult(
                 platform="threads",
                 success=False,
                 error=str(exc),
+                artifacts=dict(getattr(exc, "artifacts", {}) or {}),
+                raw_response={
+                    "error_type": type(exc).__name__,
+                    "platform": exc.platform,
+                    "stage": exc.stage,
+                    "context": dict(exc.context),
+                },
+            )
+        except (CDPError, OSError, asyncio.TimeoutError) as exc:
+            return PublishResult(
+                platform="threads",
+                success=False,
+                error=f"{type(exc).__name__}: {exc}",
             )
 
     async def _async_verify(self, post_id: str | None, text_snippet: str) -> bool:
-        """Read-back verification on user profile timeline."""
-        base_url = self.get_base_url()
-        clean_h = self._handle.lstrip("@") if self._handle else ""
-        target_url = (
-            f"{base_url}@{clean_h}"
-            if clean_h
-            else base_url
-        )
+        """Read-back verification on the user's profile timeline."""
+        target_url = self._profile_url()
         try:
             page = await self._open_stealth(target_url)
             try:
@@ -447,22 +598,21 @@ class ThreadsAdapter(PlatformAdapter):
                     try:
                         raw = await page.eval(check_js)
                         posts = json.loads(raw or "[]")
-                    except Exception:
+                    except (CDPError, OSError, asyncio.TimeoutError, ValueError):
+                        posts = []
+                    if not isinstance(posts, list):
                         posts = []
 
                     for p_text in posts:
-                        if norm_snippet in re.sub(r"\s+", " ", p_text).lower():
+                        if norm_snippet in re.sub(r"\s+", " ", str(p_text)).lower():
                             return True
                     await asyncio.sleep(2.5)
                 return False
             finally:
                 await page.__aexit__(None, None, None)
-        except Exception:
+        except (CDPError, OSError, asyncio.TimeoutError):
             return False
 
     def verify(self, post_id: str | None, text_snippet: str) -> bool:
-        """Synchronous wrapper for Threads verification."""
-        try:
-            return asyncio.run(self._async_verify(post_id, text_snippet))
-        except Exception:
-            return False
+        """Synchronous wrapper used by Phase 12 timeout reconciliation."""
+        return asyncio.run(self._async_verify(post_id, text_snippet))

@@ -325,15 +325,24 @@ def format_summary_card(
         handle_str = f": {handle}" if handle else ""
 
         success = getattr(r, "success", False) if hasattr(r, "success") else bool(r.get("success"))
+        verified = (
+            bool(getattr(r, "verified", success))
+            if hasattr(r, "success")
+            else bool(r.get("verified", success))
+        )
         url = getattr(r, "url", None) if hasattr(r, "url") else r.get("url")
         err = getattr(r, "error", None) if hasattr(r, "error") else r.get("error")
 
-        if success:
+        if success and verified:
             lines.append(f"✅ {name}{handle_str}")
             if url:
                 lines.append(f"   🔗 {url}")
             else:
                 lines.append(f"   🔗 Verified live on feed")
+        elif success:
+            error_count += 1
+            lines.append(f"⚠️ {name}{handle_str}")
+            lines.append(f"   ⚠️ Submitted but unverified: {err or 'read-back failed'}")
         elif err == "network_timeout":
             error_count += 1
             lines.append(f"⚠️ {name}{handle_str}")

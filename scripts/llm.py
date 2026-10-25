@@ -20,6 +20,11 @@ ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+try:  # package import (tests, pipeline)
+    from scripts.errors import CopyValidationError
+except ImportError:  # direct script execution
+    from errors import CopyValidationError
+
 DEFAULT_TIMEOUT = 15.0
 USER_AGENT = "OmniPost-Synthesizer/2.0"
 
@@ -243,10 +248,25 @@ def parse_llm_json(raw_text: str) -> dict[str, Any]:
 
     from scripts.repurpose import format_x, format_bluesky, format_linkedin, format_threads
 
-    text_x = str(data.get("x") or format_x(headline, points)).strip()
-    text_bsky = str(data.get("bluesky") or format_bluesky(headline, points)).strip()
-    text_li = str(data.get("linkedin") or format_linkedin(headline, body, points, takeaway)).strip()
-    text_th = str(data.get("threads") or format_threads(headline, takeaway)).strip()
+    def safe_format(native: Any, formatter: Any) -> str:
+        """Keep native copy, or format only when the source can meet minimums."""
+        native_text = str(native or "").strip()
+        if native_text:
+            return native_text
+        try:
+            return str(formatter()).strip()
+        except CopyValidationError:
+            # The topic is too thin for this platform. Keep the field empty so
+            # the pipeline's CopyValidationError requeue path can decide.
+            return ""
+
+    text_x = safe_format(data.get("x"), lambda: format_x(headline, points))
+    text_bsky = safe_format(data.get("bluesky"), lambda: format_bluesky(headline, points))
+    text_li = safe_format(
+        data.get("linkedin"),
+        lambda: format_linkedin(headline, body, points, takeaway),
+    )
+    text_th = safe_format(data.get("threads"), lambda: format_threads(headline, takeaway))
 
     res: dict[str, Any] = {
         "headline": headline,
@@ -485,26 +505,23 @@ def generate_topic_with_llm(
     model: str | None = None,
     timeout: float = DEFAULT_TIMEOUT,
     cfg: dict[str, Any] | None = None,
-) -> tuple[bool, dict[str, Any]]:
-    """Synthesizes swipe intelligence items into a structured topic dictionary.
+) -> tuple[bool, dict[str, Any] | None]:
+    """Synthesize swipe intelligence into a structured topic dictionary.
 
-    Returns (True, topic_dict) on success, or (False, fallback_dict) on any failure or if
-    LLM is disabled / unconfigured.
+    Returns ``(True, topic_dict)`` on success. On any failure, or when the LLM
+    is disabled/unconfigured, returns ``(False, None)``. The caller owns the
+    deterministic fallback so every path still passes the relevance gate.
     """
-    from scripts.generate import generate_heuristic_topic
-
-    fallback_topic = generate_heuristic_topic(kind, items)
-
     if not items:
-        return False, fallback_topic
+        return False, None
 
     active_provider = resolve_provider(explicit_provider=provider, cfg=cfg)
     if active_provider in ("", "local", "none", "deterministic"):
-        return False, fallback_topic
+        return False, None
 
     active_key = resolve_api_key(active_provider, explicit_key=api_key)
     if not active_key:
-        return False, fallback_topic
+        return False, None
 
     if voice_profile is None:
         voice_profile = load_voice_profile()
@@ -531,4 +548,4 @@ def generate_topic_with_llm(
         KeyError,
         Exception,
     ):
-        return False, fallback_topic
+        return False, None

@@ -51,6 +51,9 @@ DEFAULTS: dict[str, Any] = {
         "arxiv-cs-ai": "https://export.arxiv.org/rss/cs.AI",
     },
     "require_verified_source": True,    # refuse to write claims it hasn't read
+    "publish": {
+        "retry_failed": False,          # failed posts are never retried automatically
+    },
     "browser": {
         "port": 9222,
         "profile_dir": "",              # empty => <home>/.omnipost/edge-profile

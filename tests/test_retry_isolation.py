@@ -98,7 +98,8 @@ class TestPartialFailureRetryIsolation(unittest.TestCase):
             ]
 
             # Run first autoposter iteration (simulate due slot)
-            with patch("sys.argv", ["autoposter.py"]):
+            with patch("sys.argv", ["autoposter.py"]), \
+                 patch("scripts.autoposter.settings.load", return_value={"publish": {"retry_failed": False}}):
                 ret1 = autoposter.main()
 
             # Exit code should be 1 indicating partial completion
@@ -130,7 +131,8 @@ class TestPartialFailureRetryIsolation(unittest.TestCase):
                 (0, "marked"),              # due.py mark call
             ]
 
-            with patch("sys.argv", ["autoposter.py"]):
+            with patch("sys.argv", ["autoposter.py"]), \
+                 patch("scripts.autoposter.settings.load", return_value={"publish": {"retry_failed": True}}):
                 ret2 = autoposter.main()
 
             # Exit code should be 0 (all target platforms now successfully published)
