@@ -13,6 +13,7 @@ quarantined instead of being silently replaced with an empty document.
 """
 from __future__ import annotations
 
+import errno
 import json
 import os
 import sys
@@ -145,7 +146,19 @@ def _atomic_write_text(target: Path, content: str) -> None:
     )
     try:
         tmp_path.write_text(content, encoding="utf-8")
-        os.replace(tmp_path, target)
+        try:
+            os.replace(tmp_path, target)
+        except OSError as err:
+            if getattr(err, "errno", None) in (errno.EBUSY, errno.EXDEV, errno.EPERM):
+                with open(target, "w", encoding="utf-8") as f:
+                    f.write(content)
+                    f.flush()
+                    try:
+                        os.fsync(f.fileno())
+                    except OSError:
+                        pass
+            else:
+                raise
     finally:
         try:
             tmp_path.unlink(missing_ok=True)
