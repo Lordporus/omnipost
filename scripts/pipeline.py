@@ -86,8 +86,10 @@ def populate_daily_plan(plan: dict[str, Any], swipe_items: list[dict[str, Any]],
             continue
 
         kind = slot_data.get("kind", "value")
-        # Sub-slice swipe items so each slot gets distinct material.
-        candidates = list(swipe_items[idx * 3: (idx + 1) * 3]) if swipe_items else []
+        # Sub-slice swipe items so each slot gets distinct material, but allow falling back to full swipe pool
+        slice_candidates = list(swipe_items[idx * 3: (idx + 1) * 3]) if swipe_items else []
+        candidates = list(slice_candidates)
+        pool_expanded = False
         attempted_empty = False
         topic: dict[str, Any] | None = None
         poly_data: dict[str, Any] | None = None
@@ -96,7 +98,13 @@ def populate_daily_plan(plan: dict[str, Any], swipe_items: list[dict[str, Any]],
         rejections: list[str] = []
         duplicate_seen = False
 
-        while candidates or not attempted_empty:
+        while candidates or not attempted_empty or (swipe_items and not pool_expanded):
+            if not candidates and not pool_expanded and swipe_items:
+                # If the 3-item slice had no accepted candidates, expand search to all swipe items
+                candidates = [c for c in swipe_items if c not in slice_candidates]
+                pool_expanded = True
+                if not candidates:
+                    break
             attempted_empty = True
             try:
                 topic = generate.generate_topic_from_items(
@@ -115,6 +123,11 @@ def populate_daily_plan(plan: dict[str, Any], swipe_items: list[dict[str, Any]],
                 continue
             except NoRelevantTopic as exc:
                 rejections.append(str(exc))
+                if not pool_expanded and swipe_items:
+                    candidates = [c for c in swipe_items if c not in slice_candidates]
+                    pool_expanded = True
+                    if candidates:
+                        continue
                 break
 
             content_hash = generate.content_fingerprint(topic)

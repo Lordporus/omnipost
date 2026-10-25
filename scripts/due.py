@@ -148,14 +148,13 @@ def due(max_lag: float = MAX_LAG_HOURS) -> dict | None:
     """The single oldest unposted, not-too-late slot, or None."""
     st = load_state()
     now = now_tz()
-    best: tuple[datetime, Path, dict] | None = None
+    best: tuple[datetime, Path, dict, dict] | None = None
     for path, plan in _load_plans():
         done = _posted_slots(st, plan.get("date", ""))
         for slot in plan.get("slots", []):
             if slot.get("posted") or slot.get("slot") in done:
                 continue
-            if not (slot.get("text") or "").strip():
-                continue                      # not written yet - not our problem
+            has_text = bool((slot.get("text") or "").strip())
             try:
                 when = datetime.fromisoformat(slot["due_at"])
             except Exception:
@@ -165,9 +164,17 @@ def due(max_lag: float = MAX_LAG_HOURS) -> dict | None:
             if when > now:
                 continue
             if (now - when) > timedelta(hours=max_lag):
-                slot["posted"] = True         # too stale: retire, don't post late
-                slot["skipped"] = f"overdue by {now - when}"
-                path.write_text(json.dumps(plan, indent=2, ensure_ascii=False), encoding="utf-8")
+                if has_text:
+                    slot["posted"] = True         # too stale: retire, don't post late
+                    slot["skipped"] = f"overdue by {now - when}"
+                    path.write_text(json.dumps(plan, indent=2, ensure_ascii=False), encoding="utf-8")
+                continue
+
+            if not has_text:
+                # Slot is due but text has not been synthesized yet; return it so caller can trigger pipeline
+                key = (when, path, plan, slot)
+                if best is None or key[0] < best[0]:
+                    best = key
                 continue
 
             # Guardrail check: do not queue posts that violate hard rules or warmup caps
@@ -182,14 +189,20 @@ def due(max_lag: float = MAX_LAG_HOURS) -> dict | None:
                 slot["guardrail_blocked"] = errs
                 continue
 
-            key = (when, path, slot)
+            key = (when, path, plan, slot)
 
             if best is None or key[0] < best[0]:
                 best = key
     if not best:
         return None
-    when, path, slot = best
-    return {"date": json.loads(path.read_text(encoding="utf-8")).get("date"),
+    when, path, plan, slot = best
+    plan_date = plan.get("date")
+    if not plan_date and path.exists():
+        try:
+            plan_date = json.loads(path.read_text(encoding="utf-8")).get("date")
+        except Exception:
+            pass
+    return {"date": plan_date,
             "slot": slot["slot"], "kind": slot["kind"], "due_at": slot["due_at"],
             "text": slot["text"], "image": slot.get("image"),
             "minutes_late": round((now - when).total_seconds() / 60, 1)}

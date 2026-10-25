@@ -40,7 +40,12 @@ def ensure_browser_running(max_wait_seconds: int = 10) -> bool:
     if is_browser_running(port=port):
         return True
 
-    exe = cfg.get("chrome_path") or r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe"
+    exe = (
+        cfg.get("chrome_path")
+        or os.environ.get("CHROME_PATH")
+        or (str(settings.find_chrome()) if settings.find_chrome() else None)
+        or r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe"
+    )
     try:
         home_dir = Path.home()
         if str(home_dir) == "~":
@@ -57,7 +62,11 @@ def ensure_browser_running(max_wait_seconds: int = 10) -> bool:
             profile_path = str(default_profile)
     except OSError:
         profile_path = str(default_profile)
-    profile = cfg.get("profile_dir") or profile_path
+    profile = (
+        cfg.get("profile_dir")
+        or os.environ.get("BROWSER_PROFILE")
+        or profile_path
+    )
     
     cmd = [
         exe,

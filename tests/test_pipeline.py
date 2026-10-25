@@ -133,3 +133,60 @@ def test_run_daily_pipeline_harvests_swipe_if_empty(tmp_path):
 
         assert mock_hn.called
         assert out_path == plan_file
+
+
+def test_populate_daily_plan_expands_pool_when_initial_slice_fails():
+    from scripts.errors import NoRelevantTopic
+    plan_data = {
+        "date": "2026-10-06",
+        "slots": [
+            {"slot": "13:00", "kind": "value", "text": "", "due_at": "2026-10-06T13:15:00"},
+        ]
+    }
+    swipe_items = [
+        {"title": "Politics News 1", "score": 10},
+        {"title": "Politics News 2", "score": 10},
+        {"title": "Politics News 3", "score": 10},
+        {"title": "Postgres Internals Deep Dive", "score": 200},
+    ]
+    def fake_gen(kind, items, voice_profile=None):
+        if len(items) == 3:
+            raise NoRelevantTopic("no_relevant_items in slice")
+        return {
+            "headline": "Postgres Internals Deep Dive",
+            "body": "System details",
+            "points": ["Point A", "Point B"],
+            "takeaway": "Takeaway C",
+            "category": "TECH",
+        }
+
+    with patch("scripts.generate.generate_topic_from_items", side_effect=fake_gen), \
+         patch("scripts.repurpose.repurpose_topic") as mock_repurpose:
+        mock_repurpose.return_value = {
+            "x": {"text": "Postgres deep dive on X", "enabled": True},
+            "bluesky": {"text": "Postgres deep dive on Bsky", "enabled": True},
+            "linkedin": {"text": "LI text", "enabled": True},
+            "threads": {"text": "Threads text", "enabled": True},
+        }
+        updated = populate_daily_plan(plan_data, swipe_items=swipe_items)
+        assert updated["slots"][0]["text"] == "Postgres deep dive on X"
+
+
+def test_due_returns_unpopulated_slot_within_lag():
+    from scripts import due
+    from datetime import datetime, timezone, timedelta
+    now = datetime.now(timezone.utc)
+    due_at = (now - timedelta(minutes=15)).isoformat()
+    mock_plan = {
+        "date": now.strftime("%Y-%m-%d"),
+        "slots": [
+            {"slot": "13:00", "kind": "value", "text": "", "due_at": due_at}
+        ]
+    }
+    with patch("scripts.due._load_plans", return_value=[(Path("drafts/test.json"), mock_plan)]), \
+         patch("scripts.due.load_state", return_value={}):
+        res = due.due()
+        assert res is not None
+        assert res["slot"] == "13:00"
+        assert res["text"] == ""
+
