@@ -75,7 +75,9 @@ class TestPartialFailureRetryIsolation(unittest.TestCase):
     ):
         # Point autoposter and ledger STATE_PATH to self.state_file
         with patch.object(ledger, "STATE_PATH", self.state_file), \
-             patch("scripts.autoposter.ledger.STATE_PATH", self.state_file):
+             patch("scripts.autoposter.ledger.STATE_PATH", self.state_file), \
+             patch("scripts.autoposter._dispatch_worker",
+                   side_effect=lambda adapter, payload, timeout: adapter.publish(payload)):
 
             # First run: X, Bluesky, Threads succeed; LinkedIn fails with rate limit
             mock_x = MockPlatformAdapter("x", success=True)

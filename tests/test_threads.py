@@ -22,9 +22,10 @@ class TestThreadsAdapter(unittest.TestCase):
         self.assertFalse(caps.supports_pdf_carousel)
         self.assertFalse(caps.requires_public_image_url)
 
+    @patch("scripts.browser.settle_page", new_callable=AsyncMock)
     @patch("adapters.threads.ThreadsAdapter._open_stealth")
     @patch("scripts.browser.ensure_chrome")
-    def test_check_session_logged_in(self, mock_ensure, mock_open):
+    def test_check_session_logged_in(self, mock_ensure, mock_open, mock_settle):
         mock_page = AsyncMock()
         mock_page.eval.return_value = json.dumps({
             "logged_in": True,
@@ -37,9 +38,10 @@ class TestThreadsAdapter(unittest.TestCase):
         self.assertEqual(res["handle"], "lordporus_ai")
         self.assertEqual(res["platform"], "threads")
 
+    @patch("scripts.browser.settle_page", new_callable=AsyncMock)
     @patch("adapters.threads.ThreadsAdapter._open_stealth")
     @patch("scripts.browser.ensure_chrome")
-    def test_check_session_logged_out(self, mock_ensure, mock_open):
+    def test_check_session_logged_out(self, mock_ensure, mock_open, mock_settle):
         mock_page = AsyncMock()
         mock_page.eval.return_value = json.dumps({
             "logged_in": False,
@@ -76,6 +78,45 @@ class TestThreadsAdapter(unittest.TestCase):
         self.assertEqual(res.post_id, "ABC123")
         mock_verify.assert_not_called()
         mock_page.send.assert_any_call("Input.insertText", text="Hello Threads world from OmniPost V2!")
+
+    def test_own_permalink_requires_configured_handle(self):
+        self.assertTrue(self.adapter._is_own_permalink(
+            "https://www.threads.com/@lordporus_ai/post/ABC123"
+        ))
+        self.assertFalse(self.adapter._is_own_permalink(
+            "https://www.threads.com/@gabbzkieeee/post/De6nyCpGKgI"
+        ))
+        self.assertFalse(self.adapter._is_own_permalink(
+            "https://www.threads.com/@lordporus_ai"
+        ))
+
+    @patch.object(ThreadsAdapter, "_async_verify", return_value=True)
+    @patch("adapters.threads.asyncio.sleep", new_callable=AsyncMock)
+    @patch("scripts.browser.settle_page", new_callable=AsyncMock)
+    @patch("adapters.threads.ThreadsAdapter._open_stealth")
+    @patch("scripts.browser.ensure_chrome")
+    def test_publish_rejects_foreign_permalink_and_reads_back(
+        self, mock_ensure, mock_open, mock_settle, mock_sleep, mock_verify
+    ):
+        foreign = "https://www.threads.com/@gabbzkieeee/post/De6nyCpGKgI"
+        mock_page = AsyncMock()
+        mock_page.eval.side_effect = [
+            "clicked",
+            "focused",
+            json.dumps({"clicked": True}),
+            *([foreign] * 5),
+        ]
+        mock_open.return_value = mock_page
+
+        payload = PublishPayload(text="Phronix test post")
+        res = self.adapter.publish(payload)
+
+        self.assertTrue(res.success)
+        self.assertTrue(res.verified)
+        self.assertIsNone(res.url)
+        self.assertIsNone(res.post_id)
+        self.assertEqual(res.raw_response["verification_source"], "readback")
+        mock_verify.assert_called_once_with(None, "Phronix test post")
 
     def test_threads_base_url(self):
         from adapters.threads import THREADS_BASE_URL

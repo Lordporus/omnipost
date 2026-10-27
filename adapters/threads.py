@@ -28,7 +28,17 @@ from adapters.base import (
 from scripts import browser, settings
 from scripts.browser import CDPError, Session
 
+try:  # package import (tests, publish worker)
+    from scripts.errors import MediaContractError
+except ImportError:  # direct script execution
+    from errors import MediaContractError
+
 ROOT = Path(__file__).resolve().parent.parent
+
+# Uploaded File objects surface as blob: URLs until Threads stores them.
+PREVIEW_COUNT_JS = """
+(() => String(document.querySelectorAll('img[src^="blob:"], img[src^="data:"]').length))()
+"""
 
 # Stealth script to mask automated browser flags
 STEALTH_JS = r"""
@@ -311,7 +321,7 @@ class ThreadsAdapter(PlatformAdapter):
     async def _attach_media(self, page: Session, file_paths: list[Path] | Path) -> bool:
         """Attaches 1-3 local images to Threads composer via CDP DOM file input with polling retries."""
         paths = [file_paths] if isinstance(file_paths, Path) else file_paths
-        valid_files = [str(p.resolve()) for p in paths if p.exists()]
+        valid_files = [browser.browser_file_path(p) for p in paths if p.exists()]
         if not valid_files:
             return False
 
@@ -338,8 +348,15 @@ class ThreadsAdapter(PlatformAdapter):
                                 files=valid_files,
                                 nodeId=node_id,
                             )
-                            await asyncio.sleep(2.5)
-                            return True
+                            for _ in range(12):
+                                await asyncio.sleep(0.5)
+                                try:
+                                    seen = int(await page.eval(PREVIEW_COUNT_JS) or "0")
+                                except (CDPError, OSError, asyncio.TimeoutError, ValueError):
+                                    seen = 0
+                                if seen >= len(valid_files):
+                                    return True
+                            return False
                     except (CDPError, OSError, asyncio.TimeoutError, ValueError):
                         continue
             except (CDPError, OSError, ValueError):
@@ -353,11 +370,11 @@ class ThreadsAdapter(PlatformAdapter):
         base_url = self.get_base_url()
         page = await self._open_stealth(base_url)
         try:
-            await browser.settle_page(page, 2.5)
-            # Poll for hydration up to 8 seconds
+            await browser.settle_page(page, 4.0)
+            # Poll for hydration up to 10 seconds
             logged_in = False
             h = None
-            for _ in range(16):
+            for _ in range(20):
                 try:
                     res_str = await page.eval(CHECK_SESSION_JS)
                     data = json.loads(res_str or "{}")
@@ -396,6 +413,20 @@ class ThreadsAdapter(PlatformAdapter):
         clean_h = self._handle.lstrip("@") if self._handle else ""
         return f"{base}/@{clean_h}" if clean_h else f"{base}/"
 
+    def _is_own_permalink(self, url: str | None) -> bool:
+        """Only accept a permalink that belongs to the configured handle.
+
+        Threads' feed contains links to other users' posts. Scraping the first
+        ``/post/`` anchor can therefore turn a stranger's post into false proof
+        that our publish succeeded.
+        """
+        if not url:
+            return False
+        handle = (self._handle or "").lstrip("@").strip()
+        if not handle:
+            return False
+        return bool(re.search(rf"/@{re.escape(handle)}/post/", url, re.IGNORECASE))
+
     async def _poll_for_permalink(
         self,
         page: Session,
@@ -411,7 +442,7 @@ class ThreadsAdapter(PlatformAdapter):
             except (CDPError, OSError, asyncio.TimeoutError):
                 raw = None
             permalink = _extract_permalink(raw)
-            if permalink:
+            if permalink and self._is_own_permalink(permalink):
                 return permalink
         return None
 
@@ -502,13 +533,13 @@ class ThreadsAdapter(PlatformAdapter):
             if payload.media_paths:
                 attached = await self._attach_media(page, payload.media_paths)
                 if not attached:
-                    print(
-                        f"  [WARN] Threads: Failed to attach images {payload.media_paths}. Proceeding with text-only thread.",
-                        file=sys.stderr,
-                        flush=True,
+                    raise MediaContractError(
+                        "Threads image attach failed; refusing to publish text-only",
+                        platform="threads",
+                        stage="media_attach",
+                        context={"paths": [str(p) for p in payload.media_paths]},
                     )
-                else:
-                    await asyncio.sleep(2.0)
+                await asyncio.sleep(2.0)
 
             # Submit
             sub_res_str = await page.eval(SUBMIT_POST_JS)

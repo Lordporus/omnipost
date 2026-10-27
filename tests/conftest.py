@@ -6,6 +6,21 @@ import pytest
 
 
 @pytest.fixture(autouse=True)
+def block_real_autoposter_dispatch():
+    """Autoposter's dispatcher spawns a subprocess that re-resolves the adapters
+    from config.json, so a mocked adapter list never reaches it. Without this
+    guard a test run publishes to the real accounts.
+    """
+    with patch(
+        "scripts.autoposter._dispatch_worker",
+        side_effect=RuntimeError(
+            "real publish blocked in tests; patch scripts.autoposter._dispatch_worker"
+        ),
+    ):
+        yield
+
+
+@pytest.fixture(autouse=True)
 def isolate_webhooks(request):
     """Prevents tests from dispatching real webhook alerts to Telegram or Discord.
     

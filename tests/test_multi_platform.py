@@ -58,12 +58,15 @@ class TestMultiPlatformSettings(unittest.TestCase):
 class TestAutoposterMultiPlatform(unittest.TestCase):
     """Test suite for autoposter publishing across multiple adapters."""
 
+    @patch("scripts.autoposter.settings.load", return_value={"dry_run": False})
     @patch("scripts.autoposter.ensure_daily_plan")
     @patch("scripts.autoposter.run_cmd")
     @patch("scripts.settings.get_active_adapters")
+    @patch("scripts.autoposter._dispatch_worker")
     def test_autoposter_dispatches_to_all_active_adapters(
-        self, mock_get_adapters, mock_run_cmd, mock_plan
+        self, mock_worker, mock_get_adapters, mock_run_cmd, mock_plan, mock_load
     ):
+        mock_worker.side_effect = lambda adapter, payload, timeout: adapter.publish(payload)
         # Setup due check output
         mock_run_cmd.side_effect = [
             (0, '{"slot": "14:00", "kind": "value", "text": "Cross-platform test"}'),
@@ -98,6 +101,42 @@ class TestAutoposterMultiPlatform(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertEqual(mock_x.publish.call_count, 1)
         self.assertEqual(mock_bsky.publish.call_count, 1)
+
+    @patch("scripts.autoposter.settings.load", return_value={"dry_run": True})
+    @patch("scripts.autoposter.ensure_daily_plan")
+    @patch("scripts.autoposter.run_cmd")
+    @patch("scripts.settings.get_active_adapters")
+    def test_autoposter_honors_config_dry_run(
+        self, mock_get_adapters, mock_run_cmd, mock_plan, mock_load
+    ):
+        mock_run_cmd.return_value = (
+            0,
+            '{"slot": "14:00", "kind": "value", "text": "Cross-platform test"}',
+        )
+
+        with patch("sys.argv", ["autoposter.py"]):
+            code = autoposter.main()
+
+        self.assertEqual(code, 0)
+        mock_get_adapters.assert_not_called()
+
+    @patch("scripts.autoposter.settings.load", return_value={"dry_run": True})
+    @patch("scripts.autoposter.ensure_daily_plan")
+    @patch("scripts.autoposter.run_cmd")
+    @patch("scripts.settings.get_active_adapters", return_value=[])
+    def test_autoposter_live_override_bypasses_config_dry_run(
+        self, mock_get_adapters, mock_run_cmd, mock_plan, mock_load
+    ):
+        mock_run_cmd.return_value = (
+            0,
+            '{"slot": "14:00", "kind": "value", "text": "Cross-platform test"}',
+        )
+
+        with patch("sys.argv", ["autoposter.py", "--live"]):
+            code = autoposter.main()
+
+        self.assertEqual(code, 1)
+        mock_get_adapters.assert_called_once()
 
 
 if __name__ == "__main__":

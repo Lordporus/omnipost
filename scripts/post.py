@@ -116,6 +116,7 @@ async def measure_limit(ladder: tuple[int, ...] = (280, 1000, 5000, 25000, 30000
     rung.
     """
     async def fits(n: int) -> bool:
+        browser.ensure_chrome()
         page = await _open("https://x.com/compose/post")
         try:
             await browser.settle_page(page, 5)
@@ -265,11 +266,19 @@ COMPOSE_STATE_JS = r"""
   const ed  = document.querySelector('[data-testid="tweetTextarea_0"]');
   const toast = document.querySelector('[data-testid="toast"]');
   const txt = document.body ? document.body.innerText : '';
+  const previews = (() => {
+    const scope = document.querySelector('[role="dialog"]') || document;
+    const tagged = scope.querySelectorAll('[data-testid="attachedImage"]').length;
+    if (tagged) return tagged;
+    return scope.querySelectorAll('[data-testid="attachments"] img, img[src^="blob:"]').length;
+  })();
   return JSON.stringify({
     has_editor: !!ed,
     editor_text: ed ? (ed.innerText || '') : '',
     btn_found: !!btn,
     btn_disabled: btn ? (btn.getAttribute('aria-disabled') === 'true' || !!btn.disabled) : null,
+    media_count: previews,
+    uploading: !!document.querySelector('[role="progressbar"]'),
     toast: toast ? (toast.innerText || '').replace(/\n/g,' ').slice(0,160) : null,
     modal_open: !!document.querySelector('[aria-labelledby="modal-header"]'),
     sent: /Your post was sent/i.test(txt),
@@ -297,9 +306,19 @@ async def _insert_text(page: Session, text: str) -> str:
     return await page.eval("(document.querySelector('%s')||{}).innerText || ''" % EDITOR)
 
 
+ATTACH_POLLS = 30
+ATTACH_POLL_INTERVAL = 1.0
+
+
 async def _attach_images(page: Session, paths: list[Path]) -> str:
-    """Attach one or more local images in order to X's file input."""
-    files = [str(Path(path)) for path in paths]
+    """Attach local images and confirm the composer actually shows them.
+
+    Returns ``attached:<n>`` only when the preview count matches the files sent
+    and no upload is still in flight. The Post button is not evidence: typing
+    text already enables it, which is how image-less posts were reported as
+    attached.
+    """
+    files = [browser.browser_file_path(path) for path in paths]
     if not files:
         return "no-files"
     doc = await page.send("DOM.getDocument", depth=-1)
@@ -307,12 +326,16 @@ async def _attach_images(page: Session, paths: list[Path]) -> str:
     if not node.get("nodeId"):
         return "no-file-input"
     await page.send("DOM.setFileInputFiles", files=files, nodeId=node["nodeId"])
-    for _ in range(30):
-        await asyncio.sleep(1.0)
+    seen = 0
+    for _ in range(ATTACH_POLLS):
+        await asyncio.sleep(ATTACH_POLL_INTERVAL)
         st = json.loads(await page.eval(COMPOSE_STATE_JS))
-        if st.get("btn_found") and not st.get("btn_disabled"):
-            return "attached" if len(files) == 1 else f"attached:{len(files)}"
-    return "attached-but-button-still-disabled"
+        seen = int(st.get("media_count") or 0)
+        if seen >= len(files) and not st.get("uploading"):
+            return f"attached:{seen}"
+    if seen >= len(files):
+        return "fail:uploading"
+    return f"fail:partial:{seen}/{len(files)}"
 
 
 async def _attach_image(page: Session, path: Path) -> str:
@@ -465,6 +488,7 @@ async def do_post(text: str, image: Path | None = None, kind: str = "value",
         check_warmup=not dry_run,
     )
 
+    browser.ensure_chrome()
     page = await _open("https://x.com/compose/post")
     try:
         await browser.settle_page(page, settle)
@@ -496,6 +520,11 @@ async def do_post(text: str, image: Path | None = None, kind: str = "value",
         shot = SHOTS / "compose.png"
         shotdata = await page.send("Page.captureScreenshot", format="png")
         shot.write_bytes(base64.b64decode(shotdata["data"]))
+
+        # Fail closed: never submit a post whose images did not land.
+        if media_paths and not img_status.startswith("attached:"):
+            return {"error": f"image attach failed: {img_status}",
+                    "image": img_status, "screenshot": str(shot)}
 
         if dry_run:
             return {"dry_run": True, "chars": len(body), "editor_text": got[:200],

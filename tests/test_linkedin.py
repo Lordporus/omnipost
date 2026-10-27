@@ -26,9 +26,10 @@ class TestLinkedInAdapter(unittest.TestCase):
         self.assertTrue(caps.supports_pdf_carousel)
         self.assertFalse(caps.requires_public_image_url)
 
+    @patch("scripts.browser.settle_page", new_callable=AsyncMock)
     @patch("adapters.linkedin.LinkedInAdapter._open_stealth")
     @patch("scripts.browser.ensure_chrome")
-    def test_check_session_success(self, mock_ensure, mock_open):
+    def test_check_session_success(self, mock_ensure, mock_open, mock_settle):
         mock_page = AsyncMock()
         mock_page.eval.return_value = json.dumps({
             "logged_in": True,
@@ -41,9 +42,10 @@ class TestLinkedInAdapter(unittest.TestCase):
         self.assertEqual(res["handle"], "lordporus-kumar")
         self.assertEqual(res["platform"], "linkedin")
 
+    @patch("scripts.browser.settle_page", new_callable=AsyncMock)
     @patch("adapters.linkedin.LinkedInAdapter._open_stealth")
     @patch("scripts.browser.ensure_chrome")
-    def test_check_session_logged_out(self, mock_ensure, mock_open):
+    def test_check_session_logged_out(self, mock_ensure, mock_open, mock_settle):
         mock_page = AsyncMock()
         mock_page.eval.return_value = json.dumps({
             "logged_in": False,

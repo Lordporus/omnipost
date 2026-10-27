@@ -278,19 +278,19 @@ TRIGGER_COMPOSER_JS = r"""
 
 FOCUS_EDITOR_JS = r"""
 (() => {
+  // LinkedIn renders the composer as an inline overlay, not always inside
+  // div[role="dialog"], so the editor is looked up directly.
   const dialog = document.querySelector('div[role="dialog"]')
     || document.querySelector('div.artdeco-modal')
     || document.querySelector('.share-box');
-  if (!dialog) return 'no_dialog';
 
-  const ed = dialog.querySelector('div[contenteditable="true"]')
-    || dialog.querySelector('.ql-editor')
-    || dialog.querySelector('[data-test-ql-editor-contenteditable]')
-    || document.querySelector('div[role="dialog"] div[contenteditable="true"]')
-    || document.querySelector('div.artdeco-modal div[contenteditable="true"]')
-    || document.querySelector('div.tiptap.ProseMirror')
-    || document.querySelector('div.editor-content div[contenteditable="true"]')
-    || document.querySelector('div[role="textbox"][contenteditable="true"]');
+  let ed = null;
+  for (const root of dialog ? [dialog, document] : [document]) {
+    ed = root.querySelector('div.tiptap.ProseMirror')
+      || root.querySelector('div[role="textbox"][contenteditable="true"]')
+      || root.querySelector('div[contenteditable="true"]');
+    if (ed) break;
+  }
   if (!ed) return 'no_editor';
 
   const rect = ed.getBoundingClientRect();
@@ -525,7 +525,7 @@ class LinkedInAdapter(PlatformAdapter):
 
     async def _attach_images(self, page: Session, image_paths: list[Path]) -> bool:
         """Attaches 1-3 PNG images directly to LinkedIn post composer via the Media button."""
-        valid_files = [str(p.resolve()) for p in image_paths if p.exists() and p.suffix.lower() in (".png", ".jpg", ".jpeg", ".webp")]
+        valid_files = [browser.browser_file_path(p) for p in image_paths if p.exists() and p.suffix.lower() in (".png", ".jpg", ".jpeg", ".webp")]
         if not valid_files:
             return False
 
@@ -612,12 +612,15 @@ class LinkedInAdapter(PlatformAdapter):
             return nextBtn ? 'disabled' : 'not_found';
         })()
         """
+        clicked = "not_found"
         for _ in range(15):
-            res = await page.eval(click_next_js)
-            if res == "clicked":
+            clicked = await page.eval(click_next_js)
+            if clicked == "clicked":
                 break
             await asyncio.sleep(1.0)
 
+        if clicked != "clicked":
+            return False
         await asyncio.sleep(1.5)
         return True
 
@@ -626,7 +629,7 @@ class LinkedInAdapter(PlatformAdapter):
         if not pdf_path.exists():
             return False
 
-        abs_pdf = str(pdf_path.resolve())
+        abs_pdf = browser.browser_file_path(pdf_path)
 
         # Fast-Path 1: Check if composer already has an active input[type="file"]
         node_id = None
@@ -804,32 +807,26 @@ class LinkedInAdapter(PlatformAdapter):
                 attached_img = await self._attach_images(page, image_targets)
                 if not attached_img:
                     artifacts = await capture_failure_artifacts(page, "linkedin")
-                    print(f"  [WARN] LinkedIn: Failed to attach images. Proceeding with text post. Telemetry: {artifacts.get('screenshot')}", file=sys.stderr)
-                    # Close any media modal overlay if open so main composer is visible
-                    await page.eval("""
-                    (() => {
-                        const closeBtn = document.querySelector('button[aria-label="Dismiss"]')
-                            || document.querySelector('button[aria-label="Close"]')
-                            || document.querySelector('button.artdeco-modal__dismiss');
-                        if (closeBtn) closeBtn.click();
-                    })()
-                    """)
-                    await asyncio.sleep(1.0)
-                else:
-                    await asyncio.sleep(1.5)
-                    focus_status = await self._wait_for_composer_editor(page, attempts=10)
-                    if focus_status != "focused":
-                        artifacts = await capture_failure_artifacts(page, "linkedin")
-                        raise ComposerOpenError(
-                            "LinkedIn editor lost focus after image attachment: "
-                            f"status={focus_status!r}",
-                            platform="linkedin",
-                            stage="composer_ready_after_media",
-                            selectors=LINKEDIN_COMPOSER_SELECTORS,
-                            candidates=int(trigger.get("candidates") or 0),
-                            artifacts=artifacts,
-                            context={"trigger": trigger, "focus_status": focus_status},
-                        )
+                    raise MediaContractError(
+                        "LinkedIn image attach failed; refusing to publish text-only",
+                        platform="linkedin",
+                        stage="media_attach",
+                        context={"trigger": trigger, "artifacts": artifacts},
+                    )
+                await asyncio.sleep(1.5)
+                focus_status = await self._wait_for_composer_editor(page, attempts=10)
+                if focus_status != "focused":
+                    artifacts = await capture_failure_artifacts(page, "linkedin")
+                    raise ComposerOpenError(
+                        "LinkedIn editor lost focus after image attachment: "
+                        f"status={focus_status!r}",
+                        platform="linkedin",
+                        stage="composer_ready_after_media",
+                        selectors=LINKEDIN_COMPOSER_SELECTORS,
+                        candidates=int(trigger.get("candidates") or 0),
+                        artifacts=artifacts,
+                        context={"trigger": trigger, "focus_status": focus_status},
+                    )
 
             # 3. Attach Carousel PDF only when the media contract selected it.
             elif media_mode == "document" and pdf_target is not None:
@@ -950,42 +947,34 @@ class LinkedInAdapter(PlatformAdapter):
 
     async def _async_verify(self, post_id: str | None, text_snippet: str) -> bool:
         """Read-back verification on recent activity page with retry polling."""
+        profile = self._profile_url.strip().rstrip("/")
+        if profile and not profile.startswith(("http://", "https://")):
+            profile = f"https://{profile}"
         target_url = (
-            f"{self._profile_url.rstrip('/')}/recent-activity/all/"
-            if self._profile_url
+            f"{profile}/recent-activity/all/"
+            if profile
             else "https://www.linkedin.com/feed/"
         )
         try:
             page = await self._open_stealth(target_url)
             try:
+                await browser.settle_page(page, 4.0)
                 deadline = time.time() + 10.0
                 norm_snippet = re.sub(r"\s+", " ", text_snippet[:40]).strip().lower()
 
-                check_js = r"""
-                (() => {
-                  const posts = [...document.querySelectorAll('div.feed-shared-update-v2, div[data-urn*="activity"]')];
-                  return JSON.stringify(posts.slice(0, 5).map(p => {
-                    const urn = p.getAttribute('data-urn') || '';
-                    return {
-                      text: p.innerText || '',
-                      urn: urn
-                    };
-                  }));
-                })()
-                """
+                # LinkedIn's post containers no longer use stable classes or
+                # data-urn, so readback checks the rendered page text instead.
+                check_js = "(() => document.body.innerText || '')()"
 
                 while time.time() < deadline:
                     await asyncio.sleep(2.0)
                     try:
-                        raw = await page.eval(check_js)
-                        posts = json.loads(raw or "[]")
+                        body = await page.eval(check_js)
                     except (CDPError, OSError, asyncio.TimeoutError, ValueError):
-                        posts = []
+                        body = ""
 
-                    for p in posts:
-                        p_text = p.get("text", "")
-                        if norm_snippet in re.sub(r"\s+", " ", p_text).lower():
-                            return True
+                    if norm_snippet in re.sub(r"\s+", " ", body or "").lower():
+                        return True
                 return False
 
             finally:

@@ -17,6 +17,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+try:
+    from scripts import ledger
+except ImportError:  # direct script execution from the scripts/ directory
+    import ledger  # type: ignore[no-redef]
+
 DEFAULT_TIMEOUT = 8.0
 USER_AGENT = "OmniPost-Validator/1.0"
 
@@ -506,7 +511,10 @@ def check_account_warmup(
             if p_plat:
                 plat_data = p.get("platforms", {}).get(p_plat)
                 if plat_data:
-                    is_published = isinstance(plat_data, dict) and plat_data.get("status") == "published"
+                    is_published = isinstance(plat_data, dict) and plat_data.get("status") in (
+                        ledger.STATUS_PUBLISHED_VERIFIED,
+                        "published",
+                    )
                 elif not p.get("platforms"):
                     is_published = p.get("status") != "failed" and p.get("verified") is not False
                 else:
@@ -517,7 +525,10 @@ def check_account_warmup(
                     or bool(p.get("tweet_url"))
                     or (p.get("status") != "failed" and not p.get("platforms"))
                     or any(
-                        isinstance(p_data, dict) and p_data.get("status") == "published"
+                        isinstance(p_data, dict) and p_data.get("status") in (
+                            ledger.STATUS_PUBLISHED_VERIFIED,
+                            "published",
+                        )
                         for p_data in p.get("platforms", {}).values()
                     )
                 )

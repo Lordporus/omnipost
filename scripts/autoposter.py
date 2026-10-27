@@ -30,11 +30,13 @@ try:
     from scripts import ledger
     from scripts import pipeline
     from scripts import notify
+    from scripts.publish_now import _dispatch_worker
 except ImportError:
     import settings
     import ledger
     import pipeline
     import notify
+    from publish_now import _dispatch_worker
 
 from adapters.base import PublishPayload
 
@@ -74,6 +76,8 @@ def _retry_failed_enabled() -> bool:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--dry-run", action="store_true", help="evaluate due slot without posting")
+    parser.add_argument("--live", action="store_true", help="override config.json dry_run for this run")
+    parser.add_argument("--timeout", type=float, default=120.0, help="Per-platform publish timeout in seconds (default: 120)")
     args = parser.parse_args()
 
     ensure_daily_plan()
@@ -114,8 +118,17 @@ def main() -> int:
 
     print(f"[{datetime.now().strftime('%H:%M:%S')}] Slot {slot} ({kind}) is due! Text length: {len(text)} chars.")
 
-    if args.dry_run:
-        print(f"[{datetime.now().strftime('%H:%M:%S')}] Dry-run requested. Skipping real publishing.")
+    try:
+        configured_dry_run = bool(settings.load().get("dry_run", False))
+    except Exception:
+        configured_dry_run = True
+
+    if args.dry_run or (configured_dry_run and not args.live):
+        source = "requested" if args.dry_run else "config.json dry_run=true"
+        print(
+            f"[{datetime.now().strftime('%H:%M:%S')}] Dry-run ({source}). "
+            "Skipping real publishing."
+        )
         return 0
 
     # Publish across all active adapters
@@ -200,9 +213,12 @@ def main() -> int:
         # Resolve media paths
         resolved_media: list[Path] = []
         for m in media_list:
-            mp = ROOT / m if not Path(m).is_absolute() else Path(m)
+            clean_m = Path(str(m).replace("\\", "/"))
+            mp = ROOT / clean_m if not clean_m.is_absolute() else clean_m
             if mp.exists():
                 resolved_media.append(mp)
+            else:
+                print(f"[{datetime.now().strftime('%H:%M:%S')}] [{p_name}] [WARN] Media path not found: {mp}", file=sys.stderr)
 
         # Enforce platform character limits
         caps = adapter.capabilities
@@ -222,7 +238,8 @@ def main() -> int:
 
         print(f"[{datetime.now().strftime('%H:%M:%S')}] [{p_name}] Publishing slot {slot}...")
         try:
-            res = adapter.publish(payload)
+            # Killable worker: a hung browser call must not stall the daemon.
+            res = _dispatch_worker(adapter, payload, args.timeout)
             ledger.record_platform_status(
                 st,
                 date,

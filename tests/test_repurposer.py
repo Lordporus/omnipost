@@ -99,12 +99,15 @@ class TestContentRepurposer(unittest.TestCase):
 class TestPolymorphicAutoposter(unittest.TestCase):
     """Test suite ensuring autoposter routes platform-specific text from polymorphic draft."""
 
+    @patch("scripts.autoposter.settings.load", return_value={"dry_run": False})
     @patch("scripts.autoposter.ensure_daily_plan")
     @patch("scripts.autoposter.run_cmd")
     @patch("scripts.settings.get_active_adapters")
+    @patch("scripts.autoposter._dispatch_worker")
     def test_autoposter_dispatches_tailored_copy(
-        self, mock_get_adapters, mock_run_cmd, mock_plan
+        self, mock_worker, mock_get_adapters, mock_run_cmd, mock_plan, mock_load
     ):
+        mock_worker.side_effect = lambda adapter, payload, timeout: adapter.publish(payload)
         poly_due_item = {
             "slot": "16:00",
             "kind": "ai_update",

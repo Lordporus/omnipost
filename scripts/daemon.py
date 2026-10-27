@@ -38,12 +38,17 @@ def main() -> None:
         should_run_pipeline = (today != last_pipeline_date and now.hour >= 11) or not plan_path.exists()
         if should_run_pipeline:
             print(f"[{now.strftime('%H:%M:%S')}] [DAEMON] Triggering daily pipeline...")
-            subprocess.run([sys.executable, str(SCRIPTS / "pipeline.py")], cwd=str(ROOT))
+            try:
+                subprocess.run([sys.executable, str(SCRIPTS / "pipeline.py")], cwd=str(ROOT), timeout=1800)
+            except subprocess.TimeoutExpired:
+                print("[DAEMON] Pipeline exceeded 1800s and was killed.", file=sys.stderr)
             last_pipeline_date = today
 
         # 2. Run autoposter tick
         try:
-            subprocess.run([sys.executable, str(SCRIPTS / "autoposter.py")], cwd=str(ROOT))
+            subprocess.run([sys.executable, str(SCRIPTS / "autoposter.py")], cwd=str(ROOT), timeout=900)
+        except subprocess.TimeoutExpired:
+            print("[DAEMON] Autoposter exceeded 900s and was killed.", file=sys.stderr)
         except Exception as exc:
             print(f"[DAEMON] Autoposter error: {exc}", file=sys.stderr)
 
