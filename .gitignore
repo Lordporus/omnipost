@@ -1,6 +1,9 @@
 # nothing here is part of the shared skill - it is your install
 config.json
 state.json
+state.json.bak
+state.json.next
+state.json.lock
 .tick
 
 # generated content

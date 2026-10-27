@@ -144,21 +144,23 @@ def _atomic_write_text(target: Path, content: str) -> None:
     tmp_path = target.parent / (
         f"{target.name}.tmp.{os.getpid()}.{threading.get_ident()}.{time.time_ns()}"
     )
+    journal = target.with_name(target.name + ".next")
     try:
         tmp_path.write_text(content, encoding="utf-8")
         try:
             os.replace(tmp_path, target)
         except OSError as err:
-            if getattr(err, "errno", None) in (errno.EBUSY, errno.EXDEV, errno.EPERM):
-                with open(target, "w", encoding="utf-8") as f:
-                    f.write(content)
-                    f.flush()
-                    try:
-                        os.fsync(f.fileno())
-                    except OSError:
-                        pass
-            else:
+            if getattr(err, "errno", None) not in (errno.EBUSY, errno.EXDEV, errno.EPERM):
                 raise
+            # A file bind mount refuses rename onto itself, so stage the new
+            # content beside it and copy it in; load_state promotes a leftover
+            # journal after a crash.
+            os.replace(tmp_path, journal)
+            with open(journal, "rb") as src, open(target, "wb") as dst:
+                dst.write(src.read())
+                dst.flush()
+                os.fsync(dst.fileno())
+            journal.unlink(missing_ok=True)
     finally:
         try:
             tmp_path.unlink(missing_ok=True)
@@ -286,6 +288,27 @@ def migrate_state(data: dict) -> dict:
 def load_state(path: Path | None = None) -> dict:
     """Load and migrate state, quarantining corruption and restoring the backup."""
     target = Path(path) if path else STATE_PATH
+    journal = target.with_name(target.name + ".next")
+    if journal.exists():
+        try:
+            raw = json.loads(journal.read_text(encoding="utf-8"))
+        except Exception:
+            try:
+                journal.unlink()
+            except OSError:
+                pass
+        else:
+            migrated = migrate_state(raw)
+            _atomic_write_text(
+                target,
+                json.dumps(migrated, indent=2, ensure_ascii=False),
+            )
+            try:
+                journal.unlink()
+            except OSError:
+                pass
+            return migrated
+
     if not target.exists():
         return _clean_state()
 

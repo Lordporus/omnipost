@@ -1,6 +1,7 @@
 """Unit tests for Unified State Ledger (Schema v3.0) in scripts/ledger.py."""
 import json
 import errno
+import os
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -158,12 +159,21 @@ class TestStateLedger(unittest.TestCase):
         self.assertTrue(ledger.is_slot_fully_published(state, "2026-10-05", "16:00", targets))
 
 
-    @patch("scripts.ledger.os.replace", side_effect=OSError(errno.EBUSY, "Device or resource busy"))
-    def test_atomic_write_text_handles_ebusy_mountpoint(self, mock_replace):
+    def test_atomic_write_text_handles_ebusy_mountpoint(self):
         target = Path(self.temp_dir.name) / "bind_mount_file.json"
         target.write_text("initial", encoding="utf-8")
-        ledger._atomic_write_text(target, '{"updated": true}')
+        real_replace = os.replace
+
+        def replace_only_target_fails(src, dst, *args, **kwargs):
+            if Path(dst) == target:
+                raise OSError(errno.EBUSY, "Device or resource busy")
+            return real_replace(src, dst, *args, **kwargs)
+
+        with patch("scripts.ledger.os.replace", side_effect=replace_only_target_fails):
+            ledger._atomic_write_text(target, '{"updated": true}')
+
         self.assertEqual(target.read_text(encoding="utf-8"), '{"updated": true}')
+        self.assertFalse(target.with_name(target.name + ".next").exists())
 
 if __name__ == "__main__":
     unittest.main()
