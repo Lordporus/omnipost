@@ -1,6 +1,7 @@
 import json
 from pathlib import Path
 from unittest.mock import patch, MagicMock
+import pytest
 from scripts.pipeline import run_daily_pipeline, populate_daily_plan
 
 
@@ -115,6 +116,7 @@ def test_run_daily_pipeline_harvests_swipe_if_empty(tmp_path):
          patch("scripts.pipeline.ensure_browser_running"), \
          patch("scripts.generate.load_daily_swipe", return_value=[]), \
          patch("scripts.research.hn", return_value=[{"title": "HN Item", "score": 150}]) as mock_hn, \
+         patch("scripts.research.rss", return_value=([], {})), \
          patch("scripts.due.make_plan") as mock_make_plan, \
          patch("scripts.pipeline.populate_daily_plan") as mock_populate:
 
@@ -133,6 +135,35 @@ def test_run_daily_pipeline_harvests_swipe_if_empty(tmp_path):
 
         assert mock_hn.called
         assert out_path == plan_file
+
+
+@pytest.mark.parametrize("failed_source", ["hn", "rss", None])
+def test_swipe_sources_are_independent(tmp_path, failed_source):
+    date = "2026-10-08"
+    hn_items = [{"title": "HN item"}]
+    rss_items = [{"title": "RSS item"}]
+    drafts = tmp_path / "drafts"
+    drafts.mkdir()
+    plan = {"date": date, "slots": []}
+    (drafts / f"{date}.json").write_text(json.dumps(plan), encoding="utf-8")
+
+    with patch("scripts.pipeline.ROOT", tmp_path), \
+         patch("scripts.pipeline.ensure_browser_running"), \
+         patch("scripts.generate.load_daily_swipe", return_value=[]), \
+         patch("scripts.research.hn", return_value=hn_items,
+               side_effect=RuntimeError("HN unavailable") if failed_source == "hn" else None) as hn, \
+         patch("scripts.research.rss", return_value=(rss_items, {}),
+               side_effect=RuntimeError("RSS unavailable") if failed_source == "rss" else None) as rss, \
+         patch("scripts.pipeline.populate_daily_plan", return_value=plan) as populate:
+        run_daily_pipeline(date)
+
+    hn.assert_called_once_with(points=100, hours=24)
+    rss.assert_called_once_with(hours=48)
+    expected = ([] if failed_source == "hn" else [{"title": "HN item"}])
+    expected += [] if failed_source == "rss" else rss_items
+    assert populate.call_args.args[1] == expected
+    saved = json.loads((tmp_path / "swipe" / f"{date}.json").read_text(encoding="utf-8"))
+    assert saved == expected
 
 
 def test_populate_daily_plan_expands_pool_when_initial_slice_fails():
@@ -190,3 +221,41 @@ def test_due_returns_unpopulated_slot_within_lag():
         assert res["slot"] == "13:00"
         assert res["text"] == ""
 
+
+@pytest.mark.parametrize("reverse_order", [False, True])
+def test_due_prefers_oldest_eligible_populated_slot_and_keeps_empty_fallback(tmp_path, reverse_order):
+    from scripts import due
+    from datetime import datetime, timezone, timedelta
+
+    now = datetime(2026, 10, 8, 15, tzinfo=timezone.utc)
+    slots = [
+        {"slot": name, "kind": "value", "text": text,
+         "due_at": (now - timedelta(minutes=minutes)).isoformat()}
+        for name, text, minutes in (
+            ("empty", "", 60),
+            ("blocked", "blocked text", 50),
+            ("ready", "oldest ready text", 40),
+            ("later", "later ready text", 20),
+            ("later-empty", "", 10),
+        )
+    ]
+    if reverse_order:
+        slots.reverse()
+    plan = {"date": "2026-10-08", "slots": slots}
+
+    def guardrails(draft, **kwargs):
+        return (draft["slot"] != "blocked", [])
+
+    with patch("scripts.due._load_plans", return_value=[(tmp_path / "plan.json", plan)]), \
+         patch("scripts.due.load_state", return_value={}), \
+         patch("scripts.due._posted_slots", return_value=set()), \
+         patch("scripts.due.now_tz", return_value=now), \
+         patch("scripts.due.settings.load", return_value={}), \
+         patch("scripts.due.validator.validate_draft_guardrails", side_effect=guardrails):
+        # Generation for the older empty slot cannot hold back ready drafts.
+        assert due.due()["slot"] == "ready"
+        next(slot for slot in slots if slot["slot"] == "ready")["posted"] = True
+        assert due.due()["slot"] == "later"
+        next(slot for slot in slots if slot["slot"] == "later")["posted"] = True
+        # Once ready work is drained, request generation for the oldest empty slot.
+        assert due.due()["slot"] == "empty"

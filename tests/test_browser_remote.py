@@ -10,12 +10,13 @@ from scripts import browser
 
 def test_remote_host_rewrites_localhost_websocket(monkeypatch):
     monkeypatch.setenv("BROWSER_HOST", "192.168.65.254")
+    port = browser._port()
 
     assert browser._is_remote() is True
-    assert browser._base() == "http://192.168.65.254:9444"
+    assert browser._base() == f"http://192.168.65.254:{port}"
     assert browser._rewrite_ws(
-        "ws://127.0.0.1:9444/devtools/page/abc"
-    ) == "ws://192.168.65.254:9444/devtools/page/abc"
+        f"ws://127.0.0.1:{port}/devtools/page/abc"
+    ) == f"ws://192.168.65.254:{port}/devtools/page/abc"
 
 
 def test_remote_browser_translates_app_mount_to_host_path(monkeypatch):

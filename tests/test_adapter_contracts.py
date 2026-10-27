@@ -183,8 +183,9 @@ class TestXMediaContracts(unittest.TestCase):
     def setUp(self):
         self.adapter = XAdapter(port=9444)
 
+    @patch("scripts.browser.ensure_chrome", return_value=True)
     @patch("scripts.post.do_post")
-    def test_x_attaches_all_cards(self, mock_do_post):
+    def test_x_attaches_all_cards(self, mock_do_post, mock_ensure):
         async def fake_do_post(text, image=None, images=None, **kwargs):
             return {
                 "posted": True,

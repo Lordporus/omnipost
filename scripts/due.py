@@ -145,10 +145,11 @@ def _posted_slots(st: dict, date: str) -> set[str]:
 
 
 def due(max_lag: float = MAX_LAG_HOURS) -> dict | None:
-    """The single oldest unposted, not-too-late slot, or None."""
+    """Oldest eligible populated slot, or an empty due slot to request generation."""
     st = load_state()
     now = now_tz()
     best: tuple[datetime, Path, dict, dict] | None = None
+    empty_best: tuple[datetime, Path, dict, dict] | None = None
     for path, plan in _load_plans():
         done = _posted_slots(st, plan.get("date", ""))
         for slot in plan.get("slots", []):
@@ -171,10 +172,10 @@ def due(max_lag: float = MAX_LAG_HOURS) -> dict | None:
                 continue
 
             if not has_text:
-                # Slot is due but text has not been synthesized yet; return it so caller can trigger pipeline
+                # Request generation separately when no populated slot can publish.
                 key = (when, path, plan, slot)
-                if best is None or key[0] < best[0]:
-                    best = key
+                if empty_best is None or key[0] < empty_best[0]:
+                    empty_best = key
                 continue
 
             # Guardrail check: do not queue posts that violate hard rules or warmup caps
@@ -193,6 +194,7 @@ def due(max_lag: float = MAX_LAG_HOURS) -> dict | None:
 
             if best is None or key[0] < best[0]:
                 best = key
+    best = best or empty_best
     if not best:
         return None
     when, path, plan, slot = best

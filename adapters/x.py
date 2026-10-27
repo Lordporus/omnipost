@@ -65,9 +65,9 @@ class XAdapter(PlatformAdapter):
         Every rendered card is passed through in order, up to the platform's
         four-image cap. A single image keeps the original ``image=`` call path.
         """
-        browser.ensure_chrome()
         media_paths = [Path(path) for path in payload.media_paths[: self.capabilities.max_images]]
         try:
+            browser.ensure_chrome()
             if len(media_paths) > 1:
                 print(
                     f"  [X] Attaching {len(media_paths)} cards (cap {self.capabilities.max_images})",

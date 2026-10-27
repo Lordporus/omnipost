@@ -116,8 +116,9 @@ class TestXAdapter(unittest.TestCase):
         self.assertFalse(res["ok"])
         self.assertIsNotNone(res["error"])
 
+    @patch("scripts.browser.ensure_chrome", return_value=True)
     @patch("scripts.post.do_post")
-    def test_x_adapter_publish_delegates_to_do_post(self, mock_do_post):
+    def test_x_adapter_publish_delegates_to_do_post(self, mock_do_post, mock_ensure):
         async def fake_do_post(text, image=None, **kwargs):
             return {
                 "posted": True,
@@ -134,6 +135,21 @@ class TestXAdapter(unittest.TestCase):
         self.assertEqual(res.url, "https://x.com/OmniPostHQ/status/123456")
         self.assertTrue(res.verified)
         mock_do_post.assert_called_once_with(text="Test automated post", image=None)
+
+    @patch("scripts.post.do_post")
+    @patch("scripts.browser.ensure_chrome")
+    def test_x_adapter_browser_unreachable_returns_failure(self, mock_ensure, mock_do_post):
+        from scripts.browser import CDPError
+
+        mock_ensure.side_effect = CDPError("remote browser is not reachable")
+        res = self.adapter.publish(PublishPayload(text="Test automated post"))
+
+        self.assertEqual(res.platform, "x")
+        self.assertFalse(res.success)
+        self.assertFalse(res.verified)
+        self.assertIsNone(res.url)
+        self.assertIn("CDPError: remote browser is not reachable", res.error)
+        mock_do_post.assert_not_called()
 
     @patch("scripts.post._read_profile")
     def test_x_adapter_verify_delegates(self, mock_read):

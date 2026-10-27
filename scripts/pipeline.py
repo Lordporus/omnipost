@@ -204,7 +204,11 @@ def run_daily_pipeline(date_str: str | None = None, force: bool = False) -> Path
                 from scripts import research
             except ImportError:
                 import research
-            swipe_items = research.hn(points=100, hours=24) or []
+            try:
+                swipe_items = research.hn(points=100, hours=24) or []
+            except Exception as hn_err:
+                print(f"[PIPELINE] HN collection notice: {hn_err}")
+                swipe_items = []
             try:
                 rss_items, _ = research.rss(hours=48)
                 swipe_items += (rss_items or [])

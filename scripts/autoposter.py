@@ -212,13 +212,29 @@ def main() -> int:
 
         # Resolve media paths
         resolved_media: list[Path] = []
+        missing_media: list[Path] = []
         for m in media_list:
             clean_m = Path(str(m).replace("\\", "/"))
             mp = ROOT / clean_m if not clean_m.is_absolute() else clean_m
-            if mp.exists():
+            if mp.is_file():
                 resolved_media.append(mp)
             else:
+                missing_media.append(mp)
                 print(f"[{datetime.now().strftime('%H:%M:%S')}] [{p_name}] [WARN] Media path not found: {mp}", file=sys.stderr)
+
+        if missing_media:
+            all_successful = False
+            failure = {
+                "success": False,
+                "verified": False,
+                "error": "Requested media files not found: " + ", ".join(map(str, missing_media)),
+            }
+            ledger.record_platform_status(
+                st, date, slot, plat_key, failure,
+                text=adapted_text, kind=kind, idempotency_key=key,
+            )
+            publish_results[plat_key] = failure
+            continue
 
         # Enforce platform character limits
         caps = adapter.capabilities
