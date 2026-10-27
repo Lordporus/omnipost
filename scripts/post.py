@@ -31,7 +31,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 try:
-    from scripts import browser, settings, validator
+    from scripts import browser, ledger, settings, validator
     from scripts.browser import CDPError, Session
     from scripts.validator import (
         GuardRailError,
@@ -43,6 +43,7 @@ try:
     )
 except ImportError:
     import browser
+    import ledger
     import settings
     import validator
     from browser import CDPError, Session
@@ -70,13 +71,18 @@ FILE_INPUT = 'input[type="file"][data-testid="fileInput"]'
 # ------------------------------------------------------------------ ledger
 
 def load_state() -> dict:
-    if STATE.exists():
-        return json.loads(STATE.read_text(encoding="utf-8"))
-    return {"handle": settings.load().get("handle", ""), "ai_update_day": 0, "posts": []}
+    return ledger.load_state(STATE)
 
 
-def save_state(st: dict) -> None:
-    STATE.write_text(json.dumps(st, indent=2, ensure_ascii=False), encoding="utf-8")
+def _record_post(entry: dict, kind: str, match: dict | None, day: int | None) -> None:
+    """Append under the ledger lock so a concurrent write is never erased."""
+    if kind == "ai_update" and not match:
+        entry["note"] = "NOT counted - verification failed, so the Day number was not consumed"
+    with ledger.state_transaction(STATE) as fresh:
+        fresh["posts"].append(entry)
+        if kind == "ai_update" and match:
+            fresh["ai_update_day"] = day
+            fresh["last_ai_update"] = entry["at"]
 
 
 def next_day(st: dict | None = None) -> int:
@@ -575,14 +581,7 @@ async def do_post(text: str, image: Path | None = None, kind: str = "value",
         "toast_sent": sent,
         "screenshot": str(shot),
     }
-    st["posts"].append(entry)
-    if kind == "ai_update":
-        if match:
-            st["ai_update_day"] = day
-            st["last_ai_update"] = entry["at"]
-        else:
-            entry["note"] = "NOT counted - verification failed, so the Day number was not consumed"
-    save_state(st)
+    _record_post(entry, kind, match, day)
 
     shot_profile = None
     try:
