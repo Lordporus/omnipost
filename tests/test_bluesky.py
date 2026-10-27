@@ -1,9 +1,12 @@
 """Unit tests for BlueskyAdapter facet calculations and ATProto XRPC interactions."""
 import json
+import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 import urllib.error
+
+from PIL import Image
 
 from adapters.base import PublishPayload
 from adapters.bluesky import BlueskyAdapter, extract_facets
@@ -151,6 +154,24 @@ class TestBlueskyAdapter(unittest.TestCase):
 
         self.assertTrue(result.success)
         mock_upload_blob.assert_called_once_with(dummy_img)
+
+    @patch.object(BlueskyAdapter, "_ensure_session")
+    @patch.object(BlueskyAdapter, "_request")
+    def test_upload_blob_compresses_oversized_image(self, mock_request, mock_session):
+        mock_session.return_value = {"accessJwt": "fake_jwt"}
+        mock_request.return_value = {"blob": {"$type": "blob"}}
+
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "oversized.png"
+            Image.effect_noise((1200, 1200), 100).convert("RGB").save(path)
+            self.assertGreater(path.stat().st_size, 2_000_000)
+
+            blob = self.adapter.upload_blob(path)
+
+        self.assertEqual(blob["$type"], "blob")
+        _, kwargs = mock_request.call_args
+        self.assertLessEqual(len(kwargs["data"]), 2_000_000)
+        self.assertEqual(kwargs["headers"]["Content-Type"], "image/jpeg")
 
 
 if __name__ == "__main__":

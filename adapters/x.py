@@ -10,7 +10,7 @@ from adapters.base import (
     PublishPayload,
     PublishResult,
 )
-from scripts import post, settings
+from scripts import browser, post, settings
 from scripts.browser import CDPError
 
 
@@ -65,6 +65,7 @@ class XAdapter(PlatformAdapter):
         Every rendered card is passed through in order, up to the platform's
         four-image cap. A single image keeps the original ``image=`` call path.
         """
+        browser.ensure_chrome()
         media_paths = [Path(path) for path in payload.media_paths[: self.capabilities.max_images]]
         try:
             if len(media_paths) > 1:

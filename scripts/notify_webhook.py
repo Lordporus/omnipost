@@ -129,7 +129,8 @@ def _dispatch_telegram(
     """Dispatches formatted message to Telegram Bot API."""
     url = f"https://api.telegram.org/bot{token}/sendMessage"
 
-    text_parts = [f"📢 {title}", "", message]
+    icon = "⚠️" if any(k in title.lower() for k in ("partial", "fail", "warn", "error")) else "📢"
+    text_parts = [f"{icon} {title}", "", message]
     if metadata:
         text_parts.append("")
         for k, v in metadata.items():

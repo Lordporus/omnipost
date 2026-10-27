@@ -53,7 +53,7 @@ def test_resolve_model_defaults_and_overrides(monkeypatch):
     """Verifies modern defaults and env overrides across providers."""
     # Gemini default and override
     monkeypatch.delenv("GEMINI_MODEL", raising=False)
-    assert resolve_model("gemini") == "gemini-2.5-flash"
+    assert resolve_model("gemini") == "gemini-3.5-flash"
     monkeypatch.setenv("GEMINI_MODEL", "gemini-1.5-pro")
     assert resolve_model("gemini") == "gemini-1.5-pro"
 
@@ -78,7 +78,7 @@ def test_resolve_model_defaults_and_overrides(monkeypatch):
 
     # Whitespace override falls back to default
     monkeypatch.setenv("GEMINI_MODEL", "   ")
-    assert resolve_model("gemini") == "gemini-2.5-flash"
+    assert resolve_model("gemini") == "gemini-3.5-flash"
 
 
 def test_resolve_api_key_and_provider(monkeypatch):

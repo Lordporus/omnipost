@@ -59,7 +59,7 @@ def notify_publish(slot: str, results: dict[str, Any]) -> None:
     failed = [p.upper() for p, res in (results or {}).items() if not res.get("success")]
 
     if verified:
-        title = "OmniPost V2 Published"
+        title = "OmniPost V2 Published" if not (failed or unverified) else "OmniPost Partial Published (Failures detected)"
         msg = f"Slot {slot} verified on: {', '.join(verified)}"
         if unverified:
             msg += f" (Unverified: {', '.join(unverified)})"

@@ -245,7 +245,7 @@ def repurpose_topic(
             card_path = Path(rendered)
             if card_path.is_file() and card_path.stat().st_size > 0:
                 try:
-                    rel_card_paths.append(str(card_path.relative_to(ROOT)))
+                    rel_card_paths.append(card_path.relative_to(ROOT).as_posix())
                 except ValueError:
                     rel_card_paths.append(str(card_path))
 
@@ -300,7 +300,7 @@ def repurpose_topic(
                 stage="media_contract",
             )
         try:
-            media_path = str(generated_path.relative_to(ROOT))
+            media_path = generated_path.relative_to(ROOT).as_posix()
         except ValueError:
             media_path = str(generated_path)
         media_map["linkedin"] = [media_path]

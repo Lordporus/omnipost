@@ -16,8 +16,10 @@ CLI:
 from __future__ import annotations
 
 import asyncio
+import ipaddress
 import json
 import os
+import socket
 import subprocess
 import sys
 import time
@@ -41,12 +43,55 @@ class CDPError(RuntimeError):
     pass
 
 
+def _browser_config() -> dict:
+    return settings.load().get("browser") or {}
+
+
 def _port() -> int:
-    return int((settings.load().get("browser") or {}).get("port") or 9222)
+    return int(_browser_config().get("port") or 9222)
+
+
+def _host_raw() -> str:
+    return (os.environ.get("BROWSER_HOST")
+            or _browser_config().get("host")
+            or "127.0.0.1").strip()
+
+
+def _host() -> str:
+    """Resolve the CDP host.
+
+    Docker Desktop reaches the Windows host through ``host.docker.internal``,
+    but Edge/Chrome rejects a Host header that is not an IP or localhost. Resolve
+    the name to its IP so both HTTP and websocket CDP requests pass that check.
+    """
+    raw = _host_raw()
+    if raw.lower() in ("localhost", "127.0.0.1", "::1"):
+        return "127.0.0.1"
+    try:
+        ipaddress.ip_address(raw)
+        return raw
+    except ValueError:
+        try:
+            return socket.gethostbyname(raw)
+        except OSError:
+            return raw
+
+
+def _is_remote() -> bool:
+    return _host() not in ("127.0.0.1", "::1")
 
 
 def _base() -> str:
-    return f"http://127.0.0.1:{_port()}"
+    return f"http://{_host()}:{_port()}"
+
+
+def _rewrite_ws(url: str) -> str:
+    if not _is_remote():
+        return url
+    host = _host()
+    for local in ("127.0.0.1", "localhost"):
+        url = url.replace(f"//{local}:", f"//{host}:")
+    return url
 
 
 def http_json(path: str, timeout: float = 5) -> Any:
@@ -55,11 +100,15 @@ def http_json(path: str, timeout: float = 5) -> Any:
 
 
 def browser_ws() -> str:
-    return http_json("/json/version")["webSocketDebuggerUrl"]
+    return _rewrite_ws(http_json("/json/version")["webSocketDebuggerUrl"])
 
 
 def list_tabs() -> list[dict]:
-    return [t for t in http_json("/json/list") if t.get("type") == "page"]
+    tabs = [t for t in http_json("/json/list") if t.get("type") == "page"]
+    for tab in tabs:
+        if tab.get("webSocketDebuggerUrl"):
+            tab["webSocketDebuggerUrl"] = _rewrite_ws(tab["webSocketDebuggerUrl"])
+    return tabs
 
 
 def alive() -> bool:
@@ -78,6 +127,10 @@ def ensure_chrome(wait: float = 25, url: str = "about:blank") -> bool:
     """
     if alive():
         return True
+    if _is_remote():
+        raise CDPError(
+            f"remote browser at {_base()} is not reachable; "
+            "start Edge with --remote-debugging-port and check BROWSER_HOST")
     cfg = settings.load()
     bcfg = cfg.get("browser") or {}
     chrome = settings.find_chrome(bcfg.get("chrome_path") or "")
@@ -86,6 +139,13 @@ def ensure_chrome(wait: float = 25, url: str = "about:blank") -> bool:
             "No Chrome/Chromium/Edge found. Install one, or set "
             "browser.chrome_path in config.json to the executable.")
     prof = settings.profile_dir(cfg)
+    # Clean stale Chromium locks if browser is not alive
+    for lock in prof.glob("Singleton*"):
+        try:
+            lock.unlink()
+        except OSError:
+            pass
+
     flags = [
         str(chrome),
         f"--remote-debugging-port={_port()}",
@@ -99,8 +159,17 @@ def ensure_chrome(wait: float = 25, url: str = "about:blank") -> bool:
         "--disable-backgrounding-occluded-windows",
         url,
     ]
-    if bcfg.get("headless"):
+    if bcfg.get("headless") or os.environ.get("HEADLESS") == "1":
         flags.append("--headless=new")
+
+    is_container_or_linux = (
+        sys.platform.startswith("linux")
+        or os.environ.get("IS_DOCKER") == "1"
+    )
+    if is_container_or_linux:
+        for flag in ("--no-sandbox", "--disable-dev-shm-usage", "--disable-gpu"):
+            if flag not in flags:
+                flags.append(flag)
     DETACHED = 0x00000200                        # Windows: CREATE_NEW_PROCESS_GROUP
     kwargs: dict[str, Any] = {"stdout": subprocess.DEVNULL,
                               "stderr": subprocess.DEVNULL,
@@ -117,6 +186,31 @@ def ensure_chrome(wait: float = 25, url: str = "about:blank") -> bool:
             return True
         time.sleep(0.5)
     raise CDPError(f"browser did not open port {_port()} within {wait}s")
+
+
+def browser_file_path(path: str | Path) -> str:
+    """Return a path the browser process can open.
+
+    When the browser is remote (Windows Edge reached from Docker), it cannot see
+    the container's ``/app`` mount. Translate that prefix to the host project
+    directory configured by ``BROWSER_HOST_PROJECT_ROOT``.
+    """
+    raw = Path(path)
+    try:
+        resolved = raw.resolve()
+    except OSError:
+        resolved = raw
+    if not _is_remote():
+        return str(resolved)
+    host_root = (os.environ.get("BROWSER_HOST_PROJECT_ROOT")
+                 or _browser_config().get("host_project_root") or "").strip()
+    if not host_root:
+        return str(resolved)
+    prefix = "/app/"
+    for candidate in (raw.as_posix(), resolved.as_posix()):
+        if candidate.startswith(prefix):
+            return host_root.rstrip("/\\") + "/" + candidate[len(prefix):]
+    return str(resolved)
 
 
 class Session:
@@ -188,10 +282,12 @@ async def open_page(url: str = "about:blank") -> str:
                     clean_target = url.split("?")[0].rstrip("/").lower()
                     needs_nav = False
                     if is_threads:
-                        # threads.com and threads.net are equivalent root domains
-                        is_subpage = any(sub in clean_tab for sub in ("/activity", "/notifications", "/search", "/messages", "/settings", "/post/"))
-                        if is_subpage:
-                            needs_nav = True
+                        # threads.com and threads.net are equivalent root domains.
+                        # Navigate whenever the requested path differs; reusing the
+                        # home feed for a profile readback hides the user's posts.
+                        target_norm = clean_target.replace("threads.net", "threads.com")
+                        tab_norm = clean_tab.replace("threads.net", "threads.com")
+                        needs_nav = target_norm != tab_norm
                     elif clean_target not in clean_tab:
                         needs_nav = True
 
@@ -370,6 +466,8 @@ if __name__ == "__main__":
     if cmd == "info":
         print(json.dumps({
             "alive": alive(),
+            "host": _host(),
+            "remote": _is_remote(),
             "port": _port(),
             "profile_dir": str(settings.profile_dir()),
             "chrome": str(settings.find_chrome(

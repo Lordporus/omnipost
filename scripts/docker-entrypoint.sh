@@ -15,6 +15,14 @@ if [ -d "/app/.env" ]; then
     exit 1
 fi
 
+# Clean up any stale Chromium singleton locks left from a previous container incarnation
+if [ -d "/app/browser-data" ]; then
+    rm -f /app/browser-data/Singleton*
+fi
+if [ -n "$BROWSER_PROFILE" ] && [ -d "$BROWSER_PROFILE" ]; then
+    rm -f "$BROWSER_PROFILE"/Singleton*
+fi
+
 # Start virtual framebuffer display for headless browser automation
 echo "Starting virtual display Xvfb on :99..."
 Xvfb :99 -screen 0 1920x1080x24 -nolisten tcp &

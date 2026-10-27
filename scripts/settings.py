@@ -129,7 +129,7 @@ def home() -> Path:
 def profile_dir(cfg: dict | None = None) -> Path:
     if cfg is None:
         cfg = load()
-    raw = (cfg.get("browser") or {}).get("profile_dir") or ""
+    raw = (cfg.get("browser") or {}).get("profile_dir") or os.environ.get("BROWSER_PROFILE") or ""
     if raw:
         p = Path(os.path.expanduser(raw))
     else:
@@ -166,6 +166,12 @@ def find_chrome(explicit: str = "") -> Path | None:
     if explicit:
         p = Path(os.path.expanduser(explicit))
         return p if p.exists() else None
+
+    env_chrome = os.environ.get("CHROME_PATH")
+    if env_chrome:
+        p = Path(os.path.expanduser(env_chrome))
+        if p.exists():
+            return p
 
     candidates: list[str] = []
     if sys.platform.startswith("win"):

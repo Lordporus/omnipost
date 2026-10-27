@@ -25,8 +25,59 @@ from adapters.base import (
 from scripts import settings
 
 BSKY_PUBLIC_API = "https://bsky.social/xrpc"
+BSKY_BLOB_LIMIT = 2_000_000
 URL_REGEX = re.compile(r"https?://[^\s<>\"'()]+")
 MENTION_REGEX = re.compile(r"@([a-zA-Z0-9.-]+\.[a-zA-Z]{2,})")
+
+
+def prepare_blob(image_path: Path) -> tuple[bytes, str]:
+    """Return image bytes and MIME type within Bluesky's blob limit.
+
+    Rendered cards can be slightly larger than 2 MB as PNGs. ATProto rejects
+    those uploads outright, so re-encode oversized cards as JPEG before sending.
+    """
+    data = image_path.read_bytes()
+    mime_type, _ = mimetypes.guess_type(str(image_path))
+    if not mime_type or not mime_type.startswith("image/"):
+        mime_type = "image/png"
+    if len(data) <= BSKY_BLOB_LIMIT:
+        return data, mime_type
+
+    import io
+
+    try:
+        from PIL import Image
+    except ImportError as exc:  # pragma: no cover - Pillow is a hard dependency
+        raise RuntimeError(
+            "Pillow is required to compress oversized Bluesky images"
+        ) from exc
+
+    with Image.open(image_path) as img:
+        rgb = img.convert("RGB")
+        for quality in (85, 80, 75, 70, 60):
+            buf = io.BytesIO()
+            rgb.save(buf, format="JPEG", quality=quality, optimize=True)
+            compressed = buf.getvalue()
+            if len(compressed) <= BSKY_BLOB_LIMIT:
+                return compressed, "image/jpeg"
+
+        scale = 0.8
+        while scale >= 0.3:
+            resized = rgb.resize(
+                (max(1, int(rgb.width * scale)), max(1, int(rgb.height * scale))),
+                Image.Resampling.LANCZOS,
+            )
+            buf = io.BytesIO()
+            resized.save(buf, format="JPEG", quality=80, optimize=True)
+            compressed = buf.getvalue()
+            if len(compressed) <= BSKY_BLOB_LIMIT:
+                return compressed, "image/jpeg"
+            scale -= 0.1
+
+    raise RuntimeError(
+        f"Image {image_path.name} exceeds Bluesky's {BSKY_BLOB_LIMIT}-byte "
+        "blob limit even after compression"
+    )
 
 
 def extract_facets(text: str) -> list[dict[str, Any]]:
@@ -222,10 +273,7 @@ class BlueskyAdapter(PlatformAdapter):
         if not image_path.exists():
             raise FileNotFoundError(f"Image not found at {image_path}")
 
-        file_bytes = image_path.read_bytes()
-        mime_type, _ = mimetypes.guess_type(str(image_path))
-        if not mime_type or not mime_type.startswith("image/"):
-            mime_type = "image/png"
+        file_bytes, mime_type = prepare_blob(image_path)
 
         headers = {
             "Authorization": f"Bearer {token}",
