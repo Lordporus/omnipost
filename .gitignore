@@ -31,6 +31,17 @@ venv/
 .pytest_cache/
 .coverage
 
+# local analysis notes - working documents, not part of the product
+AUDIT_AND_GAP_ANALYSIS.md
+OMNIPOST_SYSTEM_OVERHAUL_BRAINSTORMING.md
+PHASES_11_TO_17_HANDOFF.md
+PRODUCT_WORKFLOW_ANALYSIS.md
+SALES_PLAYBOOK.md
+SLASH_COMMANDS_CHEATSHEET.md
+
+# agent run artifacts (briefs, reports, progress logs)
+.superpowers/
+
 # os noise
 .DS_Store
 Thumbs.db

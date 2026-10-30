@@ -291,12 +291,17 @@ async def open_page(url: str = "about:blank") -> str:
                     elif clean_target not in clean_tab:
                         needs_nav = True
 
-                    if needs_nav:
-                        try:
-                            async with Session(ws) as p:
+                    try:
+                        async with Session(ws) as p:
+                            # Always activate: a background tab renders both
+                            # composers in a degraded layout (X: empty dialog
+                            # shells, Threads: 0x0 modal), even when the URL
+                            # already matches and no navigation is needed.
+                            await p.send("Page.bringToFront")
+                            if needs_nav:
                                 await p.send("Page.navigate", url=url)
-                        except Exception:
-                            pass
+                    except Exception:
+                        pass
                     return ws
 
     async with Session(browser_ws()) as browser:

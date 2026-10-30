@@ -4,6 +4,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
+from adapters import threads as threads_mod
 from adapters.base import PlatformCapabilities, PublishPayload
 from adapters.threads import ThreadsAdapter
 
@@ -61,9 +62,11 @@ class TestThreadsAdapter(unittest.TestCase):
     def test_publish_text_success(self, mock_ensure, mock_open, mock_settle, mock_sleep, mock_verify):
         mock_page = AsyncMock()
         mock_page.eval.side_effect = [
+            json.dumps({"loading": False, "button": True}),  # HYDRATED_JS
             "clicked",                      # TRIGGER_COMPOSER_JS
             "focused",                      # FOCUS_EDITOR_JS
             json.dumps({"clicked": True}),  # SUBMIT_POST_JS
+            json.dumps({"editor_open": False, "posted": True}),  # SUBMIT_CONFIRMED_JS
             "https://www.threads.net/@lordporus_ai/post/ABC123",  # THREADS_PERMALINK_JS
         ]
         mock_open.return_value = mock_page
@@ -101,9 +104,11 @@ class TestThreadsAdapter(unittest.TestCase):
         foreign = "https://www.threads.com/@gabbzkieeee/post/De6nyCpGKgI"
         mock_page = AsyncMock()
         mock_page.eval.side_effect = [
+            json.dumps({"loading": False, "button": True}),  # HYDRATED_JS
             "clicked",
             "focused",
             json.dumps({"clicked": True}),
+            json.dumps({"editor_open": False, "posted": True}),
             *([foreign] * 5),
         ]
         mock_open.return_value = mock_page
@@ -147,9 +152,11 @@ class TestThreadsAdapter(unittest.TestCase):
     ):
         mock_page = AsyncMock()
         mock_page.eval.side_effect = [
+            json.dumps({"loading": False, "button": True}),  # HYDRATED_JS
             "clicked",
             "focused",
             json.dumps({"clicked": True}),
+            json.dumps({"editor_open": False, "posted": True}),
             "https://www.threads.net/@lordporus_ai/post/IMG123",
         ]
         mock_open.return_value = mock_page
@@ -183,6 +190,73 @@ class TestThreadsAdapter(unittest.TestCase):
 
         matched = self.adapter.verify(None, "Hello Threads world from OmniPost V2!")
         self.assertTrue(matched)
+
+    def test_submit_targets_composer_not_feed(self):
+        """The Post button must be resolved from the composer that owns the editor.
+
+        The feed renders its own inline "What's new?" composer with a Post
+        button that comes first in DOM order; a document-wide search clicks it
+        and silently submits nothing.
+        """
+        js = threads_mod.SUBMIT_POST_JS
+        self.assertIn("composer_not_laid_out", js)
+        self.assertIn("getBoundingClientRect", js)
+        self.assertIn("parentElement", js)  # walks up from the editor
+        self.assertNotIn("document.querySelectorAll('div[role=\"button\"]", js)
+        self.assertNotIn("aria-disabled", js)  # Threads never sets it
+
+    def test_submit_fails_closed_when_composer_zero_sized(self):
+        """A 0x0 composer is a broken layout, not a submit."""
+        mock_page = AsyncMock()
+        mock_page.eval.side_effect = [
+            json.dumps({"loading": False, "button": True}),
+            "clicked",
+            "focused",
+            json.dumps({"error": "composer_not_laid_out"}),
+        ]
+
+        with patch("adapters.threads.ThreadsAdapter._open_stealth", new=AsyncMock(return_value=mock_page)), \
+             patch("scripts.browser.ensure_chrome"), \
+             patch("scripts.browser.settle_page", new_callable=AsyncMock), \
+             patch("adapters.threads.capture_failure_artifacts", new_callable=AsyncMock,
+                   return_value={"summary": "x"}):
+            res = self.adapter.publish(PublishPayload(text="Phronix test post"))
+
+        self.assertFalse(res.success)
+        self.assertIn("composer_not_laid_out", res.error)
+
+    @patch.object(ThreadsAdapter, "_async_verify", return_value=False)
+    @patch("adapters.threads.asyncio.sleep", new_callable=AsyncMock)
+    @patch("scripts.browser.settle_page", new_callable=AsyncMock)
+    @patch("adapters.threads.ThreadsAdapter._open_stealth")
+    @patch("scripts.browser.ensure_chrome")
+    def test_unconfirmed_submit_is_failure(
+        self, mock_ensure, mock_open, mock_settle, mock_sleep, mock_verify
+    ):
+        """A click that leaves the composer open must fail, not report unverified."""
+        mock_page = AsyncMock()
+        mock_page.eval.side_effect = [
+            json.dumps({"loading": False, "button": True}),
+            "clicked",
+            "focused",
+            json.dumps({"clicked": True}),
+            *([json.dumps({"editor_open": True, "posted": False})] * 20),
+        ]
+        mock_open.return_value = mock_page
+
+        with patch("adapters.threads.capture_failure_artifacts", new_callable=AsyncMock,
+                   return_value={"summary": "x"}):
+            res = self.adapter.publish(PublishPayload(text="Phronix test post"))
+
+        self.assertFalse(res.success)
+        self.assertIn("not confirmed", res.error)
+        mock_verify.assert_not_called()
+
+    def test_permalink_ignores_feed_links(self):
+        """A /post/ link anywhere in the main feed is not proof of this post."""
+        js = threads_mod.THREADS_PERMALINK_JS
+        self.assertNotIn('div[role="main"]', js)
+        self.assertIn('div[data-pressable-container="true"]', js)
 
 
 if __name__ == "__main__":

@@ -170,12 +170,15 @@ def _select_linkedin_media(payload: PublishPayload) -> tuple[str, Path | None]:
 
 # Stealth script to mask automated browser flags
 STEALTH_JS = r"""
-Object.defineProperty(navigator, 'webdriver', {
-  get: () => undefined
-});
-window.chrome = {
-  runtime: {}
-};
+(() => {
+  try {
+    Object.defineProperty(navigator, 'webdriver', {
+      get: () => false,
+      configurable: true,
+    });
+  } catch (e) {}
+  window.chrome = window.chrome || { runtime: {} };
+})()
 """
 
 # JavaScript to detect active LinkedIn session
@@ -346,62 +349,76 @@ TOAST_QUERY_JS = r"""
 })()
 """
 
-TRIGGER_DOCUMENT_MODAL_JS = r"""
+POINTER_CLICK_JS = r"""
+(selector) => {
+  const el = document.querySelector(selector);
+  if (!el) return 'not_found';
+  const r = el.getBoundingClientRect();
+  const o = {
+    bubbles: true, cancelable: true, composed: true,
+    clientX: r.left + r.width / 2, clientY: r.top + r.height / 2,
+    button: 0, buttons: 1, pointerId: 1, pointerType: 'mouse', isPrimary: true,
+  };
+  el.dispatchEvent(new PointerEvent('pointerdown', o));
+  el.dispatchEvent(new MouseEvent('mousedown', o));
+  el.dispatchEvent(new PointerEvent('pointerup', {...o, buttons: 0}));
+  el.dispatchEvent(new MouseEvent('mouseup', {...o, buttons: 0}));
+  el.dispatchEvent(new MouseEvent('click', {...o, buttons: 0}));
+  return 'clicked';
+}
+"""
+
+# The composer header's "More" menu only offers Groups/Events/Newsletters, so it is
+# never a fallback here.
+EXPAND_CONTENT_TYPES_JS = f"({POINTER_CLICK_JS})('button[aria-label=\"Expand content types\"]')"
+
+# After expanding, the document control is an <a>, not a <button>.
+CLICK_DOCUMENT_ITEM_JS = f"({POINTER_CLICK_JS})('a[aria-label=\"Document\"], [aria-label=\"Document\"]')"
+
+# "Choose file" creates the PDF input on demand and opens the OS dialog. Capture the
+# input instead of letting the dialog open.
+CAPTURE_FILE_INPUT_JS = r"""
 (() => {
-  // 1. Direct document button on composer toolbar
-  const docBtn = document.querySelector('button[aria-label*="Add a document" i]')
-    || document.querySelector('button[aria-label*="Document" i]')
-    || document.querySelector('button[data-view-name*="document" i]')
-    || document.querySelector('button.share-promoted-detour-button[aria-label*="document" i]')
-    || [...document.querySelectorAll('button')].find(b => {
-         const label = (b.getAttribute('aria-label') || b.innerText || '').toLowerCase();
-         return label.includes('document') || label.includes('pdf');
-       });
-  if (docBtn) {
-    docBtn.scrollIntoView({block: 'center', inline: 'nearest'});
-    docBtn.click();
-    return 'clicked';
-  }
+  window.__fileInput = null;
+  const orig = HTMLInputElement.prototype.click;
+  HTMLInputElement.prototype.click = function() {
+    if (this.type === 'file') { window.__fileInput = this; return; }
+    return orig.apply(this, arguments);
+  };
+  return 'patched';
+})()
+"""
 
-  // 2. Overflow / More options button (...) on toolbar
-  const overflowBtn = document.querySelector('button[aria-label*="More" i]')
-    || document.querySelector('button[aria-label*="Add to your post" i]')
-    || document.querySelector('button.share-box-footer__overflow-btn')
-    || document.querySelector('button[data-control-name*="overflow" i]')
-    || document.querySelector('svg[data-test-icon*="overflow"]')?.closest('button')
-    || document.querySelector('svg[data-test-icon*="more"]')?.closest('button');
-
-  if (overflowBtn) {
-    overflowBtn.click();
-    return 'overflow_clicked';
-  }
-
-  return 'not_found';
+CHOOSE_FILE_JS = r"""
+(() => {
+  const b = [...document.querySelectorAll('button')]
+    .find(x => /choose file/i.test(x.innerText || ''));
+  if (!b) return 'not_found';
+  b.click();
+  return 'clicked';
 })()
 """
 
 DOCUMENT_TITLE_JS = r"""
 (title) => {
-  const input = document.querySelector('input[id*="document-title"]')
+  const input = document.querySelector('input[placeholder*="descriptive title" i]')
     || document.querySelector('input[placeholder*="Title" i]')
     || document.querySelector('input[aria-label*="Title" i]')
-    || document.querySelector('input[name="title"]')
-    || document.querySelector('.share-document-card__title-input');
+    || document.querySelector('input[id*="document-title"]');
   if (input) {
-    input.value = title;
+    // React ignores a plain value assignment; go through the native setter.
+    const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+    setter.call(input, title);
+    if (input._valueTracker) input._valueTracker.setValue('');
     input.dispatchEvent(new Event('input', { bubbles: true }));
     input.dispatchEvent(new Event('change', { bubbles: true }));
   }
-  
-  // Find Done/Next button in modal
-  const doneBtn = document.querySelector('button.share-box-footer__primary-btn')
-    || document.querySelector('button[data-view-name*="document-done"]')
-    || document.querySelector('button.share-document-card__submit-btn')
-    || [...document.querySelectorAll('button')].find(b => {
-         const t = (b.innerText || '').trim().toLowerCase();
-         return t === 'done' || t === 'next';
-       });
-  if (doneBtn) {
+
+  const doneBtn = [...document.querySelectorAll('button')].find(b => {
+    const t = (b.innerText || '').trim().toLowerCase();
+    return t === 'done' || t === 'next';
+  });
+  if (doneBtn && !doneBtn.disabled) {
     doneBtn.click();
     return 'done_clicked';
   }
@@ -492,6 +509,10 @@ class LinkedInAdapter(PlatformAdapter):
             "Page.addScriptToEvaluateOnNewDocument",
             source=STEALTH_JS,
         )
+        # The script only applies to documents created after it is registered, so
+        # the page must be (re)navigated here; otherwise the first load runs with
+        # navigator.webdriver visible.
+        await page.send("Page.navigate", url=url)
         return page
 
     async def _async_check_session(self) -> dict[str, Any]:
@@ -625,13 +646,19 @@ class LinkedInAdapter(PlatformAdapter):
         return True
 
     async def _attach_document(self, page: Session, pdf_path: Path, doc_title: str) -> bool:
-        """Uploads a PDF document to LinkedIn using fast file input or drag-and-drop simulation."""
+        """Uploads a PDF through LinkedIn's document composer.
+
+        The path was measured live on 2026-10-29: expand the content-type row, click
+        the "Document" anchor (it navigates to the document composer), capture the
+        on-demand PDF input, set the title, then Done returns to the post composer.
+        """
         if not pdf_path.exists():
             return False
 
         abs_pdf = browser.browser_file_path(pdf_path)
+        clean_title = (doc_title or pdf_path.stem).replace("\n", " ").strip()[:50]
 
-        # Fast-Path 1: Check if composer already has an active input[type="file"]
+        # Fast-Path: a PDF-accepting input already in the DOM (retry after a partial run)
         node_id = None
         for _ in range(5):
             try:
@@ -641,7 +668,7 @@ class LinkedInAdapter(PlatformAdapter):
                     inp = await page.send(
                         "DOM.querySelector",
                         nodeId=root_id,
-                        selector='input[type="file"][accept*="pdf"], input[type="file"]',
+                        selector='input[type="file"][accept*="pdf"]',
                     )
                     node_id = inp.get("nodeId")
                     if node_id:
@@ -650,75 +677,68 @@ class LinkedInAdapter(PlatformAdapter):
                 pass
             await asyncio.sleep(0.4)
 
-        # Fast-Path 2: If no input found, synthesize document trigger
         if not node_id:
-            trig = await page.eval(TRIGGER_DOCUMENT_MODAL_JS)
-            if trig == "overflow_clicked":
-                await asyncio.sleep(0.8)
-                click_overflow_doc_js = """
-                (() => {
-                    const item = document.querySelector('li[data-control-name*="document"]')
-                        || document.querySelector('button[aria-label*="document" i]')
-                        || document.querySelector('div[role="button"][aria-label*="document" i]')
-                        || [...document.querySelectorAll('button, div[role="button"], li, span')].find(el => {
-                            const t = (el.getAttribute('aria-label') || el.innerText || '').toLowerCase();
-                            return t.includes('document');
-                        });
-                    if (item) {
-                        item.scrollIntoView({block: 'center', inline: 'nearest'});
-                        item.click();
-                        return 'clicked';
-                    }
-                    return 'item_not_found';
-                })()
-                """
-                for _ in range(6):
-                    sub_trig = await page.eval(click_overflow_doc_js)
-                    if sub_trig == "clicked":
-                        break
-                    await asyncio.sleep(0.5)
+            if await page.eval(EXPAND_CONTENT_TYPES_JS) != "clicked":
+                await capture_failure_artifacts(page, "linkedin")
+                return False
 
-            # Look for file input again in the opened document dialog
-            for _ in range(8):
-                try:
-                    doc = await page.send("DOM.getDocument", depth=-1)
-                    root_id = doc.get("root", {}).get("nodeId", 0)
-                    if root_id:
-                        inp = await page.send(
-                            "DOM.querySelector",
-                            nodeId=root_id,
-                            selector='input[type="file"]',
-                        )
-                        node_id = inp.get("nodeId")
-                        if node_id:
-                            break
-                except (CDPError, OSError, asyncio.TimeoutError, ValueError):
-                    pass
-                await asyncio.sleep(0.4)
+            clicked = False
+            for _ in range(16):
+                await asyncio.sleep(0.5)
+                if await page.eval(CLICK_DOCUMENT_ITEM_JS) == "clicked":
+                    clicked = True
+                    break
+            if not clicked:
+                await capture_failure_artifacts(page, "linkedin")
+                return False
 
-        if not node_id:
-            await capture_failure_artifacts(page, "linkedin")
-            return False
+            # "Choose file" creates the input on demand; capture it so no OS dialog opens.
+            await page.eval(CAPTURE_FILE_INPUT_JS)
+            chosen = False
+            for _ in range(20):
+                await asyncio.sleep(0.5)
+                if await page.eval(CHOOSE_FILE_JS) == "clicked":
+                    chosen = True
+                    break
+            if not chosen:
+                await capture_failure_artifacts(page, "linkedin")
+                return False
 
         try:
-            await page.send(
-                "DOM.setFileInputFiles",
-                files=[abs_pdf],
-                nodeId=node_id,
-            )
-            # Wait for PDF upload and processing with polling for title input & done button
-            clean_title = (doc_title or pdf_path.stem).replace("\n", " ").strip()[:50]
+            if node_id:
+                await page.send("DOM.setFileInputFiles", files=[abs_pdf], nodeId=node_id)
+            else:
+                res = await page.send(
+                    "Runtime.evaluate", expression="window.__fileInput", returnByValue=False
+                )
+                object_id = res.get("result", {}).get("objectId")
+                if not object_id:
+                    await capture_failure_artifacts(page, "linkedin")
+                    return False
+                await page.send("DOM.setFileInputFiles", files=[abs_pdf], objectId=object_id)
+
+            # Upload processing, then the title + Done step
             title_done = False
-            for _ in range(12):
+            for _ in range(20):
                 await asyncio.sleep(1.0)
-                res = await page.eval(f"({DOCUMENT_TITLE_JS})({json.dumps(clean_title)})")
-                if res == "done_clicked":
+                if await page.eval(f"({DOCUMENT_TITLE_JS})({json.dumps(clean_title)})") == "done_clicked":
                     title_done = True
                     break
             await asyncio.sleep(1.5)
             if not title_done:
                 await capture_failure_artifacts(page, "linkedin")
-            return title_done
+                return False
+
+            # Done lands back on the post composer; the caller types the text next.
+            focused = False
+            for _ in range(20):
+                await asyncio.sleep(0.5)
+                if await page.eval(FOCUS_EDITOR_JS) == "focused":
+                    focused = True
+                    break
+            if not focused:
+                await capture_failure_artifacts(page, "linkedin")
+            return focused
         except (CDPError, OSError, asyncio.TimeoutError, ValueError):
             await capture_failure_artifacts(page, "linkedin")
             return False

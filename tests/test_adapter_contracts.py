@@ -130,9 +130,11 @@ class TestThreadsPermalinkContracts(unittest.TestCase):
         mock_page = AsyncMock()
         permalink = "https://www.threads.net/@lordporus_ai/post/ABC123"
         mock_page.eval.side_effect = [
+            json.dumps({"loading": False, "button": True}),  # HYDRATED_JS
             "clicked",
             "focused",
             json.dumps({"clicked": True}),
+            json.dumps({"editor_open": False, "posted": True}),
             permalink,
         ]
         mock_open.return_value = mock_page
@@ -156,9 +158,11 @@ class TestThreadsPermalinkContracts(unittest.TestCase):
     ):
         mock_page = AsyncMock()
         mock_page.eval.side_effect = [
+            json.dumps({"loading": False, "button": True}),  # HYDRATED_JS
             "clicked",
             "focused",
             json.dumps({"clicked": True}),
+            json.dumps({"editor_open": False, "posted": True}),
             None,
             None,
             None,

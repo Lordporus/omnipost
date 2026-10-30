@@ -63,6 +63,10 @@ ROOT = Path(__file__).resolve().parent.parent
 STATE = ROOT / "state.json"
 SHOTS = ROOT / "shots"
 
+# x.com/compose/post mounts the modal over the feed, so two composers can exist
+# in the DOM. Which one an unscoped query hits depends on mount order, so every
+# composer write targets the dialog explicitly.
+DIALOG = '[role="dialog"]'
 EDITOR = '[data-testid="tweetTextarea_0"]'
 POST_BTN = '[data-testid="tweetButton"]'
 FILE_INPUT = 'input[type="file"][data-testid="fileInput"]'
@@ -251,7 +255,9 @@ def require_session(expect: str | None = None) -> dict:
 
 FOCUS_JS = r"""
 (() => {
-  const el = document.querySelector('[data-testid="tweetTextarea_0"]');
+  const root = document.querySelector('[role="dialog"]');
+  if (!root) return 'no-editor';
+  const el = root.querySelector('[data-testid="tweetTextarea_0"]');
   if (!el) return 'no-editor';
   el.focus();
   try {
@@ -263,28 +269,42 @@ FOCUS_JS = r"""
 })()
 """
 
+COMPOSE_READY_JS = r"""
+(() => {
+  const root = document.querySelector('[role="dialog"]');
+  if (!root) return 'no-dialog';
+  return root.querySelector('[data-testid="tweetTextarea_0"]') ? 'ready' : 'no-editor';
+})()
+"""
+
 COMPOSE_STATE_JS = r"""
 (() => {
-  const btn = document.querySelector('[data-testid="tweetButton"]')
-    || document.querySelector('[data-testid="tweetButtonInline"]')
-    || document.querySelector('button[data-testid*="tweetButton"]')
-    || document.querySelector('div[role="button"][data-testid*="tweetButton"]');
-  const ed  = document.querySelector('[data-testid="tweetTextarea_0"]');
+  const root = document.querySelector('[role="dialog"]');
+  const btn = root ? (root.querySelector('[data-testid="tweetButton"]')
+    || root.querySelector('button[data-testid*="tweetButton"]')
+    || root.querySelector('div[role="button"][data-testid*="tweetButton"]')) : null;
+  const ed  = root ? root.querySelector('[data-testid="tweetTextarea_0"]') : null;
   const toast = document.querySelector('[data-testid="toast"]');
   const txt = document.body ? document.body.innerText : '';
+  const imgs = root
+    ? [...root.querySelectorAll('[data-testid="attachments"] img, img[src^="blob:"]')]
+    : [];
   const previews = (() => {
-    const scope = document.querySelector('[role="dialog"]') || document;
-    const tagged = scope.querySelectorAll('[data-testid="attachedImage"]').length;
-    if (tagged) return tagged;
-    return scope.querySelectorAll('[data-testid="attachments"] img, img[src^="blob:"]').length;
+    if (!root) return 0;
+    const tagged = root.querySelectorAll('[data-testid="attachedImage"]').length;
+    return tagged || imgs.length;
   })();
+  const decoded = imgs.filter(i => i.naturalWidth > 0).length;
   return JSON.stringify({
     has_editor: !!ed,
     editor_text: ed ? (ed.innerText || '') : '',
     btn_found: !!btn,
     btn_disabled: btn ? (btn.getAttribute('aria-disabled') === 'true' || !!btn.disabled) : null,
     media_count: previews,
-    uploading: !!document.querySelector('[role="progressbar"]'),
+    // shortcut: X keeps a permanent progressbar stub in the composer, so a
+    // decoded preview is the only usable "upload finished" signal. Upgrade to
+    // a Network.responseReceived check if a post ever ships without its media.
+    uploading: imgs.length > 0 && decoded < imgs.length,
     toast: toast ? (toast.innerText || '').replace(/\n/g,' ').slice(0,160) : null,
     modal_open: !!document.querySelector('[aria-labelledby="modal-header"]'),
     sent: /Your post was sent/i.test(txt),
@@ -305,11 +325,12 @@ async def _insert_text(page: Session, text: str) -> str:
     state = await page.eval(FOCUS_JS)
     if state != "focused:true":
         await asyncio.sleep(0.4)
-        await page.eval("document.querySelector('%s') && document.querySelector('%s').focus()"
-                        % (EDITOR, EDITOR))
+        await page.eval(FOCUS_JS)
     await page.send("Input.insertText", text=text)
     await asyncio.sleep(0.8)
-    return await page.eval("(document.querySelector('%s')||{}).innerText || ''" % EDITOR)
+    # Read back through the same scoped lookup the focus used; reading a
+    # different composer is what let a wrong-target insert self-confirm.
+    return json.loads(await page.eval(COMPOSE_STATE_JS)).get("editor_text", "")
 
 
 ATTACH_POLLS = 30
@@ -328,7 +349,9 @@ async def _attach_images(page: Session, paths: list[Path]) -> str:
     if not files:
         return "no-files"
     doc = await page.send("DOM.getDocument", depth=-1)
-    node = await page.send("DOM.querySelector", nodeId=doc["root"]["nodeId"], selector=FILE_INPUT)
+    node = await page.send(
+        "DOM.querySelector", nodeId=doc["root"]["nodeId"], selector=f"{DIALOG} {FILE_INPUT}"
+    )
     if not node.get("nodeId"):
         return "no-file-input"
     await page.send("DOM.setFileInputFiles", files=files, nodeId=node["nodeId"])
@@ -356,22 +379,24 @@ async def _click_post(page: Session) -> str:
         if st.get("btn_disabled") is False:
             pos_js = """
             (() => {
-                const btn = document.querySelector('[data-testid="tweetButton"]')
-                    || document.querySelector('[data-testid="tweetButtonInline"]')
-                    || document.querySelector('button[data-testid*="tweetButton"]')
-                    || document.querySelector('div[role="button"][data-testid*="tweetButton"]');
+                const root = document.querySelector('[role="dialog"]');
+                if (!root) return null;
+                const btn = root.querySelector('[data-testid="tweetButton"]')
+                    || root.querySelector('button[data-testid*="tweetButton"]')
+                    || root.querySelector('div[role="button"][data-testid*="tweetButton"]');
                 if (!btn) return null;
                 const r = btn.getBoundingClientRect();
                 return {x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2)};
             })()
             """
             pos = await page.eval(pos_js)
-            if pos and isinstance(pos, dict):
-                await page.send("Input.dispatchMouseEvent", type="mouseMoved", x=pos["x"], y=pos["y"])
-                await page.send("Input.dispatchMouseEvent", type="mousePressed", x=pos["x"], y=pos["y"], button="left", clickCount=1)
-                await asyncio.sleep(0.1)
-                await page.send("Input.dispatchMouseEvent", type="mouseReleased", x=pos["x"], y=pos["y"], button="left", clickCount=1)
-            await page.eval("(() => { const b = document.querySelector('[data-testid=\"tweetButton\"]') || document.querySelector('[data-testid=\"tweetButtonInline\"]') || document.querySelector('button[data-testid*=\"tweetButton\"]') || document.querySelector('div[role=\"button\"][data-testid*=\"tweetButton\"]'); if (b) b.click(); })()")
+            if not (pos and isinstance(pos, dict)):
+                return "no-dialog"
+            await page.send("Input.dispatchMouseEvent", type="mouseMoved", x=pos["x"], y=pos["y"])
+            await page.send("Input.dispatchMouseEvent", type="mousePressed", x=pos["x"], y=pos["y"], button="left", clickCount=1)
+            await asyncio.sleep(0.1)
+            await page.send("Input.dispatchMouseEvent", type="mouseReleased", x=pos["x"], y=pos["y"], button="left", clickCount=1)
+            await page.eval("(() => { const root = document.querySelector('[role=\"dialog\"]'); if (!root) return; const b = root.querySelector('[data-testid=\"tweetButton\"]') || root.querySelector('button[data-testid*=\"tweetButton\"]') || root.querySelector('div[role=\"button\"][data-testid*=\"tweetButton\"]'); if (b) b.click(); })()")
             return "clicked"
 
     return "button never enabled"
@@ -506,9 +531,25 @@ async def do_post(text: str, image: Path | None = None, kind: str = "value",
                 f"WRONG ACCOUNT: expected @{handle()}, found @{info.get('handle')}. Refusing to post."
             )
 
+        # The modal mounts a beat after the feed. Without this gate the insert
+        # lands in the feed's inline composer, which then reads back as an empty
+        # modal and fails the preview count.
+        ready = "no-dialog"
+        for _ in range(20):
+            ready = await page.eval(COMPOSE_READY_JS)
+            if ready == "ready":
+                break
+            await asyncio.sleep(0.5)
+        if ready != "ready":
+            return {"error": f"X compose dialog not ready: {ready}",
+                    "url": await page.eval("location.href")}
 
         got = await _insert_text(page, body)
-        if header and header[:20] not in got:
+        # X accepts an image-only post, so a text insert that missed the dialog
+        # would still publish once the media attaches. Check every kind, not
+        # just ai_update, and read back through the dialog-scoped state.
+        probe = body.strip()[:20]
+        if probe and probe not in got:
             raise SystemExit(json.dumps({"error": "text did not land in the composer",
                                          "editor": got[:200]}, indent=2))
 

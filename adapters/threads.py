@@ -42,12 +42,15 @@ PREVIEW_COUNT_JS = """
 
 # Stealth script to mask automated browser flags
 STEALTH_JS = r"""
-Object.defineProperty(navigator, 'webdriver', {
-  get: () => undefined
-});
-window.chrome = {
-  runtime: {}
-};
+(() => {
+  try {
+    Object.defineProperty(navigator, 'webdriver', {
+      get: () => false,
+      configurable: true,
+    });
+  } catch (e) {}
+  window.chrome = window.chrome || { runtime: {} };
+})()
 """
 
 THREADS_BASE_URL = "https://www.threads.net/"
@@ -112,8 +115,16 @@ TRIGGER_COMPOSER_JS = r"""
 })()
 """
 
-FOCUS_EDITOR_JS = r"""
+HYDRATED_JS = r"""
 (() => {
+  const loading = /Loading\.\.\./i.test(document.body ? document.body.innerText : '');
+  const btn = document.querySelector('div[aria-label="New thread"]')
+    || document.querySelector('svg[aria-label*="Create" i]');
+  return JSON.stringify({loading: loading, button: !!btn});
+})()
+"""
+
+FOCUS_EDITOR_JS = r"""(() => {
   const ed = document.querySelector('div[contenteditable="true"][role="textbox"]')
     || document.querySelector('div[data-lexical-editor="true"]')
     || document.querySelector('div.notranslate[contenteditable="true"]')
@@ -141,23 +152,52 @@ FOCUS_EDITOR_JS = r"""
     sel.addRange(range);
   } catch (e) {}
 
+  const active = document.activeElement === ed;
   return JSON.stringify({
-    status: 'focused',
+    status: active ? 'focused' : 'unfocused',
     coords: coords,
-    is_active: document.activeElement === ed
+    is_active: active
   });
 })()
 """
 
 SUBMIT_POST_JS = r"""
 (() => {
-  const postBtn = [...document.querySelectorAll('div[role="button"], button')].find(b => (b.innerText || '').trim().toLowerCase() === 'post')
-    || document.querySelector('div[role="button"][aria-label*="Post"]');
-  if (!postBtn) return JSON.stringify({error: 'post_btn_not_found'});
-  const disabled = postBtn.getAttribute('aria-disabled') === 'true' || postBtn.disabled;
-  if (disabled) return JSON.stringify({error: 'post_btn_disabled'});
-  postBtn.click();
-  return JSON.stringify({clicked: true});
+  const ed = document.querySelector('div[contenteditable="true"][role="textbox"]')
+    || document.querySelector('div[data-lexical-editor="true"]')
+    || document.querySelector('div[contenteditable="true"]');
+  if (!ed) return JSON.stringify({error: 'no_editor'});
+  // A 0x0 composer means the modal never laid out (background tab); clicking
+  // its button submits nothing.
+  const r = ed.getBoundingClientRect();
+  if (!r.width || !r.height) return JSON.stringify({error: 'composer_not_laid_out'});
+  // Walk up from the editor so the feed's inline "What's new?" composer, which
+  // comes first in DOM order, can never receive the click.
+  let n = ed;
+  while (n && n !== document.body) {
+    const postBtn = [...n.querySelectorAll('div[role="button"], button')]
+      .find(b => (b.innerText || '').trim().toLowerCase() === 'post');
+    if (postBtn) {
+      postBtn.click();
+      return JSON.stringify({clicked: true});
+    }
+    n = n.parentElement;
+  }
+  return JSON.stringify({error: 'post_btn_not_found'});
+})()
+"""
+
+SUBMIT_CONFIRMED_JS = r"""
+(() => {
+  const ed = document.querySelector('div[contenteditable="true"][role="textbox"]')
+    || document.querySelector('div[contenteditable="true"]');
+  const toast = [...document.querySelectorAll('div[role="alert"], [data-testid*="toast"], [class*="toast"], [class*="Toast"]')]
+    .map(t => t.innerText || '')
+    .join(' ');
+  return JSON.stringify({
+    editor_open: !!ed,
+    posted: /posted|sent|shared/i.test(toast) || /\/post\//.test(toast),
+  });
 })()
 """
 
@@ -191,8 +231,7 @@ THREADS_PERMALINK_JS = r"""
 
   const activityScopes = [
     'div[data-pressable-container="true"]',
-    'article',
-    'div[role="main"]'
+    'article'
   ];
   for (const scopeSelector of activityScopes) {
     for (const scope of document.querySelectorAll(scopeSelector)) {
@@ -316,6 +355,10 @@ class ThreadsAdapter(PlatformAdapter):
             "Page.addScriptToEvaluateOnNewDocument",
             source=STEALTH_JS,
         )
+        # The script only applies to documents created after it is registered, so
+        # the page must be (re)navigated here; otherwise the first load runs with
+        # navigator.webdriver visible.
+        await page.send("Page.navigate", url=url)
         return page
 
     async def _attach_media(self, page: Session, file_paths: list[Path] | Path) -> bool:
@@ -453,13 +496,45 @@ class ThreadsAdapter(PlatformAdapter):
         try:
             await browser.settle_page(page, 4.0)
 
-            # Trigger composer (retry for hydration)
-            trig = "not_found"
-            for _ in range(10):
-                trig = await page.eval(TRIGGER_COMPOSER_JS)
-                if trig in ("clicked", "already_open"):
+            # Threads renders its shell before the composer exists; touching it early
+            # leaves a dead button. Wait for the button *and* for the loading skeleton
+            # to clear, and report this separately from "button not found".
+            hydrated = False
+            st: dict[str, Any] = {}
+            for _ in range(60):
+                st = _threads_focus_data(await page.eval(HYDRATED_JS))
+                if st.get("button") and not st.get("loading"):
+                    hydrated = True
                     break
                 await asyncio.sleep(0.5)
+
+            if not hydrated:
+                arts = await capture_failure_artifacts(page, "threads")
+                raise ComposerOpenError(
+                    "Threads did not finish hydrating: "
+                    f"state={st!r}, screenshot={arts.get('screenshot')}",
+                    platform="threads",
+                    stage="hydration",
+                    context={"state": st},
+                    artifacts=arts,
+                )
+
+            # Retry the trigger itself, not just the focus: on a cold load the first
+            # click can be swallowed and no amount of focus polling recovers it.
+            trig = "not_found"
+            foc_data: dict[str, Any] = {}
+            for _ in range(3):
+                trig = await page.eval(TRIGGER_COMPOSER_JS)
+                if trig not in ("clicked", "already_open"):
+                    await asyncio.sleep(0.5)
+                    continue
+                for _ in range(20):
+                    await asyncio.sleep(0.5)
+                    foc_data = _threads_focus_data(await page.eval(FOCUS_EDITOR_JS))
+                    if foc_data.get("status") == "focused":
+                        break
+                if foc_data.get("status") == "focused":
+                    break
 
             if trig not in ("clicked", "already_open"):
                 arts = await capture_failure_artifacts(page, "threads")
@@ -476,17 +551,6 @@ class ThreadsAdapter(PlatformAdapter):
                     context={"trigger": trig},
                     artifacts=arts,
                 )
-
-            await asyncio.sleep(1.5)
-
-            # 1. Focus editor with retry loop for animation
-            foc_data: dict[str, Any] = {}
-            for _ in range(15):
-                raw_foc = await page.eval(FOCUS_EDITOR_JS)
-                foc_data = _threads_focus_data(raw_foc)
-                if foc_data.get("status") == "focused":
-                    break
-                await asyncio.sleep(0.5)
 
             if foc_data.get("status") != "focused":
                 arts = await capture_failure_artifacts(page, "threads")
@@ -555,8 +619,30 @@ class ThreadsAdapter(PlatformAdapter):
                     artifacts=arts,
                 )
 
-            # Settle after clicking Post, then look for the real permalink.
-            await asyncio.sleep(4.0)
+            # A click is not a post: Threads leaves the composer open when it
+            # rejects a submit. Require the composer to close (or a success
+            # toast) before claiming the post exists.
+            confirmed = False
+            confirm_state: dict[str, Any] = {}
+            for _ in range(15):
+                await asyncio.sleep(1.0)
+                try:
+                    confirm_state = json.loads(await page.eval(SUBMIT_CONFIRMED_JS) or "{}")
+                except (CDPError, OSError, asyncio.TimeoutError, ValueError):
+                    confirm_state = {}
+                if confirm_state.get("posted") is True or confirm_state.get("editor_open") is False:
+                    confirmed = True
+                    break
+            if not confirmed:
+                arts = await capture_failure_artifacts(page, "threads")
+                raise SelectorError(
+                    "Threads submit was not confirmed (composer still open)",
+                    platform="threads",
+                    stage="submit_unconfirmed",
+                    context={"confirm": confirm_state},
+                    artifacts=arts,
+                )
+
             permalink = await self._poll_for_permalink(page)
             verified = bool(permalink)
             verification_source = "permalink" if permalink else None
