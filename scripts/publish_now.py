@@ -23,6 +23,7 @@ import os
 import subprocess
 import sys
 import tempfile
+import threading
 import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
@@ -44,6 +45,35 @@ except ImportError:
     from platform_limits import LIMITS, count_for, fit
 
 from adapters.base import PublishPayload, PublishResult
+
+# A publish is ~25s on X plus up to 90s of stale-timeline readback; Threads runs
+# ~60-75s end to end. 80s killed both mid-flight and left posts unreconciled.
+DEFAULT_PLATFORM_TIMEOUT = 150.0
+
+# Reconciliation runs after the worker was already killed, so it must not add
+# another full readback to the slot.
+VERIFY_BUDGET = 25.0
+
+
+def _verify_with_budget(verify: Any, text: str, budget: float = VERIFY_BUDGET) -> bool:
+    """Run ``verify(text)`` and give up after ``budget`` seconds.
+
+    A daemon thread, so a hung CDP read cannot keep the run alive past the slot.
+    shortcut: the thread keeps running after the budget, upgrade if two platforms
+    ever share one browser session concurrently.
+    """
+    box: dict[str, bool] = {}
+
+    def run() -> None:
+        try:
+            box["ok"] = bool(verify(text))
+        except Exception:
+            box["ok"] = False
+
+    thread = threading.Thread(target=run, daemon=True)
+    thread.start()
+    thread.join(budget)
+    return box.get("ok", False)
 
 
 def check_connectivity(probe_url: str = "https://www.google.com/generate_204", timeout: float = 3.0) -> bool:
@@ -99,11 +129,10 @@ def _dispatch_worker(
             except Exception:
                 stdout, stderr = "", ""
 
-            verified = False
-            try:
-                verified = bool(adapter.verify(None, payload.text[0:80]))
-            except Exception:
-                verified = False
+            verified = _verify_with_budget(
+                lambda text: adapter.verify(None, text),
+                payload.text[0:80],
+            )
 
             return PublishResult(
                 platform=platform,
@@ -191,7 +220,7 @@ def main() -> int:
     parser.add_argument("--dry-run", action="store_true", help="Simulate publish without sending")
     parser.add_argument("--image", help="Optional local image path to attach")
     parser.add_argument("--platforms", help="Comma-separated platforms to target (e.g. linkedin,threads)")
-    parser.add_argument("--timeout", type=float, default=80.0, help="Per-platform timeout in seconds (default: 80)")
+    parser.add_argument("--timeout", type=float, default=DEFAULT_PLATFORM_TIMEOUT, help=f"Per-platform timeout in seconds (default: {DEFAULT_PLATFORM_TIMEOUT:g})")
     parser.add_argument("--force", action="store_true", help="Override an existing idempotency reservation")
     parser.add_argument("--retry-failed", action="store_true", help="Explicitly retry failed records (never unverified ones)")
     parser.add_argument(

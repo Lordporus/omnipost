@@ -137,7 +137,7 @@ class TestXAdapter(unittest.TestCase):
 
     @patch("scripts.post._read_profile")
     def test_x_adapter_verify_delegates(self, mock_read):
-        async def fake_read_profile():
+        async def fake_read_profile(**_kwargs):
             return [{"text": "Test automated post"}]
         mock_read.side_effect = fake_read_profile
         self.assertTrue(self.adapter.verify(None, "Test automated post"))

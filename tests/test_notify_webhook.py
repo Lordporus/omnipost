@@ -180,9 +180,9 @@ def test_empty_env_strings_treated_as_unset():
             assert mock_urlopen.call_count == 0
 
 
-def test_default_timeout_is_five_seconds():
-    """Verifies that DEFAULT_TIMEOUT is strictly set to 5.0 seconds and passed to urlopen."""
-    assert DEFAULT_TIMEOUT == 5.0
+def test_default_timeout_is_ten_seconds():
+    """Verifies that DEFAULT_TIMEOUT is strictly set to 10.0 seconds and passed to urlopen."""
+    assert DEFAULT_TIMEOUT == 10.0
 
     env = {
         "DISCORD_WEBHOOK_URL": "https://discord.com/api/webhooks/123/token_abc",
@@ -201,7 +201,7 @@ def test_default_timeout_is_five_seconds():
 
             assert mock_urlopen.call_count == 1
             _, kwargs = mock_urlopen.call_args
-            assert kwargs.get("timeout") == 5.0
+            assert kwargs.get("timeout") == DEFAULT_TIMEOUT
 
 
 def test_proxy_from_env_vars():
@@ -235,7 +235,7 @@ def test_proxy_from_env_vars():
             }
             mock_opener.open.assert_called_once()
             _, kwargs = mock_opener.open.call_args
-            assert kwargs.get("timeout") == 5.0
+            assert kwargs.get("timeout") == DEFAULT_TIMEOUT
 
 
 def test_proxy_from_config_json(tmp_path):
@@ -368,6 +368,27 @@ def test_check_connectivity():
 
     with patch("urllib.request.urlopen", side_effect=urllib.error.URLError("Network unreachable")):
         assert check_connectivity() is False
+
+
+def test_telegram_retries_once_after_a_read_timeout():
+    """A 5s read timeout on the first attempt must not drop the alert."""
+    env = {
+        "TELEGRAM_BOT_TOKEN": "123456:TEST_TOKEN",
+        "TELEGRAM_CHAT_ID": "987654321",
+    }
+    with patch.dict(os.environ, env, clear=True):
+        with patch("urllib.request.urlopen") as mock_urlopen:
+            mock_resp = MagicMock()
+            mock_resp.read.return_value = json.dumps({"ok": True}).encode("utf-8")
+            ok_response = MagicMock()
+            ok_response.__enter__.return_value = mock_resp
+            mock_urlopen.side_effect = [
+                TimeoutError("The read operation timed out"),
+                ok_response,
+            ]
+
+            assert dispatch_webhook("publish_failed", "t", "m") is True
+            assert mock_urlopen.call_count == 2
 
 
 

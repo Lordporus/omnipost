@@ -422,23 +422,32 @@ PROFILE_JS = r"""
 
 
 async def _read_profile(h: str | None = None, limit: int = 4,
-                        wait: float = 30.0) -> list[dict]:
+                        wait: float = 30.0, target: str | None = None,
+                        interval: float = 2.0) -> list[dict]:
     """Read the newest posts back off the profile - the only honest proof.
 
-    Polls until the timeline renders: right after a send, X serves a stale
-    partial render, and an immediate read reports a months-old post as "newest".
+    Polls until the timeline renders *the post we care about*: right after a
+    send, X serves a cached render, and an immediate read reports a months-old
+    post as "newest". The cached DOM never refreshes itself, so every third
+    failed attempt forces a reload.
     """
     h = h or handle()
     page = await _open(f"https://x.com/{h}")
     try:
         await browser.settle_page(page, 6)
         deadline = time.time() + wait
+        rows: list[dict] = []
+        attempts = 0
         while time.time() < deadline:
             rows = json.loads(await page.eval(PROFILE_JS % limit) or "[]")
-            if rows:
+            if rows and (not target or any(target in _norm(r.get("text")) for r in rows)):
                 return rows
-            await asyncio.sleep(2)
-        return []
+            attempts += 1
+            if attempts % 3 == 0:
+                await page.send("Page.reload", ignoreCache=True)
+                await browser.settle_page(page, 4)
+            await asyncio.sleep(interval)
+        return rows
     finally:
         await page.__aexit__(None, None, None)
 
@@ -593,23 +602,15 @@ async def do_post(text: str, image: Path | None = None, kind: str = "value",
     finally:
         await page.__aexit__(None, None, None)
 
-    # Honest verification: read the profile back, polling (a single read can be stale).
+    # Honest verification: read the profile back, polling until this post shows up.
     head = _norm(body)[:60]
     match = None
     feed: list[dict] = []
-    deadline = time.time() + 25
-    while time.time() < deadline:
-        await asyncio.sleep(2.0)
-        try:
-            feed = await _read_profile()
-        except (CDPError, OSError, asyncio.TimeoutError) as err:
-            print(f"  ! read-back failed: {err}", file=sys.stderr)
-            continue
-        if not feed:
-            continue
-        match = next((p for p in feed if head and head[:40] in _norm(p.get("text"))), None)
-        if match:
-            break
+    try:
+        feed = await _read_profile(wait=90.0, target=head[:40])
+    except (CDPError, OSError, asyncio.TimeoutError) as err:
+        print(f"  ! read-back failed: {err}", file=sys.stderr)
+    match = next((p for p in feed if head and head[:40] in _norm(p.get("text"))), None)
 
 
     entry = {

@@ -328,7 +328,7 @@ OmniPost delivers instant executive notifications via Telegram Bot API and Disco
 | `python scripts/publish_now.py --draft '<json>'` | Inline JSON with per-platform texts. |
 | `--platforms x,threads` | Restrict the run. Default is every enabled platform. |
 | `--fresh` / `--force-fresh` | Harvest and generate today's draft before publishing. |
-| `--timeout 120` | Per-platform worker budget in seconds (default 80). |
+| `--timeout 120` | Per-platform worker budget in seconds (default 150: X spends ~25s publishing plus up to 90s waiting for a stale timeline to refresh). |
 | `--force` | Override an existing idempotency reservation. |
 | `--retry-failed` | Retry `failed` records. Never retries `submitted_unverified`. |
 | `--verify-content` | Validate draft copy against platform limits without posting or opening a browser. |
