@@ -248,7 +248,7 @@ python scripts/publish_now.py --platforms bluesky,linkedin --text "Deep dive int
 
 ### Attach Custom Media:
 ```bash
-python scripts/publish_now.py --platforms x,linkedin --text "System architecture breakdown" --media scratch/carousels/architecture_carousel.pdf
+python scripts/publish_now.py --platforms x,linkedin --text "System architecture breakdown" --image scratch/carousels/architecture_carousel.png
 ```
 
 ---

@@ -331,6 +331,7 @@ OmniPost delivers instant executive notifications via Telegram Bot API and Disco
 | `--timeout 120` | Per-platform worker budget in seconds (default 80). |
 | `--force` | Override an existing idempotency reservation. |
 | `--retry-failed` | Retry `failed` records. Never retries `submitted_unverified`. |
+| `--verify-content` | Validate draft copy against platform limits without posting or opening a browser. |
 | `--dry-run` | Simulate without sending. |
 | `python scripts/autoposter.py` | Publish the currently due slot, if any. |
 | `python scripts/autoposter.py --dry-run` | Evaluate the due slot without posting. |
