@@ -258,6 +258,18 @@ class TestThreadsAdapter(unittest.TestCase):
         self.assertNotIn('div[role="main"]', js)
         self.assertIn('div[data-pressable-container="true"]', js)
 
+    def test_verify_scans_post_containers_not_page_chrome(self):
+        """The profile has 40+ pressable divs; the live post sits at index 19.
+
+        Selecting the first six of the union with div.x1i10hfl returned only
+        nav chrome ('' / 'Edit' / 'Show more' / 'New thread'), so a published
+        post could never be verified.
+        """
+        js = threads_mod.THREADS_VERIFY_JS
+        self.assertIn('div[data-pressable-container="true"]', js)
+        self.assertNotIn("x1i10hfl", js)
+        self.assertNotIn("slice(0, 6)", js)
+
 
 if __name__ == "__main__":
     unittest.main()

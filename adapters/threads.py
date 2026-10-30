@@ -245,6 +245,16 @@ THREADS_PERMALINK_JS = r"""
 })()
 """
 
+# Only real post containers. The profile page also holds 40+ generic pressable
+# divs (nav chrome, "Edit", "Show more"), so a capped union selector can miss a
+# live post that sits further down the timeline.
+THREADS_VERIFY_JS = r"""
+(() => {
+  const posts = [...document.querySelectorAll('div[data-pressable-container="true"]')];
+  return JSON.stringify(posts.slice(0, 8).map(p => (p.innerText || '')));
+})()
+"""
+
 
 def _extract_permalink(value: Any) -> str | None:
     """Extract a Threads /post/ URL from a CDP or mocked eval response."""
@@ -703,12 +713,7 @@ class ThreadsAdapter(PlatformAdapter):
                 deadline = time.time() + 30.0
                 norm_snippet = re.sub(r"\s+", " ", text_snippet[:35]).strip().lower()
 
-                check_js = r"""
-                (() => {
-                  const posts = [...document.querySelectorAll('div[data-pressable-container="true"], div.x1i10hfl')];
-                  return JSON.stringify(posts.slice(0, 6).map(p => (p.innerText || '')));
-                })()
-                """
+                check_js = THREADS_VERIFY_JS
 
                 while time.time() < deadline:
                     await browser.settle_page(page, 3.5)

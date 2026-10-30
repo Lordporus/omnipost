@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Any
 
 ROOT = Path(__file__).resolve().parent.parent
-DEFAULT_TIMEOUT = 5.0
+DEFAULT_TIMEOUT = 10.0
 USER_AGENT = "OmniPost-Notifier/1.0"
 
 
@@ -148,18 +148,21 @@ def _dispatch_telegram(
     }
 
     req = urllib.request.Request(url, data=payload, headers=headers, method="POST")
-    try:
-        with _urlopen(req, timeout=timeout, proxy=proxy) as resp:
-            data = resp.read()
-            parsed = json.loads(data.decode("utf-8")) if data else {}
-            if parsed.get("ok", True):
-                return True
-            desc = parsed.get("description", "Unknown Telegram error")
-            print(f"[NOTIFY] Telegram warning: {desc}", file=sys.stderr)
-            return False
-    except Exception as exc:
-        print(f"[NOTIFY] Telegram webhook error: {exc}", file=sys.stderr)
-        return False
+    last_error: Exception | None = None
+    for attempt in range(2):
+        try:
+            with _urlopen(req, timeout=timeout, proxy=proxy) as resp:
+                data = resp.read()
+                parsed = json.loads(data.decode("utf-8")) if data else {}
+                if parsed.get("ok", True):
+                    return True
+                desc = parsed.get("description", "Unknown Telegram error")
+                print(f"[NOTIFY] Telegram warning: {desc}", file=sys.stderr)
+                return False
+        except Exception as exc:
+            last_error = exc
+    print(f"[NOTIFY] Telegram webhook error: {last_error}", file=sys.stderr)
+    return False
 
 
 def _dispatch_discord(

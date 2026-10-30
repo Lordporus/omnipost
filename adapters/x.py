@@ -89,13 +89,17 @@ class XAdapter(PlatformAdapter):
                     )
                 )
 
-            success = bool(res.get("posted"))
+            # X's toast only renders once the platform accepts the post, so a toast
+            # without a readback match is submitted-but-unverified, never a failure:
+            # ``failed`` is retryable and would post the same text twice.
+            posted = bool(res.get("posted"))
+            submitted = bool(res.get("toast_sent"))
+            success = posted or submitted
             err = res.get("error")
             if not success and not err:
-                if res.get("toast_sent"):
-                    err = "Post was submitted, but timeline readback verification timed out"
-                else:
-                    err = "Post submission failed or timed out"
+                err = "Post submission failed or timed out"
+            elif success and not posted:
+                err = "Post was submitted, but timeline readback verification timed out"
 
             return PublishResult(
                 platform="x",
@@ -117,8 +121,8 @@ class XAdapter(PlatformAdapter):
     def verify(self, post_id: str | None, text_snippet: str) -> bool:
         """Verify post is live by inspecting recent profile timeline."""
         try:
-            posts = asyncio.run(post._read_profile())
             head = post._norm(text_snippet)[:40]
+            posts = asyncio.run(post._read_profile(target=head, wait=60.0))
             for p in posts:
                 if head in post._norm(p.get("text", "")):
                     return True
