@@ -328,7 +328,8 @@ def _check_media_contract(work: Path) -> str:
 
     def fake_pdf(slides, title, tag, author, output_path):
         out = media_dir / "verify_carousel.pdf"
-        out.write_bytes(b"%PDF-1.4\n% verification\n")
+        # Must clear the blank-stub floor in repurpose; a real deck is 500KB+.
+        out.write_bytes(b"%PDF-1.4\n% verification\n" + b"%" * 6000)
         return out
 
     with (

@@ -398,7 +398,7 @@ def build_carousel_html(
 
 
 async def _render_pdf_cdp(html_file: Path, output_pdf: Path, port: int) -> Path:
-    """Invokes Chrome/Edge Page.printToPDF via websocket CDP."""
+    """Invokes Chrome/Edge Page.printToPDF via websocket CDP with strict render readiness."""
     browser.ensure_chrome()
     file_url = f"file:///{html_file.resolve().as_posix()}"
 
@@ -408,7 +408,31 @@ async def _render_pdf_cdp(html_file: Path, output_pdf: Path, port: int) -> Path:
 
     try:
         await page.send("Page.enable")
+        await page.send("Page.bringToFront")
         await browser.settle_page(page, 2.0)
+
+        wait_ready_js = """(() => {
+            const fontsReady = document.fonts ? document.fonts.status === 'loaded' : true;
+            const slides = document.querySelectorAll('.slide');
+            const hasSlides = slides.length > 0;
+            let laidOut = true;
+            for (const s of slides) {
+                const r = s.getBoundingClientRect();
+                if (!r.width || !r.height) { laidOut = false; break; }
+            }
+            return fontsReady && hasSlides && laidOut;
+        })()"""
+
+        for _ in range(15):
+            try:
+                is_ready = await page.eval(wait_ready_js)
+                if is_ready:
+                    break
+            except Exception:
+                pass
+            await asyncio.sleep(0.5)
+
+        await asyncio.sleep(0.5)
 
         # 1080px at 96 DPI equals exactly 11.25 inches square
         pdf_res = await page.send(
@@ -428,6 +452,11 @@ async def _render_pdf_cdp(html_file: Path, output_pdf: Path, port: int) -> Path:
             raise RuntimeError("CDP Page.printToPDF returned empty response")
 
         pdf_bytes = base64.b64decode(pdf_data)
+        if len(pdf_bytes) < 5000:
+            raise RuntimeError(
+                f"CDP Page.printToPDF rendered an empty or corrupted PDF stub ({len(pdf_bytes)} bytes)"
+            )
+
         output_pdf.parent.mkdir(parents=True, exist_ok=True)
         output_pdf.write_bytes(pdf_bytes)
         return output_pdf
