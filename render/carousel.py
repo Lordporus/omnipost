@@ -23,6 +23,57 @@ from scripts.browser import Session
 ROOT = Path(__file__).resolve().parent.parent
 TEMPLATE_PATH = Path(__file__).resolve().parent / "template.html"
 
+PALETTES: dict[str, dict[str, str]] = {
+    "emerald": {
+        "--bg-canvas": "#080A0F",
+        "--bg-card": "#0F131D",
+        "--accent-primary": "#00E599",
+        "--accent-muted": "rgba(0, 229, 153, 0.12)",
+        "--accent-gradient": "linear-gradient(135deg, #00E599 0%, #00B4D8 100%)",
+        "--border-card-highlight": "rgba(0, 229, 153, 0.35)",
+    },
+    "cyan": {
+        "--bg-canvas": "#070D18",
+        "--bg-card": "#0E182A",
+        "--accent-primary": "#38BDF8",
+        "--accent-muted": "rgba(56, 189, 248, 0.12)",
+        "--accent-gradient": "linear-gradient(135deg, #38BDF8 0%, #818CF8 100%)",
+        "--border-card-highlight": "rgba(56, 189, 248, 0.35)",
+    },
+    "amber": {
+        "--bg-canvas": "#0F0B08",
+        "--bg-card": "#1C140E",
+        "--accent-primary": "#F59E0B",
+        "--accent-muted": "rgba(245, 158, 11, 0.12)",
+        "--accent-gradient": "linear-gradient(135deg, #F59E0B 0%, #EF4444 100%)",
+        "--border-card-highlight": "rgba(245, 158, 11, 0.35)",
+    },
+}
+
+
+def resolve_palette(
+    date_str: str | None = None,
+    slot: str | None = None,
+    slot_order: list[str] | None = None,
+    seed: int | None = None,
+) -> str:
+    """Deterministically resolve a visual palette from slot or date."""
+    keys = list(PALETTES.keys())
+    if seed is not None:
+        return keys[seed % len(keys)]
+    try:
+        from datetime import date
+        day = date.fromisoformat(str(date_str)).toordinal() if date_str else 0
+    except (TypeError, ValueError):
+        day = 0
+    order = sorted(str(s) for s in (slot_order or ["08:30", "13:00", "16:00", "17:00", "20:30", "21:30"]))
+    try:
+        position = order.index(str(slot or ""))
+    except ValueError:
+        position = sum(ord(c) for c in str(slot or ""))
+    return keys[(day + position) % len(keys)]
+
+
 # Scalable SVG Icons
 SVG_CHEVRON = (
     '<svg class="bullet-icon-svg" width="20" height="20" viewBox="0 0 24 24" fill="none" '
@@ -272,9 +323,14 @@ def build_carousel_html(
     title: str = "OmniPost Carousel",
     tag: str = "ARCHITECTURE",
     author: str = "@Lordporus • OmniPost",
+    palette: str | None = None,
 ) -> str:
     """Builds a self-contained HTML document containing 1080x1080 slide pages."""
     raw_template = TEMPLATE_PATH.read_text(encoding="utf-8")
+    active_pal = palette or "emerald"
+    pal_vars = PALETTES.get(active_pal, PALETTES["emerald"])
+    pal_css = "<style>\n    :root {\n" + "\n".join(f"      {k}: {v};" for k, v in pal_vars.items()) + "\n    }\n  </style>"
+    raw_template = raw_template.replace("</head>", f"{pal_css}\n</head>", 1)
     total_slides = len(slides)
     slides_markup = []
 
@@ -327,6 +383,15 @@ def build_carousel_html(
         <h1 class="slide-title">{s_title}</h1>
         <div class="slide-body">{s_body}</div>
         {card_panel}"""
+        elif s_type == "artifact":
+            inner = f"{code_html}\n{bullets_html}".strip()
+            content_block = f"""
+        <h1 class="slide-title">{s_title}</h1>
+        <div class="slide-body">{s_body}</div>
+        <div class="card-panel code-panel-artifact">
+          <div class="artifact-header"><span class="artifact-dot"></span><span>SYSTEM ARTIFACT</span></div>
+          {inner}
+        </div>"""
         elif s_type == "solution":
             inner = f"{code_html}\n{bullets_html}".strip()
             card_panel = f'<div class="card-panel">{inner}</div>' if inner else ""

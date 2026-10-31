@@ -30,6 +30,11 @@ from scripts import browser, settings
 from scripts.browser import Session
 from scripts.errors import RenderError
 
+try:
+    from render.carousel import PALETTES, resolve_palette
+except ImportError:
+    from carousel import PALETTES, resolve_palette
+
 ROOT = Path(__file__).resolve().parent.parent
 CARD_TEMPLATE_PATH = Path(__file__).resolve().parent / "card_template.html"
 FONT_DIR = Path(__file__).resolve().parent / "assets" / "fonts"
@@ -244,6 +249,7 @@ def render_card_html(
     total_count: int,
     author: str,
     font_css: str | None = None,
+    palette: str | None = None,
 ) -> str:
     """Fills card_template.html for a single slide."""
     template = CARD_TEMPLATE_PATH.read_text(encoding="utf-8")
@@ -287,6 +293,18 @@ def render_card_html(
     res = res.replace(
         "{{PAGE_LABEL}}", html.escape(str(slide.get("page_label") or "STORYBOOK"))
     )
+
+    if palette:
+        active_pal = palette or "emerald"
+        pal_vars = PALETTES.get(active_pal, PALETTES["emerald"])
+        card_vars = {
+            "--bg-canvas": pal_vars.get("--bg-canvas", "#0D1117"),
+            "--border-emerald": pal_vars.get("--border-card-highlight", "rgba(0, 229, 153, 0.38)"),
+            "--emerald": pal_vars.get("--accent-primary", "#00E599"),
+            "--emerald-soft": pal_vars.get("--accent-muted", "rgba(0, 229, 153, 0.12)"),
+        }
+        pal_style = "<style>\n    :root {\n" + "\n".join(f"      {k}: {v};" for k, v in card_vars.items()) + "\n    }\n  </style>"
+        res = res.replace("</head>", f"{pal_style}\n</head>", 1)
 
     return res
 

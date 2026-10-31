@@ -16,6 +16,8 @@ import pytest
 
 from adapters.base import PublishPayload
 from render.carousel import (
+    PALETTES,
+    resolve_palette,
     build_carousel_html,
     create_carousel_pdf,
     generate_standard_slides,
@@ -225,3 +227,37 @@ def test_linkedin_document_publish_payload_compatibility(tmp_path):
     assert len(payload.media_paths) == 1
     assert payload.media_paths[0].suffix == ".pdf"
     assert payload.extra_metadata["document_title"] == "OmniPost Architecture Blueprint"
+
+
+def test_carousel_palette_rotation():
+    """Verify consecutive slots rotate deterministically through distinct visual palettes."""
+    pal_1 = resolve_palette(date_str="2026-10-01", slot="13:00")
+    pal_2 = resolve_palette(date_str="2026-10-01", slot="16:00")
+    assert pal_1 in PALETTES
+    assert pal_2 in PALETTES
+    assert pal_1 != pal_2, "Consecutive slots should rotate visual palettes"
+
+
+def test_build_carousel_html_embeds_palette_variables():
+    """Verify build_carousel_html injects custom palette CSS variables into template."""
+    slides = [{"type": "hero", "title": "Slide 1", "body": "Overview", "tag": "TECH"}]
+    html_cyan = build_carousel_html(slides, palette="cyan")
+    assert "#38BDF8" in html_cyan
+
+    html_amber = build_carousel_html(slides, palette="amber")
+    assert "#F59E0B" in html_amber
+
+
+def test_carousel_artifact_slide_rendering():
+    """Verify slide with type 'artifact' renders with dedicated artifact styling."""
+    slides = [{
+        "type": "artifact",
+        "title": "System Architecture Schema",
+        "body": "State machine transition specifications.",
+        "code": "schema: OmniPostV2\nmode: deterministic",
+        "tag": "SCHEMA"
+    }]
+    html_doc = build_carousel_html(slides)
+    assert "System Architecture Schema" in html_doc
+    assert "code-panel-artifact" in html_doc
+    assert "SYSTEM ARTIFACT" in html_doc
