@@ -173,6 +173,17 @@ def load_voice_profile(path: Path | None = None) -> str:
     return ""
 
 
+def load_voice_samples(path: Path | None = None) -> str:
+    """Loads operator voice samples from references/voice-samples.md if available."""
+    p = path or (ROOT / "references" / "voice-samples.md")
+    if p.exists() and p.is_file():
+        try:
+            return p.read_text(encoding="utf-8").strip()
+        except Exception:
+            return ""
+    return ""
+
+
 def strip_markdown_fences(text: str) -> str:
     """Removes markdown code fences (```json ... ``` or ``` ... ```) from LLM output."""
     t = text.strip()
@@ -327,6 +338,7 @@ def build_system_prompt(
     voice_profile: str | None = None,
     rhetorical_move: str | None = None,
     revise_feedback: str | None = None,
+    voice_samples: str | None = None,
 ) -> str:
     """Builds the system prompt: JSON schema, editorial rules, per-platform shape."""
     lines = [
@@ -384,6 +396,14 @@ def build_system_prompt(
             "Operator Voice Profile & Editorial Guidelines:",
             "Strictly adhere to the following voice profile and respect all DO-NOT rules:",
             voice_profile.strip(),
+        ])
+
+    if voice_samples and voice_samples.strip():
+        lines.extend([
+            "",
+            "Operator Voice Samples (Few-Shot Winning Examples):",
+            "Strictly emulate the tone, cadence, rhythm, and structure of these winning posts:",
+            voice_samples.strip(),
         ])
 
     return "\n".join(lines)
@@ -564,6 +584,7 @@ def generate_topic_with_llm(
     voice_profile: str | None = None,
     rhetorical_move: str | None = None,
     revise_feedback: str | None = None,
+    voice_samples: str | None = None,
     provider: str | None = None,
     api_key: str | None = None,
     model: str | None = None,
@@ -589,11 +610,14 @@ def generate_topic_with_llm(
 
     if voice_profile is None:
         voice_profile = load_voice_profile()
+    if voice_samples is None:
+        voice_samples = load_voice_samples()
 
     system_prompt = build_system_prompt(
         voice_profile=voice_profile,
         rhetorical_move=rhetorical_move,
         revise_feedback=revise_feedback,
+        voice_samples=voice_samples,
     )
     user_prompt = build_user_prompt(items=items, kind=kind)
 
