@@ -251,10 +251,11 @@ def generate_heuristic_topic(kind: str, items: list[dict[str, Any]]) -> dict[str
     bsky_base = f"{title}: {summary}" if summary != title else f"Deep dive on {title}: {points[0] if points else ''}"
     bluesky_text = bsky_base[:290].strip()
 
-    # Threads: <500 chars, conversational question starter ending with ?
-    threads_text = f"{title}. {points[0] if points else ''}\n\nWhat are your thoughts on this approach?"
+    # Threads: conversational first-person note. No closing question - the
+    # validator bans bait and the prompt no longer asks for one.
+    threads_text = f"{title}. {takeaway or (points[0] if points else '')}".strip()
     if len(threads_text) > 480:
-        threads_text = threads_text[:450].strip() + "\n\nWhat are your thoughts?"
+        threads_text = threads_text[:477].rstrip() + "..."
 
     # LinkedIn: topic-derived context, practical changes, and bottom line.
     linkedin_text = (
@@ -330,8 +331,8 @@ def generate_platform_native_drafts(
     Guarantees presence of:
     - 'x' (< 280 chars, contrarian hook, 0 hashtags)
     - 'bluesky' (< 300 chars, tech take)
-    - 'threads' (< 500 chars, ends with discussion question)
-    - 'linkedin' (600-1200 chars, structured framework)
+    - 'threads' (< 500 chars, first-person note, no closing question)
+    - 'linkedin' (600-1200 chars, one story or result)
     - 'carousel' (title and 4 slides)
     - 'platforms' (dict mapping platform name to tailored text)
     """

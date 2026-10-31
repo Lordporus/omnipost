@@ -345,6 +345,36 @@ def test_voice_profile_prompt_integration():
     assert "revolutionize" in system_prompt
 
 
+def test_system_prompt_does_not_mandate_an_engagement_question():
+    """Threads copy must not be pushed at the phrases the validator bans."""
+    prompt = build_system_prompt()
+    assert "Do not end with a question." in prompt
+    assert "engagement question" not in prompt.lower()
+    assert "discussion" not in prompt.lower()
+
+
+def test_system_prompt_does_not_mandate_one_rhetorical_skeleton():
+    """Every post sharing headline->points->takeaway is the loudest machine tell."""
+    prompt = build_system_prompt()
+    assert "framework with bullet points" not in prompt
+    assert "structured framework" not in prompt
+    assert "opening move" in prompt
+
+
+def test_system_prompt_bans_ai_tells():
+    prompt = build_system_prompt()
+    for tell in ("delve", "leverage", "unlock", "game-changer", "seamless"):
+        assert tell in prompt
+
+
+def test_system_prompt_keeps_every_output_key():
+    """The JSON contract is consumed by downstream code; it must not shrink."""
+    prompt = build_system_prompt()
+    for key in ("headline", "body", "points", "takeaway", "category",
+                "x", "bluesky", "threads", "linkedin", "carousel"):
+        assert f'"{key}"' in prompt
+
+
 def test_generate_topic_from_items_llm_success(monkeypatch):
     """Verifies generate_topic_from_items returns LLM synthesis when successful."""
     from scripts.generate import generate_topic_from_items

@@ -8,6 +8,7 @@ from scripts.generate import (
     generate_topic_from_items,
     load_daily_swipe,
 )
+from scripts.validator import engagement_bait_pattern_detected
 
 
 def test_extract_key_takeaways():
@@ -75,7 +76,7 @@ def test_generate_platform_native_drafts_heuristic_bounds():
 
     assert "threads" in drafts
     assert len(drafts["threads"]) <= 500
-    assert drafts["threads"].strip().endswith("?")  # Engagement question rule
+    assert not engagement_bait_pattern_detected(drafts["threads"])[0]
 
     assert "linkedin" in drafts
     assert len(drafts["linkedin"]) >= 200
@@ -113,7 +114,7 @@ def test_generate_platform_native_drafts_with_items():
     assert len(drafts["x"]) <= 280
     assert len(drafts["bluesky"]) <= 300
     assert len(drafts["threads"]) <= 500
-    assert drafts["threads"].strip().endswith("?")
+    assert not engagement_bait_pattern_detected(drafts["threads"])[0]
     assert len(drafts["carousel"]["slides"]) == 4
 
 
