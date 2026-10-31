@@ -194,6 +194,23 @@ def test_due_returns_unpopulated_slot_within_lag():
         assert res["text"] == ""
 
 
+def test_due_ignores_a_slot_dropped_by_the_humanity_gate():
+    from scripts import due
+    from datetime import datetime, timezone, timedelta
+    now = datetime.now(timezone.utc)
+    due_at = (now - timedelta(minutes=15)).isoformat()
+    mock_plan = {
+        "date": now.strftime("%Y-%m-%d"),
+        "slots": [
+            {"slot": "13:00", "kind": "value", "text": "",
+             "due_at": due_at, "skipped": "humanity_gate"}
+        ]
+    }
+    with patch("scripts.due._load_plans", return_value=[(Path("drafts/test.json"), mock_plan)]), \
+         patch("scripts.due.load_state", return_value={}):
+        assert due.due() is None
+
+
 SLOP_DRAFT = "In today's fast-paced world, we delve into the tapestry of innovation and leverage it."
 GOOD_DRAFT = "We cut latency from 11 seconds to 3. The fix was one index. No rewrite."
 

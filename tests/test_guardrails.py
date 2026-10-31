@@ -279,6 +279,45 @@ class TestHumanityGate(unittest.TestCase):
         self.assertTrue(ok)
         self.assertEqual(errors, [])
 
+    def test_short_post_with_two_em_dashes_is_a_violation(self):
+        _, violations = score_humanity("Shipped it — twice — today. 2 fixes.")
+        self.assertTrue(any("Em-dash" in v for v in violations))
+
+    def test_single_emoji_is_a_violation(self):
+        _, violations = score_humanity("Shipped 3 fixes today 🚀")
+        self.assertTrue(any("emoji" in v for v in violations))
+
+    def test_url_fragment_is_not_a_hashtag(self):
+        _, violations = score_humanity(
+            "Read https://example.com/#install before shipping. 2 lines."
+        )
+        self.assertFalse(any("Hashtag" in v for v in violations))
+
+    def test_prompt_banned_words_are_all_scored(self):
+        _, violations = score_humanity("A seamless, robust rewrite. 3 days.")
+        self.assertTrue(any("seamless" in v for v in violations))
+        self.assertTrue(any("robust" in v for v in violations))
+
+    def test_gate_can_be_disabled_by_config(self):
+        ok, errors = validate_draft_guardrails(
+            {"text": SLOP_SAMPLE[:270]},
+            cfg={"humanity_gate": False},
+            platform="bluesky",
+            raise_on_error=True,
+        )
+        self.assertTrue(ok)
+        self.assertEqual(errors, [])
+
+    def test_gate_threshold_is_configurable(self):
+        ok, errors = validate_draft_guardrails(
+            {"text": HUMAN_SAMPLE},
+            cfg={"humanity_threshold": 101},
+            platform="bluesky",
+            raise_on_error=False,
+        )
+        self.assertFalse(ok)
+        self.assertTrue(any("Humanity gate" in e for e in errors))
+
 
 if __name__ == "__main__":
     unittest.main()

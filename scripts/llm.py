@@ -356,7 +356,7 @@ def build_system_prompt(
         "- Never use: delve, game-changer, leverage, unlock, tapestry, testament,",
         "  \"in today's fast-paced\", \"it's not just X, it's Y\", revolutionize, seamless, robust.",
         "- No hashtags. No emoji.",
-        "- At most one em-dash per 150 characters.",
+        "- At most one em-dash, plus one more per 150 characters.",
         "- Do not end with a question. Do not ask for likes, replies, follows, saves, or shares.",
         "- No abstract three-item lists (X, Y, and Z) where all three are buzzwords.",
         "- Do not reuse the same rhetorical skeleton across posts.",

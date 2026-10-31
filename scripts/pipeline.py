@@ -53,15 +53,21 @@ except ImportError:
 HUMANITY_PLATFORMS = ("x", "bluesky", "threads", "linkedin")
 
 
-def _humanity_violations(poly_data: dict[str, Any]) -> list[str]:
+def _humanity_violations(
+    poly_data: dict[str, Any],
+    active_platforms: set[str] | None = None,
+) -> list[str]:
     """Gate every drafted platform. A broken scorer fails open, not closed."""
+    active = active_platforms or set(HUMANITY_PLATFORMS)
     violations: list[str] = []
     for platform in HUMANITY_PLATFORMS:
+        if platform not in active:
+            continue
         text = ((poly_data or {}).get(platform) or {}).get("text") or ""
         if not text.strip():
             continue
         try:
-            score, issues = validator.score_humanity(text, platform)
+            score, issues = validator.score_humanity(text)
         except Exception as exc:
             print(
                 f"[PIPELINE] Humanity gate error on {platform}, failing open: {exc}",
@@ -125,6 +131,10 @@ def populate_daily_plan(plan: dict[str, Any], swipe_items: list[dict[str, Any]],
     """Populate every empty slot with unique, relevant, voice-aligned content."""
     voice_profile = load_voice_profile()
     slot_order = [str(s.get("slot") or "") for s in plan.get("slots", [])]
+    configured = settings.load().get("platforms") or {}
+    active_platforms = {
+        name for name, conf in configured.items() if (conf or {}).get("enabled", name == "x")
+    } or set(HUMANITY_PLATFORMS)
     seen_content: set[str] = set()
     seen_bullets: set[str] = set()
 
@@ -216,7 +226,7 @@ def populate_daily_plan(plan: dict[str, Any], swipe_items: list[dict[str, Any]],
                 poly_data = None
                 continue
 
-            violations = _humanity_violations(poly_data)
+            violations = _humanity_violations(poly_data, active_platforms)
             if violations:
                 print(
                     f"[PIPELINE] Humanity gate rejected slot {slot_data.get('slot')}, "
@@ -247,7 +257,7 @@ def populate_daily_plan(plan: dict[str, Any], swipe_items: list[dict[str, Any]],
                         f"{slot_data.get('slot')}: {exc}"
                     )
 
-                violations = _humanity_violations(poly_data)
+                violations = _humanity_violations(poly_data, active_platforms)
                 if violations:
                     _drop_slot_for_humanity(plan, slot_data, violations)
                     topic = None

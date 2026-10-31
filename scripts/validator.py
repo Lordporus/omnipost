@@ -365,6 +365,9 @@ HUMAN_TELL_PATTERNS = [
     r"\bunlock\b",
     r"\btapestry\b",
     r"\btestament\b",
+    r"\brevolutionize\b",
+    r"\bseamless\b",
+    r"\brobust\b",
     r"in today'?s fast[- ]paced",
     r"\bit'?s not just\b[^.!?\n]{0,60}\bit'?s\b",
 ]
@@ -402,7 +405,7 @@ def _abstract_tricolon(text: str) -> str:
     return ""
 
 
-def score_humanity(text: str, platform: str = "x") -> tuple[int, list[str]]:
+def score_humanity(text: str) -> tuple[int, list[str]]:
     """Scores draft text 0-100 for measurable AI tells. Higher is more human.
 
     These are the same rules the generation prompt states, so the prompt and the
@@ -422,7 +425,7 @@ def score_humanity(text: str, platform: str = "x") -> tuple[int, list[str]]:
             violations.append(f"AI tell: '{match.group(0)}'")
             score -= 20
 
-    if len(body) >= 150 and body.count("\u2014") * 150 > len(body):
+    if body.count("\u2014") > max(1, len(body) // 150):
         violations.append(f"Em-dash density: {body.count(chr(8212))} in {len(body)} chars")
         score -= 10
 
@@ -432,10 +435,10 @@ def score_humanity(text: str, platform: str = "x") -> tuple[int, list[str]]:
         score -= 10
 
     emoji_count = len(_EMOJI_RE.findall(body))
-    if emoji_count > 1:
-        violations.append(f"{emoji_count} emoji (max 1)")
+    if emoji_count > 0:
+        violations.append(f"{emoji_count} emoji (none allowed)")
         score -= 10
-    hashtags = _HASHTAG_RE.findall(body)
+    hashtags = _HASHTAG_RE.findall(re.sub(r"https?://\S+", "", body))
     if hashtags:
         violations.append(f"Hashtag used: {hashtags[0]}")
         score -= 15
@@ -732,16 +735,21 @@ def validate_draft_guardrails(
                 raise AccountWarmupError(warm_msg)
 
     # 8. Humanity gate: measurable AI tells. Fail open if the scorer itself breaks.
-    try:
-        humanity_score, humanity_violations = score_humanity(text, platform)
-    except Exception as exc:
-        print(f"[VALIDATOR] Humanity gate error, failing open: {exc}", file=sys.stderr)
-        humanity_score, humanity_violations = 100, []
-    if humanity_score < HUMANITY_THRESHOLD:
-        msg = f"Humanity gate failed ({humanity_score}/100): " + "; ".join(humanity_violations)
-        errors.append(msg)
-        if raise_on_error:
-            raise HumanityGateError(msg)
+    if (cfg or {}).get("humanity_gate", True):
+        try:
+            humanity_score, humanity_violations = score_humanity(text)
+        except Exception as exc:
+            print(f"[VALIDATOR] Humanity gate error, failing open: {exc}", file=sys.stderr)
+            humanity_score, humanity_violations = 100, []
+        try:
+            threshold = int((cfg or {}).get("humanity_threshold", HUMANITY_THRESHOLD))
+        except (TypeError, ValueError):
+            threshold = HUMANITY_THRESHOLD
+        if humanity_score < threshold:
+            msg = f"Humanity gate failed ({humanity_score}/100): " + "; ".join(humanity_violations)
+            errors.append(msg)
+            if raise_on_error:
+                raise HumanityGateError(msg)
 
     if errors:
         return False, errors

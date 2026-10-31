@@ -154,6 +154,8 @@ def due(max_lag: float = MAX_LAG_HOURS) -> dict | None:
         for slot in plan.get("slots", []):
             if slot.get("posted") or slot.get("slot") in done:
                 continue
+            if slot.get("skipped"):
+                continue
             has_text = bool((slot.get("text") or "").strip())
             try:
                 when = datetime.fromisoformat(slot["due_at"])
