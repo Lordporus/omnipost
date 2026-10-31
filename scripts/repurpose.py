@@ -299,6 +299,13 @@ def repurpose_topic(
                 platform="linkedin",
                 stage="media_contract",
             )
+        if not generated_path.is_file() or generated_path.stat().st_size < 5000:
+            size_bytes = generated_path.stat().st_size if generated_path.exists() else 0
+            raise MediaContractError(
+                f"LinkedIn carousel rendering produced an empty or corrupted stub ({size_bytes} bytes).",
+                platform="linkedin",
+                stage="media_contract",
+            )
         try:
             media_path = generated_path.relative_to(ROOT).as_posix()
         except ValueError:

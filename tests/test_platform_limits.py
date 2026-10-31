@@ -199,7 +199,9 @@ def test_dispatch_fits_oversized(tmp_path, monkeypatch):
 
 def test_linkedin_carousel_contract(tmp_path, monkeypatch):
     pdf_path = tmp_path / "linkedin_deck.pdf"
-    pdf_path.write_bytes(b"%PDF-1.4\n")
+    # Must clear the renderer's blank-stub floor (a real deck is 500KB+; the
+    # failure mode this guards against was a 759-byte empty PDF).
+    pdf_path.write_bytes(b"%PDF-1.4\n" + b"%" * 6000)
 
     card_path = tmp_path / "card_1.png"
     card_path.write_bytes(b"\x89PNG\r\n\x1a\nstorybook")

@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import base64
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -130,6 +130,83 @@ def test_create_carousel_pdf_binary_structure(tmp_path):
         assert output_pdf.exists()
         pdf_data = output_pdf.read_bytes()
         assert pdf_data.startswith(b"%PDF-")
+
+
+def test_repurpose_rejects_empty_carousel_pdf_stub(tmp_path):
+    """Verify repurpose_topic raises MediaContractError when PDF output is an empty stub (<5000 bytes)."""
+    import pytest
+    from scripts.errors import MediaContractError
+    from scripts.repurpose import repurpose_topic
+
+    stub_pdf = tmp_path / "stub.pdf"
+    stub_pdf.write_bytes(b"%PDF-1.4 empty stub")
+
+    topic_data = {
+        "headline": "Deterministic Agent Architectures for Sovereign High-Performance Computing",
+        "body": "Production state machines eliminate dual-post bugs in high concurrency distributed multi-tenant systems. We ensure zero dual-post bugs across all channels.",
+        "points": [
+            "Atomic file replacement prevents corrupted state reads across concurrent readers and background daemons",
+            "Direct Chrome DevTools Protocol socket communication completely bypasses third-party SaaS cloud API costs",
+            "Verified profile readback confirms live rendering and catches rendering regressions before subscribers notice",
+        ],
+        "media_type": "carousel",
+        "carousel": {
+            "title": "Stub Carousel",
+            "slides": [{"title": "Slide 1", "body": "Body", "bullets": ["B1"], "tag": "TEST"}],
+        },
+    }
+
+    with patch("scripts.repurpose.create_carousel_pdf", return_value=stub_pdf),          patch("render.cards.generate_topic_cards", return_value=[tmp_path / "card.png"]):
+        (tmp_path / "card.png").write_bytes(b"fake png")
+        with pytest.raises(MediaContractError, match="empty or corrupted stub"):
+            repurpose_topic(topic_data, generate_media=True)
+
+
+def test_render_pdf_cdp_rejects_blank_stub(tmp_path):
+    """A blank printToPDF response must raise instead of reaching LinkedIn."""
+    import asyncio
+
+    from render import carousel
+
+    html_file = tmp_path / "deck.html"
+    html_file.write_text("<section class='slide'>Slide 1</section>", encoding="utf-8")
+    output_pdf = tmp_path / "deck.pdf"
+
+    class FakePage:
+        def __init__(self):
+            self.data = base64.b64encode(b"%PDF-1.4\n% blank\n").decode()
+
+        async def send(self, method, **_params):
+            return {"data": self.data} if method == "Page.printToPDF" else {}
+
+        async def eval(self, _js):
+            return True
+
+        async def __aexit__(self, *_args):
+            return None
+
+    class FakeSession:
+        def __init__(self, _ws):
+            self.page = FakePage()
+
+        async def __aenter__(self):
+            return self.page
+
+    async def fake_open(_url):
+        return object()
+
+    async def fake_settle(_page, _seconds):
+        return None
+
+    with patch.object(carousel.browser, "ensure_chrome"), \
+         patch.object(carousel.browser, "open_page", fake_open), \
+         patch.object(carousel.browser, "settle_page", fake_settle), \
+         patch.object(carousel, "Session", FakeSession), \
+         patch.object(carousel.asyncio, "sleep", new=AsyncMock()):
+        with pytest.raises(RuntimeError, match="empty or corrupted PDF stub"):
+            asyncio.run(carousel._render_pdf_cdp(html_file, output_pdf, 9444))
+
+    assert not output_pdf.exists()
 
 
 def test_linkedin_document_publish_payload_compatibility(tmp_path):
