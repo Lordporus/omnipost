@@ -57,8 +57,15 @@ def ensure_daily_plan() -> None:
     today = datetime.now().strftime("%Y-%m-%d")
     plan_file = ROOT / "drafts" / f"{today}.json"
     if not plan_file.exists():
-        print(f"[{datetime.now().strftime('%H:%M:%S')}] [PLAN] Generating daily plan for {today} with random jitter...")
-        run_cmd([str(SCRIPTS / "due.py"), "make-plan"])
+        print(f"[{datetime.now().strftime('%H:%M:%S')}] [PLAN] Generating daily plan for {today} with deterministic jitter...")
+        cmd = [str(SCRIPTS / "due.py"), "make-plan", "--date", today]
+        try:
+            cfg = settings.load()
+            if cfg.get("allow_skipped_slots", cfg.get("skip_slot_enabled", False)):
+                cmd.append("--allow-skip")
+        except Exception:
+            pass
+        run_cmd(cmd)
 
 
 def _retry_failed_enabled() -> bool:

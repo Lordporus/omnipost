@@ -37,6 +37,9 @@ DEFAULTS: dict[str, Any] = {
     "timezone": "local",                # e.g. "Asia/Kolkata"; "local" = machine tz
     "slots": ["13:00", "16:00", "20:00", "00:00"],
     "jitter_minutes": 45,
+    "jitter_min_minutes": 7,
+    "jitter_max_minutes": 15,
+    "allow_skipped_slots": False,
     "min_gap_hours": 3,
     "ai_update_slot": "16:00",
     "ai_update_header": "Daily AI updates | Day {day}",
