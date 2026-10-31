@@ -149,7 +149,10 @@ def test_populate_daily_plan_expands_pool_when_initial_slice_fails():
         {"title": "Politics News 3", "score": 10},
         {"title": "Postgres Internals Deep Dive", "score": 200},
     ]
-    def fake_gen(kind, items, voice_profile=None):
+    def fake_gen(kind, items, voice_profile=None, rhetorical_move=None):
+        from scripts.llm import RHETORICAL_MOVES
+
+        assert rhetorical_move in RHETORICAL_MOVES
         if len(items) == 3:
             raise NoRelevantTopic("no_relevant_items in slice")
         return {

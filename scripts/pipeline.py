@@ -33,7 +33,7 @@ try:
         NoRelevantTopic,
         TopicRejected,
     )
-    from scripts.llm import load_voice_profile
+    from scripts.llm import load_voice_profile, rhetorical_move_for
     from scripts.relevance import score_candidates
 except ImportError:
     import settings
@@ -42,7 +42,7 @@ except ImportError:
     import repurpose
     from browser_daemon import ensure_browser_running
     from errors import CopyValidationError, DuplicateTopic, NoRelevantTopic, TopicRejected
-    from llm import load_voice_profile
+    from llm import load_voice_profile, rhetorical_move_for
     from relevance import score_candidates
 
 
@@ -77,6 +77,7 @@ def _drop_candidate(
 def populate_daily_plan(plan: dict[str, Any], swipe_items: list[dict[str, Any]], force: bool = False) -> dict[str, Any]:
     """Populate every empty slot with unique, relevant, voice-aligned content."""
     voice_profile = load_voice_profile()
+    slot_order = [str(s.get("slot") or "") for s in plan.get("slots", [])]
     seen_content: set[str] = set()
     seen_bullets: set[str] = set()
 
@@ -111,6 +112,9 @@ def populate_daily_plan(plan: dict[str, Any], swipe_items: list[dict[str, Any]],
                     kind,
                     candidates,
                     voice_profile=voice_profile,
+                    rhetorical_move=rhetorical_move_for(
+                        plan.get("date"), slot_data.get("slot"), slot_order
+                    ),
                 )
             except TopicRejected as exc:
                 title = str((exc.item or {}).get("title") or "unknown")[:80]

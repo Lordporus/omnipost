@@ -26,6 +26,7 @@ from scripts.llm import (
     resolve_api_key,
     resolve_model,
     resolve_provider,
+    rhetorical_move_for,
     strip_markdown_fences,
 )
 
@@ -358,7 +359,7 @@ def test_system_prompt_does_not_mandate_one_rhetorical_skeleton():
     prompt = build_system_prompt()
     assert "framework with bullet points" not in prompt
     assert "structured framework" not in prompt
-    assert "opening move" in prompt
+    assert "Do not reuse the same rhetorical skeleton across posts." in prompt
 
 
 def test_system_prompt_bans_ai_tells():
@@ -373,6 +374,60 @@ def test_system_prompt_keeps_every_output_key():
     for key in ("headline", "body", "points", "takeaway", "category",
                 "x", "bluesky", "threads", "linkedin", "carousel"):
         assert f'"{key}"' in prompt
+
+
+def test_rhetorical_move_is_deterministic_per_slot():
+    slots = ["00:00", "13:00", "16:00", "20:00"]
+    assert rhetorical_move_for("2026-10-31", "13:00", slots) == rhetorical_move_for(
+        "2026-10-31", "13:00", slots
+    )
+
+
+def test_consecutive_slots_get_different_moves():
+    slots = ["00:00", "13:00", "16:00", "20:00"]
+    moves = [rhetorical_move_for("2026-10-31", slot, slots) for slot in slots]
+    assert len(set(moves)) == len(moves)
+    assert all(earlier != later for earlier, later in zip(moves, moves[1:]))
+
+
+def test_rotation_shifts_across_days():
+    """A month rollover must not freeze the schedule on the same move."""
+    slots = ["00:00", "13:00", "16:00", "20:00"]
+    today = [rhetorical_move_for("2026-10-31", slot, slots) for slot in slots]
+    tomorrow = [rhetorical_move_for("2026-11-01", slot, slots) for slot in slots]
+    assert today != tomorrow
+
+
+def test_system_prompt_carries_the_assigned_move():
+    prompt = build_system_prompt(rhetorical_move="failure")
+    assert "Opening move for this post: failure." in prompt
+
+
+def test_system_prompt_omits_move_when_not_assigned():
+    assert "Opening move for this post:" not in build_system_prompt()
+
+
+def test_generate_topic_with_llm_forwards_the_move(monkeypatch):
+    captured = {}
+
+    def fake_call_llm_api(**kwargs):
+        captured["system_prompt"] = kwargs["system_prompt"]
+        return json.dumps({
+            "headline": "h",
+            "body": "b",
+            "points": ["p"],
+            "takeaway": "t",
+            "category": "TECH INSIGHT",
+        })
+
+    monkeypatch.setattr("scripts.llm.call_llm_api", fake_call_llm_api)
+    monkeypatch.setattr("scripts.llm.resolve_provider", lambda **_: "openai")
+    monkeypatch.setattr("scripts.llm.resolve_api_key", lambda *a, **k: "key")
+
+    ok, _ = generate_topic_with_llm([{"title": "x", "summary": "y"}], rhetorical_move="artifact")
+
+    assert ok is True
+    assert "Opening move for this post: artifact." in captured["system_prompt"]
 
 
 def test_generate_topic_from_items_llm_success(monkeypatch):

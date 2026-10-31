@@ -404,6 +404,7 @@ def generate_topic_from_items(
     items: list[dict[str, Any]],
     use_llm: bool = True,
     voice_profile: str | None = None,
+    rhetorical_move: str | None = None,
 ) -> dict[str, Any]:
     """Generate a structured topic from the highest-scoring relevant item.
 
@@ -436,6 +437,7 @@ def generate_topic_from_items(
                 items=[source_item],
                 kind=kind,
                 voice_profile=voice_profile,
+                rhetorical_move=rhetorical_move,
             )
         except Exception:
             ok, topic = False, None

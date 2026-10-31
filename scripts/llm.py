@@ -13,6 +13,7 @@ import sys
 import urllib.error
 import urllib.parse
 import urllib.request
+from datetime import date
 from pathlib import Path
 from typing import Any
 
@@ -293,7 +294,36 @@ def parse_llm_json(raw_text: str) -> dict[str, Any]:
     return res
 
 
-def build_system_prompt(voice_profile: str | None = None) -> str:
+RHETORICAL_MOVES = ("number", "contradiction", "question", "artifact", "failure")
+
+_MOVE_BRIEF = {
+    "number": "Lead with the concrete number, benchmark, or size in the item. No preamble.",
+    "contradiction": "Lead by contradicting what the headline assumes. Name the thing most people get wrong.",
+    "question": "Lead with one plain question a reader could answer in a sentence. Do not end with one.",
+    "artifact": "Lead by pointing at the artifact itself: the repo, paper, changelog, or chart.",
+    "failure": "Lead with what broke, regressed, or did not ship.",
+}
+
+
+def rhetorical_move_for(
+    date_str: str | None,
+    slot: str | None,
+    slot_order: list[str] | None = None,
+) -> str:
+    """Opening move for one slot. Same (date, slot) always returns the same move."""
+    try:
+        day = date.fromisoformat(str(date_str)).toordinal()
+    except (TypeError, ValueError):
+        day = 0
+    order = sorted(str(s) for s in (slot_order or []))
+    try:
+        position = order.index(str(slot or ""))
+    except ValueError:
+        position = 0
+    return RHETORICAL_MOVES[(day + position) % len(RHETORICAL_MOVES)]
+
+
+def build_system_prompt(voice_profile: str | None = None, rhetorical_move: str | None = None) -> str:
     """Builds the system prompt: JSON schema, editorial rules, per-platform shape."""
     lines = [
         "You are OmniPost Content Synthesizer, an elite technical ghostwriter for engineers and AI researchers.",
@@ -325,8 +355,7 @@ def build_system_prompt(voice_profile: str | None = None) -> str:
         "- At most one em-dash per 150 characters.",
         "- Do not end with a question. Do not ask for likes, replies, follows, saves, or shares.",
         "- No abstract three-item lists (X, Y, and Z) where all three are buzzwords.",
-        "- Do not reuse the same rhetorical skeleton across posts. Pick ONE opening move:",
-        "  a number, a contradiction, a plain question, an artifact (screenshot/chart/link), or a failure.",
+        "- Do not reuse the same rhetorical skeleton across posts.",
         "",
         "Per-platform shape:",
         "- \"x\": string — X post (180-260 characters). Open with the claim or the number. One post, not a thread. Zero hashtags.",
@@ -334,6 +363,9 @@ def build_system_prompt(voice_profile: str | None = None) -> str:
         "- \"threads\": string — Meta Threads post (250-420 characters). First-person observation. No closing question.",
         "- \"linkedin\": string — LinkedIn post (600-1,200 characters). One specific story or result, then what changed. Whitespace between beats. No numbered framework.",
     ]
+
+    if rhetorical_move in _MOVE_BRIEF:
+        lines.append(f"- Opening move for this post: {rhetorical_move}. {_MOVE_BRIEF[rhetorical_move]}")
 
     if voice_profile and voice_profile.strip():
         lines.extend([
@@ -519,6 +551,7 @@ def generate_topic_with_llm(
     items: list[dict[str, Any]],
     kind: str = "tech_insight",
     voice_profile: str | None = None,
+    rhetorical_move: str | None = None,
     provider: str | None = None,
     api_key: str | None = None,
     model: str | None = None,
@@ -545,7 +578,7 @@ def generate_topic_with_llm(
     if voice_profile is None:
         voice_profile = load_voice_profile()
 
-    system_prompt = build_system_prompt(voice_profile=voice_profile)
+    system_prompt = build_system_prompt(voice_profile=voice_profile, rhetorical_move=rhetorical_move)
     user_prompt = build_user_prompt(items=items, kind=kind)
 
     try:
