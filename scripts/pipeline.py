@@ -26,6 +26,7 @@ try:
     from scripts import due
     from scripts import generate
     from scripts import repurpose
+    from scripts import validator
     from scripts.browser_daemon import ensure_browser_running
     from scripts.errors import (
         CopyValidationError,
@@ -34,16 +35,62 @@ try:
         TopicRejected,
     )
     from scripts.llm import load_voice_profile, rhetorical_move_for
+    from scripts.notify_webhook import dispatch_webhook
     from scripts.relevance import score_candidates
 except ImportError:
     import settings
     import due
     import generate
     import repurpose
+    import validator
     from browser_daemon import ensure_browser_running
     from errors import CopyValidationError, DuplicateTopic, NoRelevantTopic, TopicRejected
     from llm import load_voice_profile, rhetorical_move_for
+    from notify_webhook import dispatch_webhook
     from relevance import score_candidates
+
+
+HUMANITY_PLATFORMS = ("x", "bluesky", "threads", "linkedin")
+
+
+def _humanity_violations(poly_data: dict[str, Any]) -> list[str]:
+    """Gate every drafted platform. A broken scorer fails open, not closed."""
+    violations: list[str] = []
+    for platform in HUMANITY_PLATFORMS:
+        text = ((poly_data or {}).get(platform) or {}).get("text") or ""
+        if not text.strip():
+            continue
+        try:
+            score, issues = validator.score_humanity(text, platform)
+        except Exception as exc:
+            print(
+                f"[PIPELINE] Humanity gate error on {platform}, failing open: {exc}",
+                file=sys.stderr,
+            )
+            continue
+        if score < validator.HUMANITY_THRESHOLD:
+            violations.extend(f"{platform}: {issue}" for issue in issues)
+    return violations
+
+
+def _drop_slot_for_humanity(
+    plan: dict[str, Any],
+    slot_data: dict[str, Any],
+    violations: list[str],
+) -> None:
+    slot = str(slot_data.get("slot") or "unknown-slot")
+    detail = "; ".join(violations)[:900]
+    slot_data["skipped"] = "humanity_gate"
+    print(f"[PIPELINE] Dropping slot {slot}: failed the humanity gate twice. {detail}")
+    dispatch_webhook(
+        event_type="humanity_gate_drop",
+        title="OmniPost dropped a slot",
+        message=(
+            f"Slot {slot} on {plan.get('date')} failed the humanity gate twice. "
+            "Nothing was published."
+        ),
+        metadata={"slot": slot, "date": plan.get("date"), "violations": detail},
+    )
 
 
 def _drop_candidate(
@@ -94,6 +141,7 @@ def populate_daily_plan(plan: dict[str, Any], swipe_items: list[dict[str, Any]],
         attempted_empty = False
         topic: dict[str, Any] | None = None
         poly_data: dict[str, Any] | None = None
+        dropped = False
         content_hash = ""
         bullet_hash = ""
         rejections: list[str] = []
@@ -167,7 +215,49 @@ def populate_daily_plan(plan: dict[str, Any], swipe_items: list[dict[str, Any]],
                 topic = None
                 poly_data = None
                 continue
+
+            violations = _humanity_violations(poly_data)
+            if violations:
+                print(
+                    f"[PIPELINE] Humanity gate rejected slot {slot_data.get('slot')}, "
+                    f"regenerating once: {violations}"
+                )
+                try:
+                    topic = generate.generate_topic_from_items(
+                        kind,
+                        candidates,
+                        voice_profile=voice_profile,
+                        rhetorical_move=rhetorical_move_for(
+                            plan.get("date"), slot_data.get("slot"), slot_order
+                        ),
+                        revise_feedback="\n".join(violations),
+                    )
+                    poly_data = repurpose.repurpose_topic(
+                        topic_data=topic,
+                        date_str=plan.get("date"),
+                        generate_media=True,
+                        author=f"@{settings.load().get('handle', 'Lordporus')} • OmniPost",
+                        slot=slot_data.get("slot"),
+                    )
+                    content_hash = generate.content_fingerprint(topic)
+                    bullet_hash = generate.bullet_fingerprint(topic)
+                except Exception as exc:
+                    print(
+                        f"[PIPELINE] Regeneration failed for slot "
+                        f"{slot_data.get('slot')}: {exc}"
+                    )
+
+                violations = _humanity_violations(poly_data)
+                if violations:
+                    _drop_slot_for_humanity(plan, slot_data, violations)
+                    topic = None
+                    poly_data = None
+                    dropped = True
+                    break
             break
+
+        if dropped:
+            continue
 
         if topic is None or poly_data is None:
             date = plan.get("date") or "unknown-date"

@@ -193,3 +193,55 @@ def test_due_returns_unpopulated_slot_within_lag():
         assert res["slot"] == "13:00"
         assert res["text"] == ""
 
+
+SLOP_DRAFT = "In today's fast-paced world, we delve into the tapestry of innovation and leverage it."
+GOOD_DRAFT = "We cut latency from 11 seconds to 3. The fix was one index. No rewrite."
+
+
+def _poly(text):
+    return {
+        "x": {"text": text, "enabled": True},
+        "bluesky": {"text": text, "enabled": True},
+        "linkedin": {"text": text, "enabled": True},
+        "threads": {"text": text, "enabled": True},
+    }
+
+
+TOPIC = {
+    "headline": "Ledger Index Cut Latency",
+    "body": "One index replaced a table scan.",
+    "points": ["Add the index", "Measure again"],
+    "takeaway": "Measure before rewriting",
+    "category": "TECH",
+}
+
+
+def _one_slot_plan():
+    return {
+        "date": "2026-10-06",
+        "slots": [{"slot": "13:00", "kind": "value", "text": "", "due_at": "2026-10-06T13:15:00"}],
+    }
+
+
+def test_humanity_gate_regenerates_once_then_publishes():
+    with patch("scripts.pipeline.generate.generate_topic_from_items", return_value=TOPIC) as mock_gen, \
+         patch("scripts.pipeline.repurpose.repurpose_topic", side_effect=[_poly(SLOP_DRAFT), _poly(GOOD_DRAFT)]), \
+         patch("scripts.pipeline.dispatch_webhook") as mock_alert:
+        updated = populate_daily_plan(_one_slot_plan(), swipe_items=[{"title": "Ledger", "score": 100}])
+
+    assert updated["slots"][0]["text"] == GOOD_DRAFT
+    assert mock_gen.call_args.kwargs["revise_feedback"]
+    assert mock_alert.call_count == 0
+
+
+def test_humanity_gate_drops_slot_after_two_failures():
+    with patch("scripts.pipeline.generate.generate_topic_from_items", return_value=TOPIC), \
+         patch("scripts.pipeline.repurpose.repurpose_topic", return_value=_poly(SLOP_DRAFT)), \
+         patch("scripts.pipeline.dispatch_webhook") as mock_alert:
+        updated = populate_daily_plan(_one_slot_plan(), swipe_items=[{"title": "Ledger", "score": 100}])
+
+    assert updated["slots"][0]["skipped"] == "humanity_gate"
+    assert updated["slots"][0]["text"] == ""
+    assert mock_alert.call_count == 1
+    assert mock_alert.call_args.kwargs["event_type"] == "humanity_gate_drop"
+

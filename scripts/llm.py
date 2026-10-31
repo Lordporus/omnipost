@@ -323,7 +323,11 @@ def rhetorical_move_for(
     return RHETORICAL_MOVES[(day + position) % len(RHETORICAL_MOVES)]
 
 
-def build_system_prompt(voice_profile: str | None = None, rhetorical_move: str | None = None) -> str:
+def build_system_prompt(
+    voice_profile: str | None = None,
+    rhetorical_move: str | None = None,
+    revise_feedback: str | None = None,
+) -> str:
     """Builds the system prompt: JSON schema, editorial rules, per-platform shape."""
     lines = [
         "You are OmniPost Content Synthesizer, an elite technical ghostwriter for engineers and AI researchers.",
@@ -366,6 +370,13 @@ def build_system_prompt(voice_profile: str | None = None, rhetorical_move: str |
 
     if rhetorical_move in _MOVE_BRIEF:
         lines.append(f"- Opening move for this post: {rhetorical_move}. {_MOVE_BRIEF[rhetorical_move]}")
+
+    if revise_feedback and revise_feedback.strip():
+        lines.extend([
+            "",
+            "Your previous draft failed the guardrails. Rewrite it without these problems:",
+            revise_feedback.strip(),
+        ])
 
     if voice_profile and voice_profile.strip():
         lines.extend([
@@ -552,6 +563,7 @@ def generate_topic_with_llm(
     kind: str = "tech_insight",
     voice_profile: str | None = None,
     rhetorical_move: str | None = None,
+    revise_feedback: str | None = None,
     provider: str | None = None,
     api_key: str | None = None,
     model: str | None = None,
@@ -578,7 +590,11 @@ def generate_topic_with_llm(
     if voice_profile is None:
         voice_profile = load_voice_profile()
 
-    system_prompt = build_system_prompt(voice_profile=voice_profile, rhetorical_move=rhetorical_move)
+    system_prompt = build_system_prompt(
+        voice_profile=voice_profile,
+        rhetorical_move=rhetorical_move,
+        revise_feedback=revise_feedback,
+    )
     user_prompt = build_user_prompt(items=items, kind=kind)
 
     try:
