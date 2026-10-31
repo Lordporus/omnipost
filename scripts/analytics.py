@@ -27,9 +27,10 @@ sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "scripts"))
 
 try:
+    import feedback
     import ledger
 except ImportError:
-    from scripts import ledger
+    from scripts import feedback, ledger
 
 
 def fetch_bluesky_metrics(post_url: str) -> dict[str, Any] | None:
@@ -198,10 +199,15 @@ def generate_report(state_path: Path | None = None) -> list[dict[str, Any]]:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("cmd", nargs="?", default="report", choices=["collect", "report"])
+    parser.add_argument("cmd", nargs="?", default="report", choices=["collect", "report", "refresh-samples"])
     parser.add_argument("--days", type=int, default=7, help="number of days to look back for metrics collection")
     parser.add_argument("--format", choices=["table", "json"], default="table")
     args = parser.parse_args()
+
+    if args.cmd == "refresh-samples":
+        content = feedback.refresh_voice_samples()
+        print("[SUCCESS] Refreshed voice-samples.md from analytics.")
+        return
 
     if args.cmd == "collect":
         res = collect_metrics(days=args.days)

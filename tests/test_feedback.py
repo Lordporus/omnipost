@@ -132,5 +132,79 @@ class TestFeedbackEngine(unittest.TestCase):
         self.assertIn("## Do-Not List", updated_2)
 
 
+
+    def test_refresh_voice_samples_top_and_bottom(self):
+        samples_file = self.temp_path / "voice-samples.md"
+        initial_content = (
+            "# Voice Samples Manual Header\n\n"
+            "<!-- auto-samples-start -->\n"
+            "Old auto content\n"
+            "<!-- auto-samples-end -->\n\n"
+            "Manual Footer: Keep it concise.\n"
+        )
+        samples_file.write_text(initial_content, encoding="utf-8")
+
+        test_state = {
+            "version": "2.0",
+            "posts": [
+                {
+                    "date": "2026-10-01",
+                    "text": "Post 1 (Top X): Solo founders in 2026 build agentic pipelines.",
+                    "platforms": {
+                        "x": {"status": "published", "metrics": {"likes": 500, "reposts": 50, "replies": 20, "views": 10000}}
+                    }
+                },
+                {
+                    "date": "2026-10-02",
+                    "text": "Post 2 (Mid X): Deterministic state machines beat LLM loops.",
+                    "platforms": {
+                        "x": {"status": "published", "metrics": {"likes": 200, "reposts": 20, "replies": 10, "views": 4000}}
+                    }
+                },
+                {
+                    "date": "2026-10-03",
+                    "text": "Post 3 (Low X): Generic update about software engineering.",
+                    "platforms": {
+                        "x": {"status": "published", "metrics": {"likes": 2, "reposts": 0, "replies": 0, "views": 100}}
+                    }
+                },
+                {
+                    "date": "2026-10-04",
+                    "text": "Post 4 (Flop X): Click here to see amazing AI tools delve tapestry.",
+                    "platforms": {
+                        "x": {"status": "published", "metrics": {"likes": 0, "reposts": 0, "replies": 0, "views": 10}}
+                    }
+                },
+                {
+                    "date": "2026-10-01",
+                    "text": "Post 5 (Top Bluesky): Local CDP automation beats SaaS wrappers.",
+                    "platforms": {
+                        "bluesky": {"status": "published", "metrics": {"likes": 80, "reposts": 10, "replies": 5, "views": 0}}
+                    }
+                }
+            ]
+        }
+        ledger.save_state(test_state, self.state_file)
+
+        updated = feedback.refresh_voice_samples(self.state_file, samples_file)
+
+        # Check manual content preserved
+        self.assertIn("# Voice Samples Manual Header", updated)
+        self.assertIn("Manual Footer: Keep it concise.", updated)
+
+        # Check Winning Samples section
+        self.assertIn("## Winning Samples", updated)
+        self.assertIn("Solo founders in 2026 build agentic pipelines", updated)
+        self.assertIn("Local CDP automation beats SaaS wrappers", updated)
+
+        # Check Anti-Patterns / Do Not Emulate section
+        self.assertIn("## Anti-Patterns / Do Not Emulate", updated)
+        self.assertIn("Click here to see amazing AI tools delve tapestry", updated)
+
+        # Idempotence: running second time produces identical output
+        second_run = feedback.refresh_voice_samples(self.state_file, samples_file)
+        self.assertEqual(updated, second_run)
+
+
 if __name__ == "__main__":
     unittest.main()
