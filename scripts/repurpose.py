@@ -49,6 +49,16 @@ def format_bluesky(headline: str, points: list[str]) -> str:
     return fit("bluesky", text)
 
 
+def _is_similar(a: str, b: str, threshold: float = 0.6) -> bool:
+    """Measure word-overlap similarity between two sentences."""
+    words_a = set(re.findall(r"\w+", (a or "").lower()))
+    words_b = set(re.findall(r"\w+", (b or "").lower()))
+    if not words_a or not words_b:
+        return False
+    intersection = words_a.intersection(words_b)
+    return len(intersection) / min(len(words_a), len(words_b)) >= threshold
+
+
 def format_linkedin(
     headline: str,
     body: str,
@@ -59,12 +69,20 @@ def format_linkedin(
     """Format for LinkedIn using only topic-derived context, changes, and takeaway."""
     clean_hl = str(headline or "").strip()
     clean_body = str(body or "").strip()
-    clean_points = [
+    raw_points = [
         str(point).strip().lstrip("•-*▸ ")
         for point in points
         if str(point).strip()
     ]
+    # Deduplicate points that mirror body
+    clean_points = [p for p in raw_points if not _is_similar(clean_body, p, threshold=0.6)]
+    if not clean_points and raw_points:
+        clean_points = raw_points[:1]
+
     clean_tk = str(takeaway or "").strip()
+    # Deduplicate takeaway if it mirrors last point
+    if clean_tk and clean_points and _is_similar(clean_tk, clean_points[-1], threshold=0.6):
+        clean_tk = ""
 
     looks_like_sentence = (
         clean_hl.endswith(("?", "!", "."))
@@ -98,29 +116,45 @@ def format_threads(
     body: str = "",
     points: list[str] | None = None,
 ) -> str:
-    """Format for Meta Threads: 350-480 characters with the CTA included."""
+    """Format for Meta Threads: 350-480 characters without redundant boilerplate."""
     clean_hl = str(headline or "").strip()
     clean_tk = str(takeaway or "").strip()
     clean_body = str(body or "").strip()
-    clean_points = [str(point).strip() for point in (points or []) if str(point).strip()]
+    raw_points = [str(point).strip() for point in (points or []) if str(point).strip()]
+
+    # Deduplicate points that mirror body
+    clean_points = [p for p in raw_points if not _is_similar(clean_body, p, threshold=0.6)]
 
     sections = [clean_hl]
     if clean_body:
         sections.append(clean_body)
     if clean_points:
         sections.append("\n".join(f"• {point}" for point in clean_points[:3]))
-    if clean_tk:
+    if clean_tk and (not clean_points or not _is_similar(clean_tk, clean_points[-1], threshold=0.6)):
         sections.append(clean_tk)
     insight = "\n\n".join(section for section in sections if section).strip()
 
-    cta = "What architectural tradeoffs have you seen in your stack?"
-    cta_suffix = f"\n\n{cta}"
-    cta_cost = count_for("threads", cta_suffix)
-    insight_budget = LIMITS["threads"]["max"] - cta_cost
-    if count_for("threads", insight) > insight_budget:
-        insight = truncate_words(insight, insight_budget, "threads")
+    # Append conversational CTA only if needed to meet minimum or naturally engage
+    current_len = count_for("threads", insight)
+    if current_len < LIMITS["threads"]["min"]:
+        cta = "How are you handling these architectural tradeoffs in production?"
+        cta_suffix = f"\n\n{cta}"
+    elif not any(s.strip().endswith("?") for s in sections) and not clean_tk.endswith("?"):
+        cta = "How are you approaching this in production?"
+        cta_suffix = f"\n\n{cta}"
+    else:
+        cta_suffix = ""
 
-    return fit("threads", f"{insight}{cta_suffix}".strip())
+    if cta_suffix:
+        cta_cost = count_for("threads", cta_suffix)
+        insight_budget = LIMITS["threads"]["max"] - cta_cost
+        if count_for("threads", insight) > insight_budget:
+            insight = truncate_words(insight, insight_budget, "threads")
+        full_text = f"{insight}{cta_suffix}".strip()
+    else:
+        full_text = insight
+
+    return fit("threads", full_text)
 
 
 def _calibrated_native_text(platform: str, text: str) -> str:
