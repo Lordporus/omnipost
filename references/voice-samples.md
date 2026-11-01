@@ -4,6 +4,15 @@
 ## Winning Samples
 
 ### X
+### X
+Local LLMs on Apple Silicon now hit 85 tok/s on 4-bit quantizations.
+
+Cloud inference costs $0.002 per call. At 50,000 daily agent tasks, running on local hardware saves $3,000/mo while dropping latency by 60%.
+
+Sovereign compute beats API subscriptions.
+
+---
+
 Solo founders in 2026 aren't competing on hours worked.
 
 They're competing on agentic pipelines:

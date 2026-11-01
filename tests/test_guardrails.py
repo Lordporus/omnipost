@@ -319,5 +319,39 @@ class TestHumanityGate(unittest.TestCase):
         self.assertTrue(any("Humanity gate" in e for e in errors))
 
 
+    def test_draft_with_scraper_metadata_fails_guardrail(self):
+        draft = {
+            "text": "arXiv:2610.37830v1 Announce Type: new Abstract: Multi-agent systems encounter Byzantine faults in consensus."
+        }
+        ok, errors = validate_draft_guardrails(
+            draft,
+            cfg={"humanity_gate": True},
+            platform="bluesky",
+            raise_on_error=False,
+        )
+        self.assertFalse(ok)
+        self.assertTrue(any("metadata markers" in e.lower() for e in errors))
+
+    def test_draft_with_dangling_conjunction_fails_guardrail(self):
+        draft = {
+            "text": "Decentralized state machines require verified consensus and..."
+        }
+        ok, errors = validate_draft_guardrails(
+            draft,
+            cfg={"humanity_gate": True},
+            platform="bluesky",
+            raise_on_error=False,
+        )
+        self.assertFalse(ok)
+        self.assertTrue(any("dangling conjunction" in e.lower() for e in errors))
+
+    def test_score_humanity_penalizes_scraper_metadata(self):
+        score, violations = score_humanity(
+            "arXiv:2401.12345v1 Abstract: We evaluate latency in Postgres 17 clusters."
+        )
+        self.assertLess(score, 70)
+        self.assertTrue(any("metadata" in v.lower() for v in violations))
+
+
 if __name__ == "__main__":
     unittest.main()

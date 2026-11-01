@@ -17,10 +17,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-try:
-    from scripts import ledger
-except ImportError:  # direct script execution from the scripts/ directory
-    import ledger  # type: ignore[no-redef]
+STATUS_PUBLISHED_VERIFIED = "published_verified"
 
 DEFAULT_TIMEOUT = 8.0
 USER_AGENT = "OmniPost-Validator/1.0"
@@ -452,6 +449,14 @@ def score_humanity(text: str) -> tuple[int, list[str]]:
         violations.append(f"Abstract tricolon: '{tricolon}'")
         score -= 10
 
+    metadata_re = re.compile(
+        r"(?:arXiv:\d+\.\d+(?:v\d+)?|Announce Type:|Abstract:|Article URL:|Comments URL:)",
+        re.IGNORECASE,
+    )
+    if metadata_re.search(body):
+        violations.append("Raw feed/scraper metadata leaked into post")
+        score -= 35
+
     return max(0, min(100, score)), violations
 
 
@@ -614,7 +619,7 @@ def check_account_warmup(
                 plat_data = p.get("platforms", {}).get(p_plat)
                 if plat_data:
                     is_published = isinstance(plat_data, dict) and plat_data.get("status") in (
-                        ledger.STATUS_PUBLISHED_VERIFIED,
+                        STATUS_PUBLISHED_VERIFIED,
                         "published",
                     )
                 elif not p.get("platforms"):
@@ -628,7 +633,7 @@ def check_account_warmup(
                     or (p.get("status") != "failed" and not p.get("platforms"))
                     or any(
                         isinstance(p_data, dict) and p_data.get("status") in (
-                            ledger.STATUS_PUBLISHED_VERIFIED,
+                            STATUS_PUBLISHED_VERIFIED,
                             "published",
                         )
                         for p_data in p.get("platforms", {}).values()
@@ -750,6 +755,23 @@ def validate_draft_guardrails(
             errors.append(msg)
             if raise_on_error:
                 raise HumanityGateError(msg)
+
+    # 9. Scraper metadata leakage and broken-word endings
+    metadata_leak_re = re.compile(
+        r"(?:arXiv:\d+\.\d+(?:v\d+)?|Announce Type:|Abstract:|Article URL:|Comments URL:)",
+        re.IGNORECASE,
+    )
+    if metadata_leak_re.search(text):
+        msg = "Draft contains raw scraper metadata markers (arXiv, Announce Type, Abstract, URL)."
+        errors.append(msg)
+        if raise_on_error:
+            raise GuardRailError(msg)
+
+    if re.search(r"\b(?:and|or|but|with|for|to|in|on|at|by|of|the|a|an|that|which|as)\s*\.\.\.$", text, re.IGNORECASE):
+        msg = "Draft ends with a dangling conjunction before ellipsis."
+        errors.append(msg)
+        if raise_on_error:
+            raise GuardRailError(msg)
 
     if errors:
         return False, errors
