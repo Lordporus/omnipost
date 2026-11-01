@@ -199,3 +199,23 @@ def test_architecture_and_code_widgets_rendering():
     html = render_card_html(slides[1], current_idx=1, total_count=2, author="@Lordporus")
     assert "arch-flow" in html or "arch-node" in html or "terminal-window" in html
 
+def test_header_author_deduplication_and_no_repeated_brand():
+    """Card header must not repeat brand name when author string contains '• OmniPost'."""
+    slide = build_card_slides(TOPIC_A, 1)[0]
+    html = render_card_html(slide, current_idx=0, total_count=1, author="@Lordporus • OmniPost")
+
+    # Brand name is OmniPost, so handle should be @Lordporus and NOT repeat OmniPost
+    assert "OmniPost @Lordporus • OmniPost" not in html
+    assert "@Lordporus" in html
+    assert "• OmniPost" not in html
+
+
+def test_header_title_bar_alignment_and_chip_geometry():
+    """Header chips must use cohesive 8px border radii and matching heights for clean alignment."""
+    slide = build_card_slides(TOPIC_A, 1)[0]
+    html = render_card_html(slide, current_idx=0, total_count=1, author="@Lordporus")
+
+    # Anti-pattern: 999px oval capsule pill clashing with rectangular chips
+    assert "border-radius: 999px" not in html
+    assert "border-radius: 8px" in html
+

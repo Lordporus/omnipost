@@ -303,7 +303,15 @@ def render_card_html(
     res = template.replace("{{FONT_CSS}}", font_css if font_css is not None else _font_css())
     res = res.replace("{{TITLE}}", headline)
     res = res.replace("{{TAG}}", tag)
-    res = res.replace("{{AUTHOR}}", html.escape(author))
+
+    clean_author = str(author or "").strip()
+    if "•" in clean_author:
+        clean_author = clean_author.split("•")[0].strip()
+    clean_author = re.sub(r"(?i)\s*omnipost\b", "", clean_author).strip()
+    if not clean_author:
+        clean_author = "@omnipost"
+
+    res = res.replace("{{AUTHOR}}", html.escape(clean_author))
     res = res.replace("{{COUNTER}}", counter_str)
     res = res.replace("{{HEADLINE}}", headline)
     res = res.replace("{{BODY_HTML}}", body_html)
