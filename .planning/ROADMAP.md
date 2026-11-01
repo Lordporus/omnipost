@@ -22,6 +22,8 @@ OmniPost evolves from a proven single-platform X autonomous publishing engine in
 - [ ] **Phase 15: 9:16 Storybook Renderer & Deterministic Assets** - Replace 1080x1080 generic cards with topic-driven 1080x1920 storybook cards using embedded fonts and hard asset failures.
 - [ ] **Phase 16: Privacy, Error Taxonomy & CI Guardrails** - Redact failure artifacts, replace silent broad exceptions with typed errors, and add fixture-DOM/golden-image/live-smoke tests.
 - [ ] **Phase 17: End-to-End Overhaul Verification & Live Drop** - Prove the overhaul with dry-run, controlled live publishing, verified URLs, duplicate checks, and a telemetry report.
+- [x] **Phase 18: Ingestion & Text Quality Overhaul** - Sanitize raw feed metadata (arXiv/HN), eliminate LinkedIn/Threads copy duplication, enforce word-boundary safe limits without dangling conjunctions, and add humanity guardrails.
+- [ ] **Phase 19: Visual Taste-Design Architecture** - Establish semantic design contract (`r`render/DESIGN.md``), overhaul 9:16 storybook cards with architecture flow and code widgets, and re-architect 1080x1080 carousels for viral 4-slide narrative.
 
 ## Phase Details
 
@@ -335,3 +337,36 @@ Plans:
 
 Plans:
 - [ ] 17-01: Overhaul Dry-Run, Controlled Live Drop & Telemetry Report
+
+### Phase 18: Ingestion & Text Quality Overhaul
+**Goal**: Eliminate raw scraper metadata leakage, cross-section copy duplication, and mid-word truncation across all 4 publishing channels (X, Bluesky, LinkedIn, Threads).
+**Depends on**: Phase 17
+**Requirements**: REQ-SAN-01, REQ-DEDUPE-01, REQ-BOUND-01, REQ-GUARD-09
+**Success Criteria** (what must be TRUE):
+  1. Feeds with arXiv announcements, HN links, or CMS signatures are sanitized at collection before landing in swipe bank.
+  2. LinkedIn copy never mirrors the thesis between body, bullet 1, and bottom line (token similarity < 60%).
+  3. LinkedIn boilerplate headers ('What changes in practice:', 'Bottom line:') are replaced with dynamic connectors.
+  4. Threads copy removes redundant bullets and eliminates the forced question CTA.
+  5. Truncation across all platforms preserves word boundaries and never ends with dangling conjunctions ('and...', 'with...').
+  6. The draft guardrail rejects any post containing raw scraper metadata or broken word endings.
+**Plans**: 1 plan
+
+Plans:
+- [x] 18-01: Feed Ingestion Sanitization, Copy Deduplication, Safe Limits & Guardrail Gate
+
+### Phase 19: Visual Taste-Design Architecture
+**Goal**: Upgrade OmniPost's visual assets (9:16 PNG storybook cards and 1080x1080 PDF carousels) from generic AI templates to high-agency, viral /taste-design standards.
+**Depends on**: Phase 18
+**Requirements**: REQ-DESIGN-CONTRACT-01, REQ-STORYBOOK-ARCH-01, REQ-CAROUSEL-VIRAL-01
+**Success Criteria** (what must be TRUE):
+  1. 
+`render/DESIGN.md` formally defines semantic design tokens, typography rules, widget layouts, and anti-patterns.
+  2. 9:16 Storybook cards use a deep Zinc slate base (#090D16) with 1px whisper borders and zero multi-color radial glow gradients.
+  3. The pulsing green neon glowing circle (.brand-dot) is removed in favor of crisp monospace badges.
+  4. Cards support modular Architecture Flow Panels and Terminal Code Panels instead of raw abstract paragraph dumps.
+  5. 1080x1080 carousels render 100% offline with vendored base64 Geist fonts (no Google Fonts network requests).
+  6. Carousels enforce a 4-slide viral engineering narrative (Hook -> Problem Anatomy -> Architecture -> Actionable Checklist).
+**Plans**: 1 plan
+
+Plans:
+- [ ] 19-01: Semantic Design Contract, High-Agency Storybook Cards & Viral Offline Carousels
