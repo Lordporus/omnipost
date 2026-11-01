@@ -222,25 +222,10 @@ def build_card_slides(
     return slides
 
 
-@lru_cache(maxsize=1)
-def _font_css() -> str:
-    """Return @font-face rules with the vendored fonts embedded as data URIs."""
-    rules: list[str] = []
-    for family, weight, style, filename in FONT_FILES:
-        path = FONT_DIR / filename
-        if not path.is_file() or path.stat().st_size == 0:
-            raise RenderError(f"missing_font_asset: {filename}")
-        encoded = base64.b64encode(path.read_bytes()).decode("ascii")
-        rules.append(
-            "@font-face {"
-            f'font-family: "{family}";'
-            f"font-weight: {weight};"
-            f"font-style: {style};"
-            "font-display: block;"
-            f'src: url(data:font/woff2;base64,{encoded}) format("woff2");'
-            "}"
-        )
-    return "\n".join(rules)
+try:
+    from render.fonts import _font_css
+except ImportError:
+    from fonts import _font_css
 
 
 def render_card_html(

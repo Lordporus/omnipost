@@ -20,32 +20,37 @@ from typing import Any
 from scripts import browser, settings
 from scripts.browser import Session
 
+try:
+    from render.fonts import _font_css
+except ImportError:
+    from fonts import _font_css
+
 ROOT = Path(__file__).resolve().parent.parent
 TEMPLATE_PATH = Path(__file__).resolve().parent / "template.html"
 
 PALETTES: dict[str, dict[str, str]] = {
     "emerald": {
-        "--bg-canvas": "#080A0F",
+        "--bg-canvas": "#090D16",
         "--bg-card": "#0F131D",
         "--accent-primary": "#00E599",
         "--accent-muted": "rgba(0, 229, 153, 0.12)",
-        "--accent-gradient": "linear-gradient(135deg, #00E599 0%, #00B4D8 100%)",
+        "--accent-gradient": "linear-gradient(180deg, #00E599 0%, #00C782 100%)",
         "--border-card-highlight": "rgba(0, 229, 153, 0.35)",
     },
     "cyan": {
-        "--bg-canvas": "#070D18",
+        "--bg-canvas": "#090D16",
         "--bg-card": "#0E182A",
         "--accent-primary": "#38BDF8",
         "--accent-muted": "rgba(56, 189, 248, 0.12)",
-        "--accent-gradient": "linear-gradient(135deg, #38BDF8 0%, #818CF8 100%)",
+        "--accent-gradient": "linear-gradient(180deg, #38BDF8 0%, #0284C7 100%)",
         "--border-card-highlight": "rgba(56, 189, 248, 0.35)",
     },
     "amber": {
-        "--bg-canvas": "#0F0B08",
+        "--bg-canvas": "#090D16",
         "--bg-card": "#1C140E",
         "--accent-primary": "#F59E0B",
         "--accent-muted": "rgba(245, 158, 11, 0.12)",
-        "--accent-gradient": "linear-gradient(135deg, #F59E0B 0%, #EF4444 100%)",
+        "--accent-gradient": "linear-gradient(180deg, #F59E0B 0%, #D97706 100%)",
         "--border-card-highlight": "rgba(245, 158, 11, 0.35)",
     },
 }
@@ -85,6 +90,29 @@ SVG_CHECK = (
     'stroke="var(--accent-emerald)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">'
     '<polyline points="20 6 9 17 4 12"></polyline></svg>'
 )
+
+def _build_arch_flow_html(flow_str: str) -> str:
+    """Renders a structured monospace architecture flow pipeline."""
+    parts = re.split(r"\s*(?:->|-->|➔)\s*", flow_str)
+    nodes = []
+    for idx, part in enumerate(parts):
+        node_clean = re.sub(r"[\[\]]", "", part).strip()
+        nodes.append(f'<div class="arch-node"><span>{html.escape(node_clean)}</span></div>')
+        if idx < len(parts) - 1:
+            nodes.append('<div class="arch-arrow">↓</div>')
+    return f'<div class="arch-flow">{"".join(nodes)}</div>'
+
+
+def _build_terminal_code_html(cmd_str: str) -> str:
+    """Renders a clinical dark terminal window with syntax tokens."""
+    lines = [f'<span class="terminal-line">{html.escape(line)}</span>' for line in cmd_str.strip().splitlines()]
+    return (
+        '<div class="terminal-window">'
+        '<div class="terminal-header"><span class="terminal-dot"></span><span>TERMINAL</span></div>'
+        f'<div class="terminal-body">{"<br>".join(lines)}</div>'
+        '</div>'
+    )
+
 SVG_SWIPE = (
     '<svg class="swipe-icon-svg" width="18" height="18" viewBox="0 0 24 24" fill="none" '
     'stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">'
@@ -270,48 +298,83 @@ def generate_standard_slides(
                 })
             return parsed_slides
 
-    # Slide 1: Hook & Hero (Headline ONLY in Slide 1)
+        # Slide 1: Hook & Hero (Headline ONLY in Slide 1)
+    sentences = [s.strip() for s in re.split(r"[" + "\n" + ".·•►▸;]", problem_context) if len(s.strip()) > 15]
+    if sentences:
+        s1_body = sentences[0] + "."
+        remaining_sentences = sentences[1:]
+    else:
+        s1_body = f"An architectural deep dive into {headline}."
+        remaining_sentences = []
+
     s1 = {
         "type": "hero",
         "title": headline,
         "tag": category,
-        "body": problem_context[:160] if problem_context else f"An architectural deep dive into {headline}.",
+        "body": s1_body,
     }
 
-    # Slide 2: Architectural Bottleneck / Problem Space (Derived 100% dynamically)
-    problem_sentences = [s.strip() for s in re.split(r'[\n.·•►▸;]', problem_context) if len(s.strip()) > 15]
-    prob_bullets = problem_sentences[:3] if len(problem_sentences) >= 2 else (points[:2] if len(points) >= 2 else [f"Key technical challenges in {headline}"])
+    # Partition points across slides 2, 3, 4 without repetition
+    clean_pts = [p for p in points if str(p).strip()]
+    if len(clean_pts) >= 3:
+        prob_bullets = [clean_pts[0]]
+        sol_bullets = [clean_pts[1]]
+        checklist_bullets = clean_pts[2:]
+    elif len(clean_pts) == 2:
+        prob_bullets = [clean_pts[0]]
+        sol_bullets = [clean_pts[1]]
+        checklist_bullets = [takeaway] if (takeaway and takeaway != clean_pts[1]) else [f"Production deployment for {headline[:30]}"]
+    elif len(clean_pts) == 1:
+        prob_bullets = [clean_pts[0]]
+        sol_bullets = [f"System architecture design for {headline[:35]}"]
+        checklist_bullets = [takeaway] if takeaway else [f"Production deployment rule for {headline[:35]}"]
+    else:
+        prob_bullets = [f"Scalability bottleneck in {headline[:35]}"]
+        sol_bullets = [f"Target architecture for {headline[:35]}"]
+        checklist_bullets = [takeaway] if takeaway else [f"Production deployment rule for {headline[:35]}"]
+
+    # Slide 2: Architectural Bottleneck / Problem Space
+    clean_rem = [s for s in remaining_sentences if headline.lower() not in s.lower()]
+    s2_body = " ".join(clean_rem) if clean_rem else "Unbounded scaling limits and concurrency bottlenecks in production environments."
+    if s2_body == s1_body or headline.lower() in s2_body.lower():
+        s2_body = "Unbounded scaling limits and concurrency bottlenecks in production environments."
+
     s2 = {
         "type": "problem",
         "title": f"The Bottleneck in {headline[:35]}",
         "tag": "BOTTLENECK",
-        "body": problem_context if len(problem_context) < 300 else problem_context[:297] + "...",
+        "body": s2_body,
         "bullets": prob_bullets,
     }
 
-    # Slide 3: Deep Technical Solution / Architecture (Derived 100% dynamically)
-    sol_headline = points[0] if points else f"Architecture Design for {headline[:30]}"
-    sol_bullets = points[1:3] if len(points) > 1 else ([problem_context[:120]] if problem_context else [headline])
+    # Slide 3: Deep Technical Solution / Architecture
     code_block = ""
     if isinstance(topic_data, dict):
         code_block = str(topic_data.get("code") or topic_data.get("code_snippet") or "")
+    s3_body = "Production implementation topology and core system mechanisms."
+
     s3 = {
         "type": "solution",
         "title": "System Architecture",
         "tag": "IMPLEMENTATION",
-        "body": sol_headline,
+        "body": s3_body,
         "code": code_block,
         "bullets": sol_bullets,
     }
 
-    # Slide 4: Production Checklist & Dynamic Outro (Derived 100% dynamically)
-    checklist_points = points[2:] if len(points) > 2 else (points if points else [takeaway])
+    # Slide 4: Production Checklist & Dynamic Outro
+    s4_body = takeaway or "Architectural foundation and production guidelines."
+    if headline.lower() in s4_body.lower():
+        s4_body = re.sub(re.escape(headline), "this architecture", s4_body, flags=re.IGNORECASE).strip()
+    if s4_body in (s1_body, s2_body, s3_body):
+        s4_body = "Key implementation principles and production guidelines."
+
     s4 = {
         "type": "checklist_cta",
         "title": "Production Checklist",
         "tag": "CHECKLIST",
-        "body": takeaway or f"Architectural foundation for {headline}.",
-        "bullets": checklist_points,
+        "body": s4_body,
+        "bullets": checklist_bullets,
         "cta_label": f"Follow for {category.title()} Architectures",
     }
 
@@ -393,7 +456,26 @@ def build_carousel_html(
           {inner}
         </div>"""
         elif s_type == "solution":
-            inner = f"{code_html}\n{bullets_html}".strip()
+            flow_bullet = next((b for b in bullets if "->" in b or "➔" in b or "-->" in b or ("[" in b and "]" in b)), None)
+            widget_html = ""
+            if flow_bullet:
+                widget_html = _build_arch_flow_html(flow_bullet)
+                remaining_bullets = [b for b in bullets if b != flow_bullet]
+            else:
+                remaining_bullets = bullets
+
+            rem_bullets_html = ""
+            if remaining_bullets:
+                b_items = [
+                    f'<li class="bullet-item">{SVG_CHEVRON}<span>{html.escape(str(b))}</span></li>'
+                    for b in remaining_bullets
+                ]
+                rem_bullets_html = f'<ul class="bullets">{"".join(b_items)}</ul>'
+
+            if s_code:
+                widget_html = _build_terminal_code_html(s_code) + widget_html
+
+            inner = f"{widget_html}\n{rem_bullets_html}".strip()
             card_panel = f'<div class="card-panel">{inner}</div>' if inner else ""
             content_block = f"""
         <h1 class="slide-title">{s_title}</h1>
@@ -457,7 +539,8 @@ def build_carousel_html(
         slides_markup.append(slide_html)
 
     all_slides_html = "\n".join(slides_markup)
-    doc = raw_template.replace("{{MAIN_TITLE}}", html.escape(title))
+    doc = raw_template.replace("{{FONT_CSS}}", _font_css())
+    doc = doc.replace("{{MAIN_TITLE}}", html.escape(title))
     doc = doc.replace("{{SLIDES_HTML}}", all_slides_html)
     return doc
 
