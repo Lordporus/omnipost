@@ -180,13 +180,19 @@ def count_for(platform: str, text: str) -> int:
     raise ValueError(f"Unknown platform for copy counting: {platform!r}")
 
 
+DANGLING_TAIL_RE = re.compile(
+    r"\s+(?:and|or|but|with|for|to|in|on|at|by|of|the|a|an|that|which|as)\s*$",
+    re.IGNORECASE,
+)
+
+
 def truncate_words(
     text: str,
     limit: int,
     platform: str,
     ellipsis: str = "...",
 ) -> str:
-    """Truncate *text* to *limit* measured units on a word boundary.
+    """Truncate *text* to *limit* measured units on a word boundary without trailing broken words.
 
     The limit is measured with the platform's counter, not as a raw character
     offset. The ellipsis is included in the budget, and whitespace-delimited
@@ -208,7 +214,20 @@ def truncate_words(
         candidate = raw[: match.end()].strip()
         if not candidate:
             continue
-        with_ellipsis = f"{candidate}{ellipsis}"
+
+        # Strip trailing punctuation and dangling conjunctions/prepositions
+        cleaned = candidate
+        while True:
+            prev = cleaned
+            cleaned = re.sub(r"[\s,;:\-\–\—\•]+$", "", cleaned)
+            cleaned = DANGLING_TAIL_RE.sub("", cleaned).strip()
+            if cleaned == prev:
+                break
+
+        if not cleaned:
+            continue
+
+        with_ellipsis = f"{cleaned}{ellipsis}"
         if count_for(platform, with_ellipsis) <= limit:
             best = with_ellipsis
             continue

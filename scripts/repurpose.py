@@ -140,7 +140,7 @@ def format_threads(
         cta = "How are you handling these architectural tradeoffs in production?"
         cta_suffix = f"\n\n{cta}"
     elif not any(s.strip().endswith("?") for s in sections) and not clean_tk.endswith("?"):
-        cta = "How are you approaching this in production?"
+        cta = "How are you approaching these architectural tradeoffs in production?"
         cta_suffix = f"\n\n{cta}"
     else:
         cta_suffix = ""
