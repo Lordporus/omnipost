@@ -7,20 +7,18 @@
     {{FONT_CSS}}
 
     :root {
-      --bg-canvas: #0D1117;
-      --bg-panel: #121926;
-      --bg-panel-elevated: #16203260;
-      --border-panel: rgba(230, 237, 243, 0.10);
-      --border-emerald: rgba(0, 229, 153, 0.38);
+      --bg-canvas: #090D16;
+      --bg-panel: #121824;
+      --bg-panel-elevated: #182234;
+      --border-panel: rgba(255, 255, 255, 0.08);
+      --border-emerald: rgba(0, 229, 153, 0.28);
 
-      --text-primary: #E6EDF3;
-      --text-secondary: #9FB0C3;
-      --text-muted: #6B7C8F;
+      --text-primary: #F1F5F9;
+      --text-secondary: #94A3B8;
+      --text-muted: #64748B;
 
       --emerald: #00E599;
-      --violet: #8B5CF6;
-      --amber: #F59E0B;
-      --emerald-soft: rgba(0, 229, 153, 0.12);
+      --emerald-soft: rgba(0, 229, 153, 0.10);
 
       --font-sans: "Geist", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
       --font-mono: "Geist Mono", ui-monospace, "Cascadia Code", monospace;
@@ -47,10 +45,7 @@
       display: grid;
       grid-template-rows: 288px minmax(0, 1fr) 192px;
       padding: 0 80px;
-      background:
-        radial-gradient(circle at 82% 8%, rgba(139, 92, 246, 0.16) 0%, transparent 46%),
-        radial-gradient(circle at 10% 96%, rgba(0, 229, 153, 0.10) 0%, transparent 44%),
-        var(--bg-canvas);
+      background: var(--bg-canvas);
     }
 
     /* Faint 24px technical grid */
@@ -59,8 +54,8 @@
       position: absolute;
       inset: 0;
       background-image:
-        linear-gradient(rgba(230, 237, 243, 0.035) 1px, transparent 1px),
-        linear-gradient(90deg, rgba(230, 237, 243, 0.035) 1px, transparent 1px);
+        linear-gradient(rgba(255, 255, 255, 0.025) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255, 255, 255, 0.025) 1px, transparent 1px);
       background-size: 24px 24px;
       pointer-events: none;
       z-index: 0;
@@ -74,23 +69,27 @@
       align-items: center;
       justify-content: space-between;
       gap: 24px;
-      border-bottom: 2px solid var(--border-emerald);
+      border-bottom: 1px solid var(--border-panel);
       padding: 40px 0 28px;
     }
 
     .brand {
       display: flex;
       align-items: center;
-      gap: 18px;
+      gap: 16px;
       min-width: 0;
     }
 
-    .brand-dot {
-      width: 14px;
-      height: 14px;
-      border-radius: 50%;
-      background: var(--emerald);
-      box-shadow: 0 0 18px var(--emerald);
+    .brand-badge {
+      font-family: var(--font-mono);
+      font-size: 18px;
+      font-weight: 600;
+      color: var(--emerald);
+      background: var(--emerald-soft);
+      border: 1px solid var(--border-emerald);
+      border-radius: 6px;
+      padding: 4px 10px;
+      letter-spacing: 0.05em;
       flex-shrink: 0;
     }
 
@@ -141,7 +140,7 @@
       font-weight: 600;
       font-variant-numeric: tabular-nums;
       color: var(--text-secondary);
-      background: rgba(230, 237, 243, 0.05);
+      background: var(--bg-panel);
       border: 1px solid var(--border-panel);
       border-radius: 10px;
       padding: 10px 20px;
@@ -159,9 +158,9 @@
     }
 
     .headline {
-      font-size: 78px;
+      font-size: 76px;
       font-weight: 600;
-      line-height: 1.08;
+      line-height: 1.10;
       letter-spacing: -0.035em;
       color: var(--text-primary);
       text-wrap: balance;
@@ -181,14 +180,11 @@
       display: grid;
       grid-template-columns: minmax(0, 1fr);
       gap: 26px;
-      background:
-        linear-gradient(135deg, rgba(0, 229, 153, 0.08) 0%, transparent 55%),
-        var(--bg-panel);
+      background: var(--bg-panel);
       border: 1px solid var(--border-panel);
       border-left: 4px solid var(--emerald);
-      border-radius: 22px;
-      padding: 40px 44px;
-      box-shadow: 0 28px 60px -28px rgba(0, 0, 0, 0.75);
+      border-radius: 20px;
+      padding: 38px 42px;
       overflow-wrap: anywhere;
     }
 
@@ -204,13 +200,15 @@
       color: var(--emerald);
     }
 
-    .panel-pulse {
-      width: 10px;
-      height: 10px;
-      border-radius: 50%;
-      background: var(--emerald);
-      box-shadow: 0 0 12px var(--emerald);
-      flex-shrink: 0;
+    .panel-badge {
+      font-family: var(--font-mono);
+      font-size: 14px;
+      font-weight: 700;
+      padding: 2px 8px;
+      border-radius: 4px;
+      background: var(--emerald-soft);
+      border: 1px solid var(--border-emerald);
+      color: var(--emerald);
     }
 
     .bullets {
@@ -235,6 +233,83 @@
       margin-top: 8px;
       color: var(--emerald);
       flex-shrink: 0;
+    }
+
+    /* Architecture Flow Widget */
+    .arch-flow {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 16px;
+      padding: 24px 0;
+    }
+
+    .arch-node {
+      font-family: var(--font-mono);
+      font-size: 26px;
+      font-weight: 600;
+      color: var(--text-primary);
+      background: var(--bg-panel-elevated);
+      border: 1px solid var(--border-emerald);
+      border-radius: 12px;
+      padding: 16px 24px;
+      white-space: nowrap;
+    }
+
+    .arch-arrow {
+      font-size: 26px;
+      color: var(--emerald);
+      font-weight: 700;
+    }
+
+    /* Terminal Window Widget */
+    .terminal-window {
+      background: #0B0F17;
+      border: 1px solid var(--border-panel);
+      border-radius: 16px;
+      overflow: hidden;
+      margin-top: 10px;
+    }
+
+    .terminal-bar {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 14px 20px;
+      background: #111622;
+      border-bottom: 1px solid var(--border-panel);
+    }
+
+    .terminal-dots {
+      display: flex;
+      gap: 8px;
+    }
+
+    .terminal-dot {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      background: #334155;
+    }
+
+    .terminal-title {
+      font-family: var(--font-mono);
+      font-size: 18px;
+      color: var(--text-muted);
+      margin-left: 8px;
+    }
+
+    .terminal-body {
+      padding: 24px;
+      font-family: var(--font-mono);
+      font-size: 26px;
+      line-height: 1.6;
+      color: var(--text-primary);
+    }
+
+    .terminal-prompt {
+      color: var(--emerald);
+      margin-right: 12px;
     }
 
     /* ---------- Footer band (~10%) ---------- */
@@ -292,7 +367,7 @@
   <div class="card">
     <header class="header">
       <div class="brand">
-        <span class="brand-dot"></span>
+        <span class="brand-badge">[OP]</span>
         <span class="brand-name">OmniPost</span>
         <span class="brand-handle">{{AUTHOR}}</span>
       </div>

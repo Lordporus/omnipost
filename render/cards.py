@@ -68,7 +68,7 @@ READINESS_JS = """
 
 _ROLE_META: dict[str, tuple[str, str]] = {
     "CORE": ("KEY TAKEAWAY", "SUMMARY"),
-    "CONTEXT": ("THE CONTEXT", "CONTEXT"),
+    "CONTEXT": ("SYSTEM ARCHITECTURE", "ARCHITECTURE"),
     "MECHANISM": ("HOW IT WORKS", "MECHANISM"),
     "CHECKLIST": ("ACTION CHECKLIST", "CHECKLIST"),
 }
@@ -266,17 +266,52 @@ def render_card_html(
     bullets = slide.get("bullets", [])
     if bullets or slide.get("panel_tag"):
         panel_tag = html.escape(str(slide.get("panel_tag", "KEY TAKEAWAYS")))
-        bullet_items = "".join(
-            f'<li class="bullet-item">{SVG_CHEVRON}<span>{html.escape(str(b))}</span></li>'
-            for b in bullets
-        )
+
+        # Check for architecture flow in bullets
+        flow_bullet = next((b for b in bullets if "->" in b or "➔" in b or "-->" in b or ("[" in b and "]" in b)), None)
+        # Check for terminal code in bullets
+        code_bullet = next((b for b in bullets if any(b.lower().startswith(p) for p in ("docker ", "git ", "pip ", "curl ", "npm ", "cargo "))), None)
+
+        if flow_bullet:
+            parts = re.split(r"\s*(?:->|-->|➔)\s*", flow_bullet)
+            nodes_html = []
+            for idx, p in enumerate(parts):
+                clean_p = p.strip().strip("[]")
+                nodes_html.append(f'<div class="arch-node"><code>{html.escape(clean_p)}</code></div>')
+                if idx < len(parts) - 1:
+                    nodes_html.append('<div class="arch-arrow">➔</div>')
+            widget_content = f'<div class="arch-flow">{"".join(nodes_html)}</div>'
+            remaining_bullets = [b for b in bullets if b != flow_bullet]
+            if remaining_bullets:
+                rem_items = "".join(
+                    f'<li class="bullet-item">{SVG_CHEVRON}<span>{html.escape(str(b))}</span></li>'
+                    for b in remaining_bullets
+                )
+                widget_content += f'<ul class="bullets" style="margin-top: 20px;">{rem_items}</ul>'
+        elif code_bullet:
+            widget_content = (
+                '<div class="terminal-window">'
+                '<div class="terminal-bar">'
+                '<div class="terminal-dots"><span class="terminal-dot"></span><span class="terminal-dot"></span><span class="terminal-dot"></span></div>'
+                '<span class="terminal-title">bash</span>'
+                '</div>'
+                f'<div class="terminal-body"><span class="terminal-prompt">$</span>{html.escape(code_bullet)}</div>'
+                '</div>'
+            )
+        else:
+            bullet_items = "".join(
+                f'<li class="bullet-item">{SVG_CHEVRON}<span>{html.escape(str(b))}</span></li>'
+                for b in bullets
+            )
+            widget_content = f'<ul class="bullets">{bullet_items}</ul>'
+
         panel_html = (
             '<div class="panel panel-highlight">'
             '<div class="panel-tag">'
-            '<span class="panel-pulse"></span>'
+            '<span class="panel-badge">[SPEC]</span>'
             f"<span>{panel_tag}</span>"
             "</div>"
-            f'<ul class="bullets">{bullet_items}</ul>'
+            f"{widget_content}"
             "</div>"
         )
 
