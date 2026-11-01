@@ -23,7 +23,7 @@ OmniPost evolves from a proven single-platform X autonomous publishing engine in
 - [ ] **Phase 16: Privacy, Error Taxonomy & CI Guardrails** - Redact failure artifacts, replace silent broad exceptions with typed errors, and add fixture-DOM/golden-image/live-smoke tests.
 - [ ] **Phase 17: End-to-End Overhaul Verification & Live Drop** - Prove the overhaul with dry-run, controlled live publishing, verified URLs, duplicate checks, and a telemetry report.
 - [x] **Phase 18: Ingestion & Text Quality Overhaul** - Sanitize raw feed metadata (arXiv/HN), eliminate LinkedIn/Threads copy duplication, enforce word-boundary safe limits without dangling conjunctions, and add humanity guardrails.
-- [ ] **Phase 19: Visual Taste-Design Architecture** - Establish semantic design contract (`r`render/DESIGN.md``), overhaul 9:16 storybook cards with architecture flow and code widgets, and re-architect 1080x1080 carousels for viral 4-slide narrative.
+- [x] **Phase 19: Visual Taste-Design Architecture** - Establish semantic design contract (`render/DESIGN.md`), overhaul 9:16 storybook cards with architecture flow and code widgets, and re-architect 1080x1080 carousels for viral 4-slide narrative.
 
 ## Phase Details
 
@@ -369,4 +369,4 @@ Plans:
 **Plans**: 1 plan
 
 Plans:
-- [ ] 19-01: Semantic Design Contract, High-Agency Storybook Cards & Viral Offline Carousels
+- [x] 19-01: Semantic Design Contract, High-Agency Storybook Cards & Viral Offline Carousels
