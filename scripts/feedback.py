@@ -25,6 +25,9 @@ except ImportError:
     from scripts import analytics, ledger
 
 PROFILE_PATH = ROOT / "references" / "voice-profile.local.md"
+VOICE_SAMPLES_PATH = ROOT / "references" / "voice-samples.md"
+MARKER_START = "<!-- auto-samples-start -->"
+MARKER_END = "<!-- auto-samples-end -->"
 
 
 def classify_hook(text: str) -> str:
@@ -164,9 +167,101 @@ def update_voice_profile(analysis: dict[str, Any], profile_path: Path | None = N
     return updated_content
 
 
+
+
+def refresh_voice_samples(
+    state_path: Path | None = None,
+    samples_path: Path | None = None,
+    top_n: int = 3,
+    bottom_n: int = 3,
+) -> str:
+    """Refresh top/bottom posts per platform in references/voice-samples.md from analytics."""
+    target = samples_path or VOICE_SAMPLES_PATH
+    target.parent.mkdir(parents=True, exist_ok=True)
+
+    st = ledger.load_state(state_path)
+    posts = st.get("posts", [])
+
+    platform_posts: dict[str, list[dict[str, Any]]] = {}
+    for p in posts:
+        text = (p.get("text") or "").strip()
+        if not text:
+            continue
+        platforms = p.get("platforms", {})
+        if not platforms:
+            score = analytics.calculate_engagement_score(p.get("metrics"))
+            platform_posts.setdefault("x", []).append({
+                "text": text,
+                "score": score,
+                "date": p.get("date", ""),
+            })
+            continue
+
+        for plat_name, p_data in platforms.items():
+            if not isinstance(p_data, dict):
+                continue
+            metrics = p_data.get("metrics")
+            score = analytics.calculate_engagement_score(metrics)
+            plat_text = (p_data.get("text") or text).strip()
+            platform_posts.setdefault(plat_name.lower(), []).append({
+                "text": plat_text,
+                "score": score,
+                "date": p.get("date", ""),
+            })
+
+    winning_sections = ["## Winning Samples"]
+    anti_pattern_items: list[str] = []
+
+    canonical_platforms = ["x", "bluesky", "threads", "linkedin"]
+    all_plats = [p for p in canonical_platforms if p in platform_posts] + [
+        p for p in sorted(platform_posts.keys()) if p not in canonical_platforms
+    ]
+
+    for plat in all_plats:
+        items = platform_posts[plat]
+        items.sort(key=lambda x: x["score"], reverse=True)
+
+        top_items = items[:top_n]
+        if top_items:
+            plat_header = plat.capitalize() if plat != "x" else "X"
+            winning_sections.append(f"\n### {plat_header}")
+            winning_sections.append("\n\n---\n\n".join(it["text"] for it in top_items))
+
+        if len(items) >= 4:
+            remaining = [it for it in items if it not in top_items]
+            bottom_items = sorted(remaining, key=lambda x: x["score"])[:bottom_n]
+            for it in bottom_items:
+                snippet = it["text"].replace("\n", " ")
+                if len(snippet) > 80:
+                    snippet = snippet[:77] + "..."
+                anti_pattern_items.append(
+                    f"- \"{snippet}\" (Platform: {plat}, Score: {it['score']})"
+                )
+
+    new_auto_content = "\n".join(winning_sections).strip()
+    if anti_pattern_items:
+        new_auto_content += (
+            "\n\n## Anti-Patterns / Do Not Emulate (Low Engagement)\n"
+            + "\n".join(anti_pattern_items)
+        )
+
+    existing = target.read_text(encoding="utf-8") if target.exists() else "# Operator Voice Samples\n"
+
+    if MARKER_START in existing and MARKER_END in existing:
+        pattern = re.escape(MARKER_START) + r".*?" + re.escape(MARKER_END)
+        replacement = f"{MARKER_START}\n{new_auto_content}\n{MARKER_END}"
+        updated = re.sub(pattern, replacement, existing, flags=re.S)
+    else:
+        wrapped = f"{MARKER_START}\n{new_auto_content}\n{MARKER_END}\n"
+        updated = existing.rstrip() + "\n\n" + wrapped
+
+    target.write_text(updated, encoding="utf-8")
+    return updated
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("cmd", nargs="?", default="analyze", choices=["analyze", "update-profile"])
+    parser.add_argument("cmd", nargs="?", default="analyze", choices=["analyze", "update-profile", "refresh-samples"])
     args = parser.parse_args()
 
     analysis = analyze_performance()
@@ -182,6 +277,12 @@ def main() -> None:
         section = re.search(r"## Learned Algorithmic Preferences.*", content, re.S)
         if section:
             print(section.group(0))
+
+    if args.cmd == "refresh-samples":
+        content = refresh_voice_samples()
+        print("[SUCCESS] Successfully refreshed voice samples from analytics:")
+        print("-" * 60)
+        print(content)
 
 
 if __name__ == "__main__":

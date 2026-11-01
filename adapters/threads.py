@@ -40,12 +40,22 @@ PREVIEW_COUNT_JS = """
 (() => String(document.querySelectorAll('img[src^="blob:"], img[src^="data:"]').length))()
 """
 
-# Stealth script to mask automated browser flags
+# Stealth script to mask automated browser flags and prevent beforeunload dialog blocks
 STEALTH_JS = r"""
 (() => {
   try {
     Object.defineProperty(navigator, 'webdriver', {
       get: () => false,
+      configurable: true,
+    });
+  } catch (e) {}
+  try {
+    window.addEventListener('beforeunload', (e) => {
+      delete e['returnValue'];
+    }, true);
+    Object.defineProperty(window, 'onbeforeunload', {
+      get: () => null,
+      set: () => {},
       configurable: true,
     });
   } catch (e) {}
@@ -191,12 +201,17 @@ SUBMIT_CONFIRMED_JS = r"""
 (() => {
   const ed = document.querySelector('div[contenteditable="true"][role="textbox"]')
     || document.querySelector('div[contenteditable="true"]');
-  const toast = [...document.querySelectorAll('div[role="alert"], [data-testid*="toast"], [class*="toast"], [class*="Toast"]')]
-    .map(t => t.innerText || '')
-    .join(' ');
+  const toasts = [...document.querySelectorAll('div[role="alert"], [data-testid*="toast"], [class*="toast"], [class*="Toast"]')];
+  const toastText = toasts.map(t => t.innerText || '').join(' ');
+  const bodyText = document.body ? (document.body.innerText || '') : '';
+
+  const isPosting = /posting\.\.\./i.test(toastText) || /posting\.\.\./i.test(bodyText);
+  const isPosted = /posted|sent|shared/i.test(toastText) || /\/post\//.test(toastText);
+
   return JSON.stringify({
     editor_open: !!ed,
-    posted: /posted|sent|shared/i.test(toast) || /\/post\//.test(toast),
+    posting: isPosting,
+    posted: isPosted,
   });
 })()
 """
@@ -634,19 +649,24 @@ class ThreadsAdapter(PlatformAdapter):
             # toast) before claiming the post exists.
             confirmed = False
             confirm_state: dict[str, Any] = {}
-            for _ in range(15):
+            for _ in range(20):
                 await asyncio.sleep(1.0)
                 try:
                     confirm_state = json.loads(await page.eval(SUBMIT_CONFIRMED_JS) or "{}")
                 except (CDPError, OSError, asyncio.TimeoutError, ValueError):
                     confirm_state = {}
+
+                # If media upload is actively in-flight ("Posting..."), keep waiting
+                if confirm_state.get("posting") is True:
+                    continue
+
                 if confirm_state.get("posted") is True or confirm_state.get("editor_open") is False:
                     confirmed = True
                     break
             if not confirmed:
                 arts = await capture_failure_artifacts(page, "threads")
                 raise SelectorError(
-                    "Threads submit was not confirmed (composer still open)",
+                    "Threads submit was not confirmed (composer still open or upload stalled)",
                     platform="threads",
                     stage="submit_unconfirmed",
                     context={"confirm": confirm_state},

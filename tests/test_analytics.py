@@ -164,5 +164,59 @@ class TestAnalyticsScraper(unittest.TestCase):
         self.assertGreater(report[0]["score"], report[1]["score"])
 
 
+
+    def test_generate_winner_format_report(self):
+        test_state = {
+            "version": "2.0",
+            "posts": [
+                {
+                    "date": "2026-10-01",
+                    "text": "Why do 90% of autonomous agents fail in production? Question hook with 200 chars.",
+                    "platforms": {
+                        "x": {"status": "published", "metrics": {"likes": 300, "reposts": 40, "replies": 20, "views": 5000}}
+                    }
+                },
+                {
+                    "date": "2026-10-02",
+                    "text": "Most developers are wrong about AI agents. Contrarian view.",
+                    "platforms": {
+                        "x": {"status": "published", "metrics": {"likes": 10, "reposts": 1, "replies": 0, "views": 100}}
+                    }
+                },
+                {
+                    "date": "2026-10-03",
+                    "text": "Local CDP automation beats SaaS wrappers. High signal Bluesky insight.",
+                    "platforms": {
+                        "bluesky": {"status": "published", "metrics": {"likes": 150, "reposts": 25, "replies": 10, "views": 0}}
+                    }
+                }
+            ]
+        }
+        ledger.save_state(test_state, self.state_file)
+
+        report = analytics.generate_winner_format_report(self.state_file)
+        self.assertIn("x", report)
+        self.assertIn("bluesky", report)
+
+        x_rep = report["x"]
+        self.assertTrue(len(x_rep["top"]) > 0)
+        self.assertEqual(x_rep["top"][0]["hook_type"], "Question")
+        self.assertGreater(x_rep["top"][0]["score"], 400.0)
+        self.assertTrue(len(x_rep["bottom"]) > 0)
+        self.assertEqual(x_rep["bottom"][0]["hook_type"], "Contrarian")
+
+        formatted = analytics.format_winner_report(report)
+        self.assertIn("Winner-Format Report", formatted)
+        self.assertIn("Question", formatted)
+
+    def test_generate_winner_format_report_empty(self):
+        empty_state = {"posts": []}
+        ledger.save_state(empty_state, self.state_file)
+        report = analytics.generate_winner_format_report(self.state_file)
+        self.assertEqual(report, {})
+        formatted = analytics.format_winner_report(report)
+        self.assertIn("No published posts", formatted)
+
+
 if __name__ == "__main__":
     unittest.main()

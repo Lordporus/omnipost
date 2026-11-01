@@ -12,6 +12,9 @@ from scripts.validator import (
     DuplicatePostError,
     HandleMismatchError,
     AccountWarmupError,
+    HumanityGateError,
+    HUMANITY_THRESHOLD,
+    score_humanity,
     engagement_bait_pattern_detected,
     verify_character_ceiling_measured,
     check_duplicate_post,
@@ -201,6 +204,153 @@ class TestGuardRails(unittest.TestCase):
             mock_asyncio_run.return_value = {"logged_in": True, "handle": "wrong_user"}
             with self.assertRaises(HandleMismatchError):
                 require_session(expect="target_user")
+
+
+SLOP_SAMPLE = (
+    "In today's fast-paced world, we must delve into the tapestry of innovation. "
+    "It's not just a game-changer, it's a testament to seamless collaboration. "
+    "Let us leverage this robust framework to unlock unprecedented growth, synergy, and transformation."
+)
+
+HUMAN_SAMPLE = (
+    "We cut the publish path from 11 seconds to 3. "
+    "The fix was boring: one Postgres index on the ledger table. "
+    "No rewrite. No new service."
+)
+
+
+class TestHumanityGate(unittest.TestCase):
+    """Task 3/4: measurable AI tells, and the fail-closed / fail-open policy."""
+
+    def test_slop_sample_scores_below_threshold(self):
+        score, violations = score_humanity(SLOP_SAMPLE)
+        self.assertLess(score, HUMANITY_THRESHOLD)
+        self.assertTrue(violations)
+
+    def test_human_sample_passes(self):
+        score, violations = score_humanity(HUMAN_SAMPLE)
+        self.assertGreaterEqual(score, HUMANITY_THRESHOLD)
+        self.assertEqual(violations, [])
+
+    def test_banned_phrase_is_a_violation(self):
+        score, violations = score_humanity(
+            "We leverage the platform every day. It ships fast."
+        )
+        self.assertLess(score, 100)
+        self.assertTrue(any("leverage" in v for v in violations))
+
+    def test_em_dash_density_is_a_violation(self):
+        text = " ".join(["Ship it — then check it"] * 12)
+        _, violations = score_humanity(text)
+        self.assertTrue(any("Em-dash" in v for v in violations))
+
+    def test_missing_short_sentence_is_a_violation(self):
+        text = (
+            "This sentence has more than eight words in it. "
+            "This one also has more than eight words."
+        )
+        _, violations = score_humanity(text)
+        self.assertTrue(any("rhythm" in v for v in violations))
+
+    def test_hashtag_and_emoji_are_violations(self):
+        _, violations = score_humanity("Shipped 3 fixes today 🚀🔥 #buildinpublic")
+        self.assertTrue(any("Hashtag" in v for v in violations))
+        self.assertTrue(any("emoji" in v for v in violations))
+
+    def test_missing_concrete_token_is_a_violation(self):
+        _, violations = score_humanity("Short. Very short. Nothing concrete here at all.")
+        self.assertTrue(any("concrete token" in v for v in violations))
+
+    def test_abstract_tricolon_is_a_violation(self):
+        _, violations = score_humanity("We chase innovation, synergy, and growth. Short line.")
+        self.assertTrue(any("tricolon" in v for v in violations))
+
+    def test_gate_fails_closed_on_low_score(self):
+        with self.assertRaises(HumanityGateError):
+            validate_draft_guardrails(
+                {"text": SLOP_SAMPLE[:270]}, platform="bluesky", raise_on_error=True
+            )
+
+    def test_gate_fails_open_when_scorer_breaks(self):
+        with patch("scripts.validator.score_humanity", side_effect=RuntimeError("boom")):
+            ok, errors = validate_draft_guardrails(
+                {"text": HUMAN_SAMPLE}, platform="bluesky", raise_on_error=True
+            )
+        self.assertTrue(ok)
+        self.assertEqual(errors, [])
+
+    def test_short_post_with_two_em_dashes_is_a_violation(self):
+        _, violations = score_humanity("Shipped it — twice — today. 2 fixes.")
+        self.assertTrue(any("Em-dash" in v for v in violations))
+
+    def test_single_emoji_is_a_violation(self):
+        _, violations = score_humanity("Shipped 3 fixes today 🚀")
+        self.assertTrue(any("emoji" in v for v in violations))
+
+    def test_url_fragment_is_not_a_hashtag(self):
+        _, violations = score_humanity(
+            "Read https://example.com/#install before shipping. 2 lines."
+        )
+        self.assertFalse(any("Hashtag" in v for v in violations))
+
+    def test_prompt_banned_words_are_all_scored(self):
+        _, violations = score_humanity("A seamless, robust rewrite. 3 days.")
+        self.assertTrue(any("seamless" in v for v in violations))
+        self.assertTrue(any("robust" in v for v in violations))
+
+    def test_gate_can_be_disabled_by_config(self):
+        ok, errors = validate_draft_guardrails(
+            {"text": SLOP_SAMPLE[:270]},
+            cfg={"humanity_gate": False},
+            platform="bluesky",
+            raise_on_error=True,
+        )
+        self.assertTrue(ok)
+        self.assertEqual(errors, [])
+
+    def test_gate_threshold_is_configurable(self):
+        ok, errors = validate_draft_guardrails(
+            {"text": HUMAN_SAMPLE},
+            cfg={"humanity_threshold": 101},
+            platform="bluesky",
+            raise_on_error=False,
+        )
+        self.assertFalse(ok)
+        self.assertTrue(any("Humanity gate" in e for e in errors))
+
+
+    def test_draft_with_scraper_metadata_fails_guardrail(self):
+        draft = {
+            "text": "arXiv:2610.37830v1 Announce Type: new Abstract: Multi-agent systems encounter Byzantine faults in consensus."
+        }
+        ok, errors = validate_draft_guardrails(
+            draft,
+            cfg={"humanity_gate": True},
+            platform="bluesky",
+            raise_on_error=False,
+        )
+        self.assertFalse(ok)
+        self.assertTrue(any("metadata markers" in e.lower() for e in errors))
+
+    def test_draft_with_dangling_conjunction_fails_guardrail(self):
+        draft = {
+            "text": "Decentralized state machines require verified consensus and..."
+        }
+        ok, errors = validate_draft_guardrails(
+            draft,
+            cfg={"humanity_gate": True},
+            platform="bluesky",
+            raise_on_error=False,
+        )
+        self.assertFalse(ok)
+        self.assertTrue(any("dangling conjunction" in e.lower() for e in errors))
+
+    def test_score_humanity_penalizes_scraper_metadata(self):
+        score, violations = score_humanity(
+            "arXiv:2401.12345v1 Abstract: We evaluate latency in Postgres 17 clusters."
+        )
+        self.assertLess(score, 70)
+        self.assertTrue(any("metadata" in v.lower() for v in violations))
 
 
 if __name__ == "__main__":

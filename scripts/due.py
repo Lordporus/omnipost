@@ -21,6 +21,7 @@ CLI:
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import random
 import sys
@@ -62,39 +63,109 @@ def load_state() -> dict:
     return ledger.load_state()
 
 
-def make_plan(date: str | None = None) -> dict:
-    """Assign every slot a jittered due time, keeping them a minimum gap apart."""
+def compute_slot_jitter(
+    date_str: str,
+    anchor: str,
+    min_minutes: int = 7,
+    max_minutes: int = 15,
+    attempt: int = 0,
+) -> int:
+    """Deterministic jitter in minutes for a given date and slot anchor.
+    Returns an integer offset in [-max_minutes, -min_minutes] U [min_minutes, max_minutes],
+    or 0 if max_minutes <= 0.
+    """
+    if max_minutes <= 0:
+        return 0
+    min_m = max(0, min(min_minutes, max_minutes))
+    seed_str = f"jitter:{date_str}:{anchor}:{attempt}"
+    digest = hashlib.sha256(seed_str.encode("utf-8")).hexdigest()
+    val = int(digest[:8], 16)
+    sign = 1 if (val & 1) else -1
+    spread = max_minutes - min_m + 1
+    magnitude = min_m + ((val >> 1) % spread)
+    return sign * magnitude
+
+
+def make_plan(date: str | None = None, allow_skip: bool | None = None) -> dict:
+    """Assign every slot a deterministic jittered due time, keeping them a minimum gap apart."""
     c = settings.load()
     tz = settings.tzinfo()
     day = (datetime.strptime(date, "%Y-%m-%d").replace(tzinfo=tz) if date
            else now_tz().replace(hour=0, minute=0, second=0, microsecond=0))
-    jitter = int(c.get("jitter_minutes", 45))
-    gap = float(c.get("min_gap_hours", 3))
+    date_str = day.strftime("%Y-%m-%d")
+
+    jitter_min = int(c.get("jitter_min_minutes", c.get("jitter_min", 7)))
+    configured_max = c.get("jitter_max_minutes", c.get("jitter_max"))
+    if configured_max is not None:
+        jitter_max = int(configured_max)
+    else:
+        legacy_jitter = c.get("jitter_minutes")
+        jitter_max = int(legacy_jitter) if (legacy_jitter is not None and legacy_jitter != 45) else 15
+    jitter_min = max(0, min(jitter_min, jitter_max))
+
+    gap = float(c.get("min_gap_hours", 2.5))
     ai_slot = c.get("ai_update_slot", "16:00")
 
+    if allow_skip is None:
+        allow_skip = bool(c.get("allow_skipped_slots", c.get("skip_slot_enabled", False)))
+    skip_chance = float(c.get("skip_slot_chance", 0.25))
+
+    raw_slots = c.get("slots") or ["13:00"]
+    skipped_anchor = None
+    if allow_skip and len(raw_slots) > 1:
+        day_seed = int(hashlib.sha256(f"skip_day:{date_str}".encode("utf-8")).hexdigest()[:8], 16)
+        if (day_seed % 100) < int(skip_chance * 100):
+            eligible = [s for s in raw_slots if str(s) != str(ai_slot)]
+            if eligible:
+                skipped_anchor = str(eligible[(day_seed >> 8) % len(eligible)])
+
+    # Check for existing plan to preserve written text or posted status
+    existing_slots = {}
+    p_path = plan_path(date_str)
+    if p_path.exists():
+        try:
+            old_plan = json.loads(p_path.read_text(encoding="utf-8"))
+            for s in old_plan.get("slots", []):
+                if "slot" in s:
+                    existing_slots[s["slot"]] = s
+        except Exception:
+            pass
+
     slots, prev = [], None
-    for anchor in (c.get("slots") or ["13:00"]):
+    for anchor in raw_slots:
         hh, mm = (int(x) for x in str(anchor).split(":"))
         base = day + timedelta(hours=hh, minutes=mm)
         if hh == 0 and mm == 0:                    # the late post belongs to today's run
             base += timedelta(days=1)
         when = base
-        for _ in range(40):
-            when = base + timedelta(minutes=random.randint(-jitter, jitter))
+        for attempt in range(40):
+            j = compute_slot_jitter(date_str, str(anchor), jitter_min, jitter_max, attempt)
+            when = base + timedelta(minutes=j)
             if prev is None or (when - prev) >= timedelta(hours=gap):
                 break
         prev = when
-        slots.append({
+        is_ai = (str(anchor) == str(ai_slot) and c.get("ai_update_enabled", True))
+        existing = existing_slots.get(anchor, {})
+        slot_item = {
             "slot": anchor,
-            "kind": "ai_update" if anchor == ai_slot and c.get("ai_update_enabled", True) else "value",
+            "kind": existing.get("kind") or ("ai_update" if is_ai else "value"),
             "due_at": when.isoformat(),
-            "text": "", "image": None, "posted": False, "tweet_url": None,
-        })
-    plan = {"date": day.strftime("%Y-%m-%d"), "created_at": now_tz().isoformat(),
+            "text": existing.get("text", ""),
+            "image": existing.get("image", None),
+            "posted": existing.get("posted", False),
+            "tweet_url": existing.get("tweet_url", None),
+        }
+        if str(anchor) == str(skipped_anchor):
+            slot_item["skipped"] = "deterministic_schedule_skip"
+        elif "skipped" in existing:
+            slot_item["skipped"] = existing["skipped"]
+        slots.append(slot_item)
+
+    plan = {"date": date_str, "created_at": now_tz().isoformat(),
             "handle": c.get("handle", ""), "slots": slots}
     PLANS.mkdir(parents=True, exist_ok=True)
-    plan_path(plan["date"]).write_text(json.dumps(plan, indent=2, ensure_ascii=False),
-                                       encoding="utf-8")
+    p_path.write_text(json.dumps(plan, indent=2, ensure_ascii=False),
+                      encoding="utf-8")
     return plan
 
 
@@ -153,6 +224,8 @@ def due(max_lag: float = MAX_LAG_HOURS) -> dict | None:
         done = _posted_slots(st, plan.get("date", ""))
         for slot in plan.get("slots", []):
             if slot.get("posted") or slot.get("slot") in done:
+                continue
+            if slot.get("skipped"):
                 continue
             has_text = bool((slot.get("text") or "").strip())
             try:
@@ -231,10 +304,12 @@ def main() -> None:
     ap.add_argument("--file", default=None)
     ap.add_argument("--url", default=None)
     ap.add_argument("--image", default=None)
+    ap.add_argument("--allow-skip", action="store_true", default=None,
+                    help="Allow deterministic optional slot skip")
     a = ap.parse_args()
 
     if a.cmd == "make-plan":
-        p = make_plan(a.date)
+        p = make_plan(a.date, allow_skip=a.allow_skip)
         print(json.dumps({"date": p["date"],
                           "slots": [{"slot": s["slot"], "kind": s["kind"], "due_at": s["due_at"]}
                                     for s in p["slots"]]}, indent=2))

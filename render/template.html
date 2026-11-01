@@ -3,27 +3,25 @@
 <head>
   <meta charset="UTF-8">
   <title>{{MAIN_TITLE}}</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700;800;900&family=Geist+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
   <style>
+    {{FONT_CSS}}
     :root {
       /* Canvas & Ambient Surfaces (/taste-design Zinc/Slate base) */
-      --bg-canvas: #080A0F;
+      --bg-canvas: #090D16;
       --bg-card: #0F131D;
-      --bg-card-elevated: #151A27;
+      --bg-card-elevated: #121824;
       --border-card: rgba(255, 255, 255, 0.08);
       --border-card-highlight: rgba(0, 229, 153, 0.35);
 
       /* High-Contrast Typography */
-      --text-primary: #FFFFFF;
+      --text-primary: #F1F5F9;
       --text-secondary: #94A3B8;
       --text-muted: #64748B;
 
       /* Singular Precision Accent (/taste-design Rule 2: 1 Accent, Saturation < 80%) */
       --accent-primary: #00E599;
       --accent-muted: rgba(0, 229, 153, 0.12);
-      --accent-gradient: linear-gradient(135deg, #00E599 0%, #00B4D8 100%);
+      --accent-gradient: linear-gradient(180deg, #00E599 0%, #00C782 100%);
 
       /* Typography Stack (Geist + Geist Mono) */
       --font-sans: "Geist", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
@@ -221,7 +219,7 @@
       height: 8px;
       border-radius: 50%;
       background: var(--accent-primary);
-      box-shadow: 0 0 10px var(--accent-primary);
+      
     }
 
     .hero-subtext {
@@ -317,7 +315,7 @@
       border-radius: 999px;
       letter-spacing: 0.05em;
       text-transform: uppercase;
-      box-shadow: 0 8px 24px rgba(0, 229, 153, 0.25);
+      
     }
 
     /* Legacy fallback outro card */
@@ -370,7 +368,7 @@
       height: 8px;
       border-radius: 50%;
       background: var(--accent-primary);
-      box-shadow: 0 0 8px var(--accent-primary);
+      
     }
 
     .slide-pagination {
@@ -390,8 +388,78 @@
     .pagination-pill.active {
       width: 32px;
       background: var(--accent-primary);
-      box-shadow: 0 0 10px rgba(0, 229, 153, 0.4);
+      
     }
+
+    /* High-Agency Architecture Flow Panel */
+    .arch-flow {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      background: #090D16;
+      border: 1px solid var(--border-card);
+      border-radius: 12px;
+      padding: 24px;
+      margin-top: 16px;
+    }
+
+    .arch-node {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background: var(--bg-card-elevated);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 8px;
+      padding: 12px 20px;
+      font-family: var(--font-mono);
+      font-size: 18px;
+      color: var(--text-primary);
+    }
+
+    .arch-arrow {
+      text-align: center;
+      color: var(--accent-primary);
+      font-size: 20px;
+      font-family: var(--font-mono);
+      line-height: 1;
+    }
+
+    /* High-Agency Terminal Window */
+    .terminal-window {
+      background: #04070D;
+      border: 1px solid var(--border-card-highlight);
+      border-radius: 12px;
+      overflow: hidden;
+      font-family: var(--font-mono);
+      margin-top: 16px;
+    }
+
+    .terminal-header {
+      background: #0D1117;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+      padding: 8px 16px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 13px;
+      color: var(--text-muted);
+    }
+
+    .terminal-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: rgba(255, 255, 255, 0.2);
+    }
+
+    .terminal-body {
+      padding: 20px 24px;
+      font-size: 19px;
+      line-height: 1.6;
+      color: var(--accent-primary);
+      white-space: pre-wrap;
+    }
+
   </style>
 </head>
 <body>

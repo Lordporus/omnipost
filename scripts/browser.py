@@ -183,6 +183,7 @@ def ensure_chrome(wait: float = 25, url: str = "about:blank") -> bool:
     while time.time() < deadline:
         if alive():
             time.sleep(2.0)
+            cleanup_ephemeral_tabs()
             return True
         time.sleep(0.5)
     raise CDPError(f"browser did not open port {_port()} within {wait}s")
@@ -390,16 +391,33 @@ def scrape_many(urls: list[str], expr: str, settle: float = 6.0,
             close_tabs_matching(close_after)
 
 
+def close_tab(tab_id_or_ws: str) -> bool:
+    """Closes a tab by its targetId or webSocketDebuggerUrl."""
+    if not isinstance(tab_id_or_ws, str) or not tab_id_or_ws:
+        return False
+    tab_id = tab_id_or_ws.rstrip("/").split("/")[-1]
+    try:
+        with urllib.request.urlopen(f"{_base()}/json/close/{tab_id}", timeout=5):
+            return True
+    except Exception:
+        return False
+
+
 def close_tabs_matching(substr: str) -> int:
     n = 0
     for tab in list_tabs():
         if substr in (tab.get("url") or ""):
-            try:
-                with urllib.request.urlopen(f"{_base()}/json/close/{tab['id']}", timeout=5):
-                    n += 1
-            except Exception:
-                pass
+            if close_tab(tab.get("id") or ""):
+                n += 1
     return n
+
+
+def cleanup_ephemeral_tabs() -> int:
+    """Closes all orphan rendering and preview tabs."""
+    count = 0
+    for pattern in ("data:text/html", "preview.html", "about:blank"):
+        count += close_tabs_matching(pattern)
+    return count
 
 
 def screenshot(url: str, out: str, settle: float = 5.0,

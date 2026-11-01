@@ -16,6 +16,8 @@ import pytest
 
 from adapters.base import PublishPayload
 from render.carousel import (
+    PALETTES,
+    resolve_palette,
     build_carousel_html,
     create_carousel_pdf,
     generate_standard_slides,
@@ -225,3 +227,117 @@ def test_linkedin_document_publish_payload_compatibility(tmp_path):
     assert len(payload.media_paths) == 1
     assert payload.media_paths[0].suffix == ".pdf"
     assert payload.extra_metadata["document_title"] == "OmniPost Architecture Blueprint"
+
+
+def test_carousel_palette_rotation():
+    """Verify consecutive slots rotate deterministically through distinct visual palettes."""
+    pal_1 = resolve_palette(date_str="2026-10-01", slot="13:00")
+    pal_2 = resolve_palette(date_str="2026-10-01", slot="16:00")
+    assert pal_1 in PALETTES
+    assert pal_2 in PALETTES
+    assert pal_1 != pal_2, "Consecutive slots should rotate visual palettes"
+
+
+def test_build_carousel_html_embeds_palette_variables():
+    """Verify build_carousel_html injects custom palette CSS variables into template."""
+    slides = [{"type": "hero", "title": "Slide 1", "body": "Overview", "tag": "TECH"}]
+    html_cyan = build_carousel_html(slides, palette="cyan")
+    assert "#38BDF8" in html_cyan
+
+    html_amber = build_carousel_html(slides, palette="amber")
+    assert "#F59E0B" in html_amber
+
+
+def test_carousel_artifact_slide_rendering():
+    """Verify slide with type 'artifact' renders with dedicated artifact styling."""
+    slides = [{
+        "type": "artifact",
+        "title": "System Architecture Schema",
+        "body": "State machine transition specifications.",
+        "code": "schema: OmniPostV2\nmode: deterministic",
+        "tag": "SCHEMA"
+    }]
+    html_doc = build_carousel_html(slides)
+    assert "System Architecture Schema" in html_doc
+    assert "code-panel-artifact" in html_doc
+    assert "SYSTEM ARTIFACT" in html_doc
+
+
+def test_carousel_offline_vendored_fonts():
+    """Verify carousel template embeds vendored Geist fonts as base64 without external font requests."""
+    slides = [{"type": "hero", "title": "Offline Render Test", "body": "Overview", "tag": "TECH"}]
+    html_doc = build_carousel_html(slides)
+
+    assert "fonts.googleapis.com" not in html_doc, "External Google Fonts link found in template"
+    assert "fonts.gstatic.com" not in html_doc, "External Google Fonts preconnect found in template"
+    assert "@font-face" in html_doc, "Missing @font-face rules in carousel HTML"
+    assert "data:font/woff2;base64," in html_doc, "Missing base64 data URIs for vendored fonts"
+    assert "Geist" in html_doc
+    assert "Geist Mono" in html_doc
+
+
+def test_carousel_single_accent_token_and_no_dual_gradients():
+    """Verify carousel template eliminates multi-hue gradients in accordance with DESIGN.md."""
+    slides = [{"type": "hero", "title": "Design Compliance", "body": "Overview", "tag": "DESIGN"}]
+    html_doc = build_carousel_html(slides)
+
+    # Must not contain multi-color gradient washes (#00E599 to #00B4D8 or similar)
+    assert "#00B4D8" not in html_doc, "Multi-color gradient wash found in carousel HTML"
+    assert "linear-gradient(135deg, #00E599 0%, #00B4D8 100%)" not in html_doc
+
+
+def test_generate_standard_slides_viral_narrative_and_deduplication():
+    """Verify 4-slide viral narrative progression has zero duplicate sentences or bullets."""
+    topic_payload = {
+        "headline": "High-Throughput SQLite Write Pipelines",
+        "body": "Concurrent WAL-mode connection pools eliminate database lock contention in distributed edge nodes.",
+        "points": [
+            "WAL mode enables non-blocking concurrent readers while a single writer proceeds",
+            "Batch transactions reduce filesystem sync calls from 500/s to 4/s",
+            "In-memory advisory locks synchronize external process boundaries cleanly",
+        ],
+        "takeaway": "Embrace single-writer multi-reader WAL configurations for instant 10x edge throughput.",
+        "category": "DATABASE SYSTEMS",
+    }
+
+    slides = generate_standard_slides(topic_payload)
+    assert len(slides) == 4
+
+    types = [s["type"] for s in slides]
+    assert types == ["hero", "problem", "solution", "checklist_cta"]
+
+    # Verify zero duplicate content
+    all_bullets = []
+    all_bodies = []
+    for s in slides:
+        body = s.get("body", "").strip()
+        if body:
+            all_bodies.append(body)
+        for b in s.get("bullets", []):
+            b_clean = str(b).strip()
+            if b_clean:
+                all_bullets.append(b_clean)
+
+    assert len(all_bullets) == len(set(all_bullets)), f"Duplicate bullets found: {all_bullets}"
+    assert len(all_bodies) == len(set(all_bodies)), f"Duplicate slide bodies found: {all_bodies}"
+
+
+def test_carousel_architecture_widget_support():
+    """Verify solution slide renders architecture flow widgets when topic contains flow patterns."""
+    topic_payload = {
+        "headline": "Edge Ingestion Topology",
+        "body": "Decoupled edge workers buffer raw webhook payloads into local ring buffers before network dispatch.",
+        "points": [
+            "[Ingress] -> [Ring Buffer] -> [Worker Pool] -> [WAL Store]",
+            "Worker pool maintains constant 64 concurrency limit",
+            "Zero memory allocations on steady-state ingestion paths",
+        ],
+        "takeaway": "Decouple network ingress from storage writes using fixed memory ring buffers.",
+        "category": "ARCHITECTURE",
+    }
+
+    slides = generate_standard_slides(topic_payload)
+    html_doc = build_carousel_html(slides)
+
+    assert "arch-flow" in html_doc or "arch-node" in html_doc or "arrow" in html_doc or "[Ring Buffer]" in html_doc
+

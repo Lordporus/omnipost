@@ -27,9 +27,10 @@ sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "scripts"))
 
 try:
+    import feedback
     import ledger
 except ImportError:
-    from scripts import ledger
+    from scripts import feedback, ledger
 
 
 def fetch_bluesky_metrics(post_url: str) -> dict[str, Any] | None:
@@ -196,12 +197,154 @@ def generate_report(state_path: Path | None = None) -> list[dict[str, Any]]:
     return rows
 
 
+
+
+def generate_winner_format_report(state_path: Path | None = None) -> dict[str, Any]:
+    """Generate structured comparison of winning vs losing post formats per platform."""
+    st = ledger.load_state(state_path)
+    posts = st.get("posts", [])
+    if not posts:
+        return {}
+
+    try:
+        import feedback
+    except ImportError:
+        from scripts import feedback
+
+    platform_items: dict[str, list[dict[str, Any]]] = {}
+    for p in posts:
+        text = (p.get("text") or "").strip()
+        if not text:
+            continue
+        platforms = p.get("platforms", {})
+        if not platforms:
+            score = calculate_engagement_score(p.get("metrics"))
+            hook_type = feedback.classify_hook(text)
+            platform_items.setdefault("x", []).append({
+                "text": text,
+                "score": score,
+                "char_len": len(text),
+                "hook_type": hook_type,
+                "date": p.get("date", ""),
+                "slot": p.get("slot", ""),
+                "metrics": p.get("metrics") or {},
+            })
+            continue
+
+        for plat_name, p_data in platforms.items():
+            if not isinstance(p_data, dict):
+                continue
+            metrics = p_data.get("metrics")
+            score = calculate_engagement_score(metrics)
+            plat_text = (p_data.get("text") or text).strip()
+            hook_type = feedback.classify_hook(plat_text)
+            platform_items.setdefault(plat_name.lower(), []).append({
+                "text": plat_text,
+                "score": score,
+                "char_len": len(plat_text),
+                "hook_type": hook_type,
+                "date": p.get("date", ""),
+                "slot": p.get("slot", ""),
+                "metrics": metrics or {},
+            })
+
+    if not platform_items:
+        return {}
+
+    result: dict[str, Any] = {}
+    canonical_platforms = ["x", "bluesky", "threads", "linkedin"]
+    sorted_plats = [p for p in canonical_platforms if p in platform_items] + [
+        p for p in sorted(platform_items.keys()) if p not in canonical_platforms
+    ]
+
+    for plat in sorted_plats:
+        items = platform_items[plat]
+        items.sort(key=lambda x: x["score"], reverse=True)
+
+        top_half = items[:max(1, len(items) // 2)]
+        top_items = items[:min(3, len(items))]
+        bottom_items = list(reversed(items[-min(3, len(items)):])) if len(items) > 1 else items[:1]
+
+        avg_top_len = int(sum(x["char_len"] for x in top_half) / len(top_half))
+
+        hook_counts: dict[str, int] = {}
+        for it in top_half:
+            h = it["hook_type"]
+            hook_counts[h] = hook_counts.get(h, 0) + 1
+        best_hook = max(hook_counts.items(), key=lambda kv: kv[1])[0] if hook_counts else "Declarative Insight"
+
+        result[plat] = {
+            "total_posts": len(items),
+            "avg_top_char_len": avg_top_len,
+            "best_hook": best_hook,
+            "top": top_items,
+            "bottom": bottom_items,
+        }
+
+    return result
+
+
+def format_winner_report(report: dict[str, Any]) -> str:
+    """Format winner-format report as an actionable human-readable report."""
+    if not report:
+        return "No published posts with metrics found in ledger to analyze."
+
+    lines = [
+        "=" * 78,
+        "OmniPost Winner-Format Report: Evidence-Based Content Calibration",
+        "=" * 78,
+        "",
+    ]
+
+    for plat, data in report.items():
+        plat_header = plat.capitalize() if plat != "x" else "X"
+        lines.extend([
+            f"--- {plat_header} (Total Analyzed: {data['total_posts']} posts) ---",
+            f"Predominant Winning Hook: {data['best_hook']}",
+            f"Average Top Performer Length: ~{data['avg_top_char_len']} chars",
+            "",
+            "Winning Post Shapes (Highest Engagement):",
+        ])
+        for idx, post in enumerate(data.get("top", []), 1):
+            snip = post["text"].replace("\n", " ")
+            if len(snip) > 80:
+                snip = snip[:77] + "..."
+            lines.append(
+                f"  {idx}. [{post['hook_type']}] Score: {post['score']} (Len: {post['char_len']}) | \"{snip}\""
+            )
+
+        lines.extend(["", "Losing / Lower Post Shapes:"])
+        for idx, post in enumerate(data.get("bottom", []), 1):
+            snip = post["text"].replace("\n", " ")
+            if len(snip) > 80:
+                snip = snip[:77] + "..."
+            lines.append(
+                f"  {idx}. [{post['hook_type']}] Score: {post['score']} (Len: {post['char_len']}) | \"{snip}\""
+            )
+        lines.append("")
+
+    return "\n".join(lines)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("cmd", nargs="?", default="report", choices=["collect", "report"])
+    parser.add_argument("cmd", nargs="?", default="report", choices=["collect", "report", "refresh-samples", "winners"])
     parser.add_argument("--days", type=int, default=7, help="number of days to look back for metrics collection")
     parser.add_argument("--format", choices=["table", "json"], default="table")
     args = parser.parse_args()
+
+    if args.cmd == "refresh-samples":
+        content = feedback.refresh_voice_samples()
+        print("[SUCCESS] Refreshed voice-samples.md from analytics.")
+        return
+
+    if args.cmd == "winners":
+        rep = generate_winner_format_report()
+        if args.format == "json":
+            print(json.dumps(rep, indent=2))
+        else:
+            print(format_winner_report(rep))
+        return
 
     if args.cmd == "collect":
         res = collect_metrics(days=args.days)

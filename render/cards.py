@@ -30,6 +30,11 @@ from scripts import browser, settings
 from scripts.browser import Session
 from scripts.errors import RenderError
 
+try:
+    from render.carousel import PALETTES, resolve_palette
+except ImportError:
+    from carousel import PALETTES, resolve_palette
+
 ROOT = Path(__file__).resolve().parent.parent
 CARD_TEMPLATE_PATH = Path(__file__).resolve().parent / "card_template.html"
 FONT_DIR = Path(__file__).resolve().parent / "assets" / "fonts"
@@ -63,7 +68,7 @@ READINESS_JS = """
 
 _ROLE_META: dict[str, tuple[str, str]] = {
     "CORE": ("KEY TAKEAWAY", "SUMMARY"),
-    "CONTEXT": ("THE CONTEXT", "CONTEXT"),
+    "CONTEXT": ("SYSTEM ARCHITECTURE", "ARCHITECTURE"),
     "MECHANISM": ("HOW IT WORKS", "MECHANISM"),
     "CHECKLIST": ("ACTION CHECKLIST", "CHECKLIST"),
 }
@@ -217,25 +222,10 @@ def build_card_slides(
     return slides
 
 
-@lru_cache(maxsize=1)
-def _font_css() -> str:
-    """Return @font-face rules with the vendored fonts embedded as data URIs."""
-    rules: list[str] = []
-    for family, weight, style, filename in FONT_FILES:
-        path = FONT_DIR / filename
-        if not path.is_file() or path.stat().st_size == 0:
-            raise RenderError(f"missing_font_asset: {filename}")
-        encoded = base64.b64encode(path.read_bytes()).decode("ascii")
-        rules.append(
-            "@font-face {"
-            f'font-family: "{family}";'
-            f"font-weight: {weight};"
-            f"font-style: {style};"
-            "font-display: block;"
-            f'src: url(data:font/woff2;base64,{encoded}) format("woff2");'
-            "}"
-        )
-    return "\n".join(rules)
+try:
+    from render.fonts import _font_css
+except ImportError:
+    from fonts import _font_css
 
 
 def render_card_html(
@@ -244,6 +234,7 @@ def render_card_html(
     total_count: int,
     author: str,
     font_css: str | None = None,
+    palette: str | None = None,
 ) -> str:
     """Fills card_template.html for a single slide."""
     template = CARD_TEMPLATE_PATH.read_text(encoding="utf-8")
@@ -260,24 +251,67 @@ def render_card_html(
     bullets = slide.get("bullets", [])
     if bullets or slide.get("panel_tag"):
         panel_tag = html.escape(str(slide.get("panel_tag", "KEY TAKEAWAYS")))
-        bullet_items = "".join(
-            f'<li class="bullet-item">{SVG_CHEVRON}<span>{html.escape(str(b))}</span></li>'
-            for b in bullets
-        )
+
+        # Check for architecture flow in bullets
+        flow_bullet = next((b for b in bullets if "->" in b or "➔" in b or "-->" in b or ("[" in b and "]" in b)), None)
+        # Check for terminal code in bullets
+        code_bullet = next((b for b in bullets if any(b.lower().startswith(p) for p in ("docker ", "git ", "pip ", "curl ", "npm ", "cargo "))), None)
+
+        if flow_bullet:
+            parts = re.split(r"\s*(?:->|-->|➔)\s*", flow_bullet)
+            nodes_html = []
+            for idx, p in enumerate(parts):
+                clean_p = p.strip().strip("[]")
+                nodes_html.append(f'<div class="arch-node"><code>{html.escape(clean_p)}</code></div>')
+                if idx < len(parts) - 1:
+                    nodes_html.append('<div class="arch-arrow">➔</div>')
+            widget_content = f'<div class="arch-flow">{"".join(nodes_html)}</div>'
+            remaining_bullets = [b for b in bullets if b != flow_bullet]
+            if remaining_bullets:
+                rem_items = "".join(
+                    f'<li class="bullet-item">{SVG_CHEVRON}<span>{html.escape(str(b))}</span></li>'
+                    for b in remaining_bullets
+                )
+                widget_content += f'<ul class="bullets" style="margin-top: 20px;">{rem_items}</ul>'
+        elif code_bullet:
+            widget_content = (
+                '<div class="terminal-window">'
+                '<div class="terminal-bar">'
+                '<div class="terminal-dots"><span class="terminal-dot"></span><span class="terminal-dot"></span><span class="terminal-dot"></span></div>'
+                '<span class="terminal-title">bash</span>'
+                '</div>'
+                f'<div class="terminal-body"><span class="terminal-prompt">$</span>{html.escape(code_bullet)}</div>'
+                '</div>'
+            )
+        else:
+            bullet_items = "".join(
+                f'<li class="bullet-item">{SVG_CHEVRON}<span>{html.escape(str(b))}</span></li>'
+                for b in bullets
+            )
+            widget_content = f'<ul class="bullets">{bullet_items}</ul>'
+
         panel_html = (
             '<div class="panel panel-highlight">'
             '<div class="panel-tag">'
-            '<span class="panel-pulse"></span>'
+            '<span class="panel-badge">[SPEC]</span>'
             f"<span>{panel_tag}</span>"
             "</div>"
-            f'<ul class="bullets">{bullet_items}</ul>'
+            f"{widget_content}"
             "</div>"
         )
 
     res = template.replace("{{FONT_CSS}}", font_css if font_css is not None else _font_css())
     res = res.replace("{{TITLE}}", headline)
     res = res.replace("{{TAG}}", tag)
-    res = res.replace("{{AUTHOR}}", html.escape(author))
+
+    clean_author = str(author or "").strip()
+    if "•" in clean_author:
+        clean_author = clean_author.split("•")[0].strip()
+    clean_author = re.sub(r"(?i)\s*omnipost\b", "", clean_author).strip()
+    if not clean_author:
+        clean_author = "@omnipost"
+
+    res = res.replace("{{AUTHOR}}", html.escape(clean_author))
     res = res.replace("{{COUNTER}}", counter_str)
     res = res.replace("{{HEADLINE}}", headline)
     res = res.replace("{{BODY_HTML}}", body_html)
@@ -287,6 +321,18 @@ def render_card_html(
     res = res.replace(
         "{{PAGE_LABEL}}", html.escape(str(slide.get("page_label") or "STORYBOOK"))
     )
+
+    if palette:
+        active_pal = palette or "emerald"
+        pal_vars = PALETTES.get(active_pal, PALETTES["emerald"])
+        card_vars = {
+            "--bg-canvas": pal_vars.get("--bg-canvas", "#0D1117"),
+            "--border-emerald": pal_vars.get("--border-card-highlight", "rgba(0, 229, 153, 0.38)"),
+            "--emerald": pal_vars.get("--accent-primary", "#00E599"),
+            "--emerald-soft": pal_vars.get("--accent-muted", "rgba(0, 229, 153, 0.12)"),
+        }
+        pal_style = "<style>\n    :root {\n" + "\n".join(f"      {k}: {v};" for k, v in card_vars.items()) + "\n    }\n  </style>"
+        res = res.replace("</head>", f"{pal_style}\n</head>", 1)
 
     return res
 
@@ -355,6 +401,7 @@ async def _capture_card_png(
         return True
     finally:
         await page.__aexit__(None, None, None)
+        browser.close_tab(ws)
 
 
 def generate_topic_cards(

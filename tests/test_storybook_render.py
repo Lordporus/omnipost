@@ -164,3 +164,58 @@ def test_failure_blocks_draft(monkeypatch):
 
     with pytest.raises(RenderError):
         repurpose_topic(rich_topic(), generate_media=True)
+
+def test_taste_design_palette_and_no_neon():
+    """Card template adheres to /taste-design rules: no neon glows, no purple washes, clean slate canvas."""
+    slide = build_card_slides(TOPIC_A, 1)[0]
+    html = render_card_html(slide, current_idx=0, total_count=1, author="@Lordporus")
+
+    # Anti-patterns from DESIGN.md
+    assert "rgba(139, 92, 246" not in html, "Found banned purple radial glow"
+    assert "box-shadow: 0 0 18px" not in html, "Found banned neon glowing drop-shadow"
+    assert "box-shadow: 0 0 12px" not in html, "Found banned neon panel pulse"
+    assert "THE CONTEXT" not in html, "Found generic AI boilerplate tag"
+
+    # Positive taste tokens
+    assert "--bg-canvas: #090D16" in html or "--bg-canvas: #0D1117" in html
+    assert "brand-badge" in html or "[OP]" in html or "brand-tag" in html
+
+
+def test_architecture_and_code_widgets_rendering():
+    """Topic with architectural flow or code tokens synthesizes structured widgets instead of generic text."""
+    topic_flow = {
+        "headline": "Zero-Knowledge Rollup Architecture",
+        "body": "Prover nodes generate SNARK proofs while sequencers batch state transitions.",
+        "points": [
+            "[Client] -> [Sequencer] -> [Prover Pool] -> [L1 Contract]",
+            "Provers run parallel FFT kernels across GPU nodes.",
+            "Batch verification settles on Ethereum in a single transaction.",
+        ],
+        "takeaway": "Decouple state sequencing from SNARK generation.",
+        "category": "ZK ARCHITECTURE",
+        "url": "https://example.com/zk-rollups",
+    }
+    slides = build_card_slides(topic_flow, 2)
+    html = render_card_html(slides[1], current_idx=1, total_count=2, author="@Lordporus")
+    assert "arch-flow" in html or "arch-node" in html or "terminal-window" in html
+
+def test_header_author_deduplication_and_no_repeated_brand():
+    """Card header must not repeat brand name when author string contains '• OmniPost'."""
+    slide = build_card_slides(TOPIC_A, 1)[0]
+    html = render_card_html(slide, current_idx=0, total_count=1, author="@Lordporus • OmniPost")
+
+    # Brand name is OmniPost, so handle should be @Lordporus and NOT repeat OmniPost
+    assert "OmniPost @Lordporus • OmniPost" not in html
+    assert "@Lordporus" in html
+    assert "• OmniPost" not in html
+
+
+def test_header_title_bar_alignment_and_chip_geometry():
+    """Header chips must use cohesive 8px border radii and matching heights for clean alignment."""
+    slide = build_card_slides(TOPIC_A, 1)[0]
+    html = render_card_html(slide, current_idx=0, total_count=1, author="@Lordporus")
+
+    # Anti-pattern: 999px oval capsule pill clashing with rectangular chips
+    assert "border-radius: 999px" not in html
+    assert "border-radius: 8px" in html
+

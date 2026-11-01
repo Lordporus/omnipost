@@ -17,10 +17,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-try:
-    from scripts import ledger
-except ImportError:  # direct script execution from the scripts/ directory
-    import ledger  # type: ignore[no-redef]
+STATUS_PUBLISHED_VERIFIED = "published_verified"
 
 DEFAULT_TIMEOUT = 8.0
 USER_AGENT = "OmniPost-Validator/1.0"
@@ -325,6 +322,11 @@ class AccountWarmupError(GuardRailError):
     pass
 
 
+class HumanityGateError(GuardRailError):
+    """Raised when a draft fails the measurable humanity gate."""
+    pass
+
+
 ENGAGEMENT_BAIT_PATTERNS = [
     r"\b(what do you think|what are your thoughts)",
     r"\b(agree\?|do you agree|\bagree\?)",
@@ -351,6 +353,111 @@ def engagement_bait_pattern_detected(text: str) -> tuple[bool, str]:
         if m:
             return True, f"Forbidden engagement bait pattern detected: '{m.group(0)}'"
     return False, ""
+
+
+HUMAN_TELL_PATTERNS = [
+    r"\bdelve\b",
+    r"\bgame[- ]changer\b",
+    r"\bleverage\b",
+    r"\bunlock\b",
+    r"\btapestry\b",
+    r"\btestament\b",
+    r"\brevolutionize\b",
+    r"\bseamless\b",
+    r"\brobust\b",
+    r"in today'?s fast[- ]paced",
+    r"\bit'?s not just\b[^.!?\n]{0,60}\bit'?s\b",
+]
+
+ABSTRACT_TRICOLON_WORDS = {
+    "innovation",
+    "synergy",
+    "disruption",
+    "scalability",
+    "empowerment",
+    "transformation",
+    "optimization",
+    "efficiency",
+    "collaboration",
+    "growth",
+}
+
+HUMANITY_THRESHOLD = 70
+
+_EMOJI_RE = re.compile("[\U0001F300-\U0001FAFF\u2600-\u27BF]")
+_HASHTAG_RE = re.compile(r"(?<!\w)#\w+")
+
+
+def _has_concrete_token(text: str) -> bool:
+    """A digit, a URL, or a mid-sentence capitalised word (a proper noun)."""
+    if re.search(r"\d", text) or re.search(r"https?://\S+", text):
+        return True
+    return bool(re.search(r"(?<=[a-z,]\s)[A-Z][a-zA-Z0-9.]{1,}", text))
+
+
+def _abstract_tricolon(text: str) -> str:
+    match = re.search(r"\b(\w+),\s+(\w+),?\s+and\s+(\w+)\b", text, flags=re.IGNORECASE)
+    if match and all(word.lower() in ABSTRACT_TRICOLON_WORDS for word in match.groups()):
+        return match.group(0)
+    return ""
+
+
+def score_humanity(text: str) -> tuple[int, list[str]]:
+    """Scores draft text 0-100 for measurable AI tells. Higher is more human.
+
+    These are the same rules the generation prompt states, so the prompt and the
+    gate cannot drift apart.
+    """
+    body = (text or "").strip()
+    if not body:
+        return 100, []
+
+    violations: list[str] = []
+    score = 100
+    lowered = body.lower()
+
+    for pattern in HUMAN_TELL_PATTERNS:
+        match = re.search(pattern, lowered)
+        if match:
+            violations.append(f"AI tell: '{match.group(0)}'")
+            score -= 20
+
+    if body.count("\u2014") > max(1, len(body) // 150):
+        violations.append(f"Em-dash density: {body.count(chr(8212))} in {len(body)} chars")
+        score -= 10
+
+    sentences = [s.strip() for s in re.split(r"[.!?\n]+", body) if s.strip()]
+    if sentences and not any(len(sentence.split()) < 8 for sentence in sentences):
+        violations.append("Every sentence is 8+ words; no rhythm variance")
+        score -= 10
+
+    emoji_count = len(_EMOJI_RE.findall(body))
+    if emoji_count > 0:
+        violations.append(f"{emoji_count} emoji (none allowed)")
+        score -= 10
+    hashtags = _HASHTAG_RE.findall(re.sub(r"https?://\S+", "", body))
+    if hashtags:
+        violations.append(f"Hashtag used: {hashtags[0]}")
+        score -= 15
+
+    if not _has_concrete_token(body):
+        violations.append("No concrete token (number, version, URL, or proper noun)")
+        score -= 15
+
+    tricolon = _abstract_tricolon(body)
+    if tricolon:
+        violations.append(f"Abstract tricolon: '{tricolon}'")
+        score -= 10
+
+    metadata_re = re.compile(
+        r"(?:arXiv:\d+\.\d+(?:v\d+)?|Announce Type:|Abstract:|Article URL:|Comments URL:)",
+        re.IGNORECASE,
+    )
+    if metadata_re.search(body):
+        violations.append("Raw feed/scraper metadata leaked into post")
+        score -= 35
+
+    return max(0, min(100, score)), violations
 
 
 def verify_character_ceiling_measured(
@@ -512,7 +619,7 @@ def check_account_warmup(
                 plat_data = p.get("platforms", {}).get(p_plat)
                 if plat_data:
                     is_published = isinstance(plat_data, dict) and plat_data.get("status") in (
-                        ledger.STATUS_PUBLISHED_VERIFIED,
+                        STATUS_PUBLISHED_VERIFIED,
                         "published",
                     )
                 elif not p.get("platforms"):
@@ -526,7 +633,7 @@ def check_account_warmup(
                     or (p.get("status") != "failed" and not p.get("platforms"))
                     or any(
                         isinstance(p_data, dict) and p_data.get("status") in (
-                            ledger.STATUS_PUBLISHED_VERIFIED,
+                            STATUS_PUBLISHED_VERIFIED,
                             "published",
                         )
                         for p_data in p.get("platforms", {}).values()
@@ -631,6 +738,40 @@ def validate_draft_guardrails(
             if raise_on_error:
 
                 raise AccountWarmupError(warm_msg)
+
+    # 8. Humanity gate: measurable AI tells. Fail open if the scorer itself breaks.
+    if (cfg or {}).get("humanity_gate", True):
+        try:
+            humanity_score, humanity_violations = score_humanity(text)
+        except Exception as exc:
+            print(f"[VALIDATOR] Humanity gate error, failing open: {exc}", file=sys.stderr)
+            humanity_score, humanity_violations = 100, []
+        try:
+            threshold = int((cfg or {}).get("humanity_threshold", HUMANITY_THRESHOLD))
+        except (TypeError, ValueError):
+            threshold = HUMANITY_THRESHOLD
+        if humanity_score < threshold:
+            msg = f"Humanity gate failed ({humanity_score}/100): " + "; ".join(humanity_violations)
+            errors.append(msg)
+            if raise_on_error:
+                raise HumanityGateError(msg)
+
+    # 9. Scraper metadata leakage and broken-word endings
+    metadata_leak_re = re.compile(
+        r"(?:arXiv:\d+\.\d+(?:v\d+)?|Announce Type:|Abstract:|Article URL:|Comments URL:)",
+        re.IGNORECASE,
+    )
+    if metadata_leak_re.search(text):
+        msg = "Draft contains raw scraper metadata markers (arXiv, Announce Type, Abstract, URL)."
+        errors.append(msg)
+        if raise_on_error:
+            raise GuardRailError(msg)
+
+    if re.search(r"\b(?:and|or|but|with|for|to|in|on|at|by|of|the|a|an|that|which|as)\s*\.\.\.$", text, re.IGNORECASE):
+        msg = "Draft ends with a dangling conjunction before ellipsis."
+        errors.append(msg)
+        if raise_on_error:
+            raise GuardRailError(msg)
 
     if errors:
         return False, errors

@@ -13,6 +13,7 @@ import sys
 import urllib.error
 import urllib.parse
 import urllib.request
+from datetime import date
 from pathlib import Path
 from typing import Any
 
@@ -172,6 +173,17 @@ def load_voice_profile(path: Path | None = None) -> str:
     return ""
 
 
+def load_voice_samples(path: Path | None = None) -> str:
+    """Loads operator voice samples from references/voice-samples.md if available."""
+    p = path or (ROOT / "references" / "voice-samples.md")
+    if p.exists() and p.is_file():
+        try:
+            return p.read_text(encoding="utf-8").strip()
+        except Exception:
+            return ""
+    return ""
+
+
 def strip_markdown_fences(text: str) -> str:
     """Removes markdown code fences (```json ... ``` or ``` ... ```) from LLM output."""
     t = text.strip()
@@ -293,8 +305,42 @@ def parse_llm_json(raw_text: str) -> dict[str, Any]:
     return res
 
 
-def build_system_prompt(voice_profile: str | None = None) -> str:
-    """Builds comprehensive system prompt with platform-native audience archetypes and JSON schema."""
+RHETORICAL_MOVES = ("number", "contradiction", "question", "artifact", "failure")
+
+_MOVE_BRIEF = {
+    "number": "Lead with the concrete number, benchmark, or size in the item. No preamble.",
+    "contradiction": "Lead by contradicting what the headline assumes. Name the thing most people get wrong.",
+    "question": "Lead with one plain question a reader could answer in a sentence. Do not end with one.",
+    "artifact": "Lead by pointing at the artifact itself: the repo, paper, changelog, or chart.",
+    "failure": "Lead with what broke, regressed, or did not ship.",
+}
+
+
+def rhetorical_move_for(
+    date_str: str | None,
+    slot: str | None,
+    slot_order: list[str] | None = None,
+) -> str:
+    """Opening move for one slot. Same (date, slot) always returns the same move."""
+    try:
+        day = date.fromisoformat(str(date_str)).toordinal()
+    except (TypeError, ValueError):
+        day = 0
+    order = sorted(str(s) for s in (slot_order or []))
+    try:
+        position = order.index(str(slot or ""))
+    except ValueError:
+        position = 0
+    return RHETORICAL_MOVES[(day + position) % len(RHETORICAL_MOVES)]
+
+
+def build_system_prompt(
+    voice_profile: str | None = None,
+    rhetorical_move: str | None = None,
+    revise_feedback: str | None = None,
+    voice_samples: str | None = None,
+) -> str:
+    """Builds the system prompt: JSON schema, editorial rules, per-platform shape."""
     lines = [
         "You are OmniPost Content Synthesizer, an elite technical ghostwriter for engineers and AI researchers.",
         "Your mission is to transform raw intelligence items (Hacker News, RSS, arXiv) into culturally native, high-impact posts for 4 distinct social networks in one pass.",
@@ -307,14 +353,45 @@ def build_system_prompt(voice_profile: str | None = None) -> str:
         "- \"points\": list of strings (2-3 high-impact technical takeaways / architecture points)",
         "- \"takeaway\": string (bottom-line conclusion or actionable next step)",
         "- \"category\": string (e.g. \"AI ARCHITECTURE\", \"TECH INSIGHT\", \"AI UPDATE\")",
-        "- \"x\": string — X (Twitter) post (180-260 characters). Irresistible 1-line contrarian hook, compact line breaks, sharp engineering thesis. ZERO trailing hashtags.",
-        "- \"bluesky\": string — Bluesky post (160-270 characters). Direct, witty, open-web/developer perspective, anti-corporate, anti-buzzword.",
-        "- \"threads\": string — Meta Threads post (250-420 characters). Casual, relatable community thought, ending with an open-ended engagement question to spark discussion.",
-        "- \"linkedin\": string — LinkedIn post (600-1,200 characters). Attention-grabbing headline, mobile whitespace (double line breaks), 3-point structured framework with bullet points, and actionable concluding takeaway.",
+        "- \"x\": string",
+        "- \"bluesky\": string",
+        "- \"threads\": string",
+        "- \"linkedin\": string",
         "- \"carousel\": object — Multi-slide carousel breakdown:",
         "    \"title\": string (framework title),",
         "    \"slides\": list of 4 objects [{\"header\": string, \"body\": string}]",
+        "",
+        "Editorial rules (apply to every platform):",
+        "- Write as one person talking to another, not as a brand.",
+        "- Vary sentence length. At least one sentence must be under 8 words.",
+        "- Include at least one concrete token: a number, version string, URL, or proper noun.",
+        "- Never use: delve, game-changer, leverage, unlock, tapestry, testament,",
+        "  \"in today's fast-paced\", \"it's not just X, it's Y\", revolutionize, seamless, robust.",
+        "- No hashtags. No emoji.",
+        "- At most one em-dash, plus one more per 150 characters.",
+        "- Do not end with a question. Do not ask for likes, replies, follows, saves, or shares.",
+        "- No abstract three-item lists (X, Y, and Z) where all three are buzzwords.",
+        "- Do not reuse the same rhetorical skeleton across posts.",
+        "- Never echo raw feed or paper metadata (e.g. 'arXiv:', 'Announce Type:', 'Abstract:', 'Article URL:').",
+        "- Never duplicate the body sentence inside the bullet points or takeaway.",
+        "- Never end with a dangling conjunction (e.g. 'and...', 'with...').",
+        "",
+        "Per-platform shape:",
+        "- \"x\": string — X post (180-260 characters). Open with the claim or the number. One post, not a thread. Zero hashtags.",
+        "- \"bluesky\": string — Bluesky post (160-270 characters). Conversational, open-web/developer angle. A link is fine here.",
+        "- \"threads\": string — Meta Threads post (250-420 characters). First-person observation. No closing question.",
+        "- \"linkedin\": string — LinkedIn post (600-1,200 characters). One specific story or result, then what changed. Whitespace between beats. No numbered framework.",
     ]
+
+    if rhetorical_move in _MOVE_BRIEF:
+        lines.append(f"- Opening move for this post: {rhetorical_move}. {_MOVE_BRIEF[rhetorical_move]}")
+
+    if revise_feedback and revise_feedback.strip():
+        lines.extend([
+            "",
+            "Your previous draft failed the guardrails. Rewrite it without these problems:",
+            revise_feedback.strip(),
+        ])
 
     if voice_profile and voice_profile.strip():
         lines.extend([
@@ -322,6 +399,14 @@ def build_system_prompt(voice_profile: str | None = None) -> str:
             "Operator Voice Profile & Editorial Guidelines:",
             "Strictly adhere to the following voice profile and respect all DO-NOT rules:",
             voice_profile.strip(),
+        ])
+
+    if voice_samples and voice_samples.strip():
+        lines.extend([
+            "",
+            "Operator Voice Samples (Few-Shot Winning Examples):",
+            "Strictly emulate the tone, cadence, rhythm, and structure of these winning posts:",
+            voice_samples.strip(),
         ])
 
     return "\n".join(lines)
@@ -500,6 +585,9 @@ def generate_topic_with_llm(
     items: list[dict[str, Any]],
     kind: str = "tech_insight",
     voice_profile: str | None = None,
+    rhetorical_move: str | None = None,
+    revise_feedback: str | None = None,
+    voice_samples: str | None = None,
     provider: str | None = None,
     api_key: str | None = None,
     model: str | None = None,
@@ -525,8 +613,15 @@ def generate_topic_with_llm(
 
     if voice_profile is None:
         voice_profile = load_voice_profile()
+    if voice_samples is None:
+        voice_samples = load_voice_samples()
 
-    system_prompt = build_system_prompt(voice_profile=voice_profile)
+    system_prompt = build_system_prompt(
+        voice_profile=voice_profile,
+        rhetorical_move=rhetorical_move,
+        revise_feedback=revise_feedback,
+        voice_samples=voice_samples,
+    )
     user_prompt = build_user_prompt(items=items, kind=kind)
 
     try:
