@@ -401,6 +401,7 @@ async def _capture_card_png(
         return True
     finally:
         await page.__aexit__(None, None, None)
+        browser.close_tab(ws)
 
 
 def generate_topic_cards(

@@ -610,6 +610,7 @@ async def _render_pdf_cdp(html_file: Path, output_pdf: Path, port: int) -> Path:
         return output_pdf
     finally:
         await page.__aexit__(None, None, None)
+        browser.close_tab(ws)
 
 
 def create_carousel_pdf(
