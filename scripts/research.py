@@ -79,6 +79,25 @@ def strip_html(html: str | None) -> str:
     return re.sub(r"\s+", " ", txt).strip()
 
 
+ARXIV_PREFIX_RE = re.compile(
+    r"^(?:arXiv:\d+\.\d+(?:v\d+)?(?:\s*\[[\w\.\-]+\])?\s*)?"
+    r"(?:Announce Type:\s*[\w\-]+\s*)?"
+    r"(?:Abstract:\s*)?",
+    re.IGNORECASE,
+)
+HN_TAIL_RE = re.compile(r"\s*(?:Article URL|Comments URL|Points):\s*\S+.*$", re.IGNORECASE)
+CMS_TAIL_RE = re.compile(r"\s*The post .* appeared first on .*", re.IGNORECASE)
+
+
+def sanitize_feed_text(raw: str | None) -> str:
+    """Sanitize feed title and summary text by stripping HTML, arXiv headers, HN tails, and CMS signatures."""
+    cleaned = strip_html(raw)
+    cleaned = ARXIV_PREFIX_RE.sub("", cleaned).strip()
+    cleaned = HN_TAIL_RE.sub("", cleaned).strip()
+    cleaned = CMS_TAIL_RE.sub("", cleaned).strip()
+    return cleaned
+
+
 def get(url: str, timeout: float = 25) -> str:
     req = urllib.request.Request(url, headers={
         "User-Agent": browser.UA,
@@ -112,7 +131,7 @@ def hn(points: int = 150, hours: int = DEFAULT_WINDOW, query: str | None = None,
     for h in data.get("hits", []):
         out.append({
             "source": "hn",
-            "title": (h.get("title") or "").strip(),
+            "title": sanitize_feed_text(h.get("title") or ""),
             "url": h.get("url") or f"https://news.ycombinator.com/item?id={h.get('objectID')}",
             "score": h.get("points") or 0,
             "comments": h.get("num_comments") or 0,
@@ -144,13 +163,13 @@ def rss(feeds: dict[str, str] | None = None, hours: int = DEFAULT_WINDOW,
             for child in node:
                 ln = _localname(child.tag)
                 if ln == "title" and not title:
-                    title = strip_html(child.text or "")
+                    title = sanitize_feed_text(child.text or "")
                 elif ln == "link" and not link:
                     link = (child.get("href") or child.text or "").strip()
                 elif ln in ("pubdate", "published", "updated", "date") and not when:
                     when = (child.text or "").strip()
                 elif ln in ("description", "summary", "content") and not summary:
-                    summary = strip_html(child.text or "")[:400]
+                    summary = sanitize_feed_text(child.text or "")[:400]
             if not link:
                 continue
             dt = _parse_dt(when)
