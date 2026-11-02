@@ -106,6 +106,12 @@ TRIGGER_COMPOSER_JS = r"""
   const existingEd = document.querySelector('div[contenteditable="true"]');
   if (existingEd && existingEd.offsetParent !== null) return 'already_open';
 
+  // Only consider modal open if the menu dialog with 'New thread' header exists
+  const modalHeader = document.querySelector('div[role="menu"] h1');
+  if (modalHeader && (modalHeader.innerText || '').toLowerCase().includes('new thread')) {
+    return 'already_open';
+  }
+
   const btn = document.querySelector('svg[aria-label*="Create" i]')?.closest('div[role="button"], a, button')
     || document.querySelector('svg[aria-label*="New thread" i]')?.closest('div[role="button"], a, button')
     || document.querySelector('div[role="button"][aria-label*="Create" i]')
@@ -265,8 +271,8 @@ THREADS_PERMALINK_JS = r"""
 # live post that sits further down the timeline.
 THREADS_VERIFY_JS = r"""
 (() => {
-  const posts = [...document.querySelectorAll('div[data-pressable-container="true"]')];
-  return JSON.stringify(posts.slice(0, 8).map(p => (p.innerText || '')));
+  const posts = [...document.querySelectorAll('article, div[data-pressable-container="true"]')];
+  return JSON.stringify(posts.slice(0, 12).map(p => (p.innerText || '')));
 })()
 """
 
@@ -553,8 +559,8 @@ class ThreadsAdapter(PlatformAdapter):
                 if trig not in ("clicked", "already_open"):
                     await asyncio.sleep(0.5)
                     continue
-                for _ in range(20):
-                    await asyncio.sleep(0.5)
+                for _ in range(30):
+                    await asyncio.sleep(1.0)
                     foc_data = _threads_focus_data(await page.eval(FOCUS_EDITOR_JS))
                     if foc_data.get("status") == "focused":
                         break
