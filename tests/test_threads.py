@@ -240,7 +240,8 @@ class TestThreadsAdapter(unittest.TestCase):
             "clicked",
             "focused",
             json.dumps({"clicked": True}),
-            *([json.dumps({"editor_open": True, "posted": False})] * 20),
+            # Must cover the adapter's confirm poll budget (45 x 1s) before it gives up.
+            *([json.dumps({"editor_open": True, "posted": False})] * 45),
         ]
         mock_open.return_value = mock_page
 

@@ -207,11 +207,10 @@ SUBMIT_CONFIRMED_JS = r"""
 (() => {
   const ed = document.querySelector('div[contenteditable="true"][role="textbox"]')
     || document.querySelector('div[contenteditable="true"]');
-  const toasts = [...document.querySelectorAll('div[role="alert"], [data-testid*="toast"], [class*="toast"], [class*="Toast"]')];
+  const toasts = [...document.querySelectorAll('div[role="alert"], [data-testid*="toast"], [class*="toast"], [class*="Toast"], [role="status"]')];
   const toastText = toasts.map(t => t.innerText || '').join(' ');
-  const bodyText = document.body ? (document.body.innerText || '') : '';
 
-  const isPosting = /posting\.\.\./i.test(toastText) || /posting\.\.\./i.test(bodyText);
+  const isPosting = /posting/i.test(toastText);
   const isPosted = /posted|sent|shared/i.test(toastText) || /\/post\//.test(toastText);
 
   return JSON.stringify({
@@ -384,7 +383,7 @@ class ThreadsAdapter(PlatformAdapter):
         await page.send("Runtime.enable")
         await page.send(
             "Page.addScriptToEvaluateOnNewDocument",
-            source=STEALTH_JS,
+            source=STEALTH_JS + "\nwindow.addEventListener('beforeunload', (e) => { e.stopImmediatePropagation(); }, true);\n",
         )
         # The script only applies to documents created after it is registered, so
         # the page must be (re)navigated here; otherwise the first load runs with
@@ -655,7 +654,7 @@ class ThreadsAdapter(PlatformAdapter):
             # toast) before claiming the post exists.
             confirmed = False
             confirm_state: dict[str, Any] = {}
-            for _ in range(20):
+            for _ in range(45):
                 await asyncio.sleep(1.0)
                 try:
                     confirm_state = json.loads(await page.eval(SUBMIT_CONFIRMED_JS) or "{}")
@@ -704,6 +703,10 @@ class ThreadsAdapter(PlatformAdapter):
                 raw_response=raw_response,
             )
         finally:
+            try:
+                await page.eval("window.onbeforeunload = null;")
+            except Exception:
+                pass
             await page.__aexit__(None, None, None)
 
     def publish(self, payload: PublishPayload) -> PublishResult:

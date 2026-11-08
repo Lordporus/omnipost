@@ -76,14 +76,17 @@ def _verify_with_budget(verify: Any, text: str, budget: float = VERIFY_BUDGET) -
     return box.get("ok", False)
 
 
-def check_connectivity(probe_url: str = "https://www.google.com/generate_204", timeout: float = 3.0) -> bool:
-    """Probes internet connectivity via lightweight 204 endpoint."""
-    try:
-        req = urllib.request.Request(probe_url, headers={"User-Agent": "OmniPost/2.5"})
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            return resp.status in (200, 204)
-    except Exception:
-        return False
+def check_connectivity(probe_url: str = "https://www.google.com/generate_204", timeout: float = 5.0) -> bool:
+    """Probes internet connectivity via lightweight 204 endpoint with fallback."""
+    for url in (probe_url, "https://1.1.1.1", "https://www.cloudflare.com"):
+        try:
+            req = urllib.request.Request(url, headers={"User-Agent": "OmniPost/2.5"})
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                if resp.status in (200, 204):
+                    return True
+        except Exception:
+            continue
+    return False
 
 
 def _dispatch_worker(
@@ -378,6 +381,11 @@ def main() -> int:
             if plat_key in ("x", "linkedin", "threads"):
                 from scripts import browser
                 if not browser.alive():
+                    try:
+                        browser.ensure_chrome()
+                    except Exception:
+                        pass
+                if not browser.alive():
                     status = {"ok": False, "handle": getattr(adapter, "_handle", None) or "Not Running", "error": "Browser CDP daemon not active on port 9444"}
                 else:
                     status = adapter.check_session()
@@ -404,7 +412,7 @@ def main() -> int:
             print(f"  Ready to post: {status.get('ok')}\n", flush=True)
         return 0
 
-    if not check_connectivity(timeout=3.0):
+    if not check_connectivity(timeout=5.0):
         print("[DEFERRED] offline: internet connection unreachable; no publish was attempted.", flush=True)
         return 2
 
@@ -412,6 +420,14 @@ def main() -> int:
     today = datetime.now().strftime("%Y-%m-%d")
     slot = draft_data.get("slot") or datetime.now().strftime("%H:%M")
     targets = [adapter.platform_name.lower() for adapter in adapters]
+
+    if any(a.platform_name.lower() in ("x", "linkedin", "threads") for a in adapters):
+        from scripts import browser
+        if not browser.alive():
+            try:
+                browser.ensure_chrome()
+            except Exception as e:
+                print(f"[WARN] browser.ensure_chrome() pre-warm: {e}", flush=True)
 
     results: dict[str, PublishResult] = {}
     for adapter in adapters:
