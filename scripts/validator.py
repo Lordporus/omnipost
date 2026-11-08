@@ -662,6 +662,7 @@ def validate_draft_guardrails(
     raise_on_error: bool = True,
     swipe_dir: Path | None = None,
     check_warmup: bool = False,
+    check_measured: bool = True,
 ) -> tuple[bool, list[str]]:
     """Runs all enforcement-first guard rail checks on a candidate post draft."""
     errors: list[str] = []
@@ -690,8 +691,9 @@ def validate_draft_guardrails(
             raise GuardRailError("Draft text is empty.")
         return False, errors
 
-    # 2. Character ceiling measured
-    if not verify_character_ceiling_measured(platform, cfg, state):
+    # 2. Character ceiling measured. Account readiness, not content shape: the
+    # scheduled publisher enforces it, generation validates content only.
+    if check_measured and not verify_character_ceiling_measured(platform, cfg, state):
         msg = f"Character limit not measured for platform '{platform}'. Run post.py measure --save first."
         errors.append(msg)
         if raise_on_error:

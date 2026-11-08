@@ -87,6 +87,17 @@ class TestGuardRails(unittest.TestCase):
         self.assertTrue(ok)
         self.assertEqual(errors, [])
 
+    def test_unmeasured_ceiling_can_be_skipped_for_generation(self):
+        ok, errors = validate_draft_guardrails(
+            draft={"text": HUMAN_SAMPLE},
+            cfg={"max_chars": 280, "max_chars_verified": False},
+            state={"posts": []},
+            platform="x",
+            raise_on_error=False,
+            check_measured=False,
+        )
+        self.assertTrue(ok, errors)
+
     def test_duplicate_post_detection(self):
         state = {
             "posts": [

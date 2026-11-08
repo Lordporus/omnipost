@@ -565,6 +565,7 @@ def main() -> int:
             state=st,
             platform=plat_key,
             raise_on_error=False,
+            check_measured=False,
         )
         if not ok:
             res = PublishResult(

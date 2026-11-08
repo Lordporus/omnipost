@@ -124,6 +124,7 @@ def _guardrail_violations(
             state=state,
             platform=platform,
             raise_on_error=False,
+            check_measured=False,
         )
         if not ok:
             violations.extend(f"{platform}: {err}" for err in errs)

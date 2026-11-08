@@ -93,8 +93,8 @@ class TestThreadsHydration(unittest.TestCase):
         self.assertNotIn("trigger", page.kinds)
 
     def test_trigger_is_retried_when_the_composer_never_opens(self):
-        # 20 focus polls per attempt; the first two attempts never focus.
-        page = FakePage([READY], focus_failures=40)
+        # 30 focus polls per attempt; the first two attempts never focus.
+        page = FakePage([READY], focus_failures=60)
         res = self._publish(page)
 
         self.assertTrue(res.success)
