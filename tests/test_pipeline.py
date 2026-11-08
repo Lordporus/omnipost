@@ -262,3 +262,100 @@ def test_humanity_gate_drops_slot_after_two_failures():
     assert mock_alert.call_count == 1
     assert mock_alert.call_args.kwargs["event_type"] == "humanity_gate_drop"
 
+
+def test_guardrail_violations_checks_each_platform():
+    from scripts import pipeline as pipeline_mod
+
+    poly = {
+        "x": {"text": "x copy"},
+        "bluesky": {"text": "bluesky copy"},
+        "threads": {"text": ""},
+        "linkedin": {"text": "linkedin copy", "enabled": False},
+    }
+    calls: list[str] = []
+
+    def fake_validate(draft, cfg=None, state=None, platform="x", raise_on_error=True, **kwargs):
+        calls.append(platform)
+        if platform == "bluesky":
+            return False, ["Humanity gate failed"]
+        return True, []
+
+    with patch("scripts.pipeline.validator.validate_draft_guardrails", side_effect=fake_validate):
+        violations = pipeline_mod._guardrail_violations(
+            poly, {"x", "bluesky", "threads"}, cfg={}, state={}
+        )
+
+    assert calls == ["x", "bluesky"]  # empty copies are skipped
+    assert violations == ["bluesky: Humanity gate failed"]
+
+
+def test_drop_slot_marks_the_slot_and_alerts_once():
+    from scripts import pipeline as pipeline_mod
+
+    plan = {"date": "2026-10-06"}
+    slot = {"slot": "13:00"}
+    with patch("scripts.pipeline.dispatch_webhook") as mock_alert:
+        pipeline_mod._drop_slot(plan, slot, "guardrails", ["x: Humanity gate failed"])
+
+    assert slot["skipped"] == "guardrails"
+    mock_alert.assert_called_once()
+    kwargs = mock_alert.call_args.kwargs
+    assert kwargs["event_type"] == "guardrails_drop"
+    assert "Nothing was published" in kwargs["message"]
+    assert "x: Humanity gate failed" in kwargs["metadata"]["violations"]
+
+
+def test_due_checks_every_platform_and_alerts_once(tmp_path, monkeypatch):
+    from datetime import datetime, timedelta, timezone
+
+    from scripts import due
+
+    now = datetime.now(timezone.utc)
+    plan = {
+        "date": now.strftime("%Y-%m-%d"),
+        "slots": [
+            {
+                "slot": "13:00",
+                "kind": "value",
+                "text": "x copy",
+                "due_at": (now - timedelta(minutes=1)).isoformat(),
+                "platforms": {
+                    "x": {"text": "x copy"},
+                    "bluesky": {"text": "bluesky copy"},
+                    "threads": {"text": "threads copy", "enabled": False},
+                },
+            }
+        ],
+    }
+    plans_dir = tmp_path / "drafts"
+    plans_dir.mkdir()
+    plan_path = plans_dir / f"{now.strftime('%Y-%m-%d')}.json"
+    plan_path.write_text(json.dumps(plan), encoding="utf-8")
+
+    seen: list[str] = []
+
+    def fake_validate(draft, cfg=None, state=None, platform="x", raise_on_error=True, **kwargs):
+        seen.append(platform)
+        if platform == "bluesky":
+            return False, ["Humanity gate failed"]
+        return True, []
+
+    alerts: list[dict] = []
+    monkeypatch.setattr(due, "PLANS", plans_dir)
+    monkeypatch.setattr(due, "load_state", lambda: {"posts": []})
+    monkeypatch.setattr(due.settings, "load", lambda: {"max_chars_verified": True})
+    monkeypatch.setattr(due.validator, "validate_draft_guardrails", fake_validate)
+    monkeypatch.setattr(due, "dispatch_webhook", lambda **kwargs: alerts.append(kwargs))
+
+    assert due.due() is None
+    assert seen == ["x", "bluesky"]
+    assert len(alerts) == 1
+    assert alerts[0]["event_type"] == "guardrail_drop"
+    saved = json.loads(plan_path.read_text(encoding="utf-8"))
+    assert saved["slots"][0]["guardrail_alerted"] is True
+
+    # A second scan must not alert again for the same blocked slot.
+    assert due.due() is None
+    assert len(alerts) == 1
+
+

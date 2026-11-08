@@ -672,13 +672,16 @@ def validate_draft_guardrails(
         draft_dict = {"text": draft}
     else:
         draft_dict = draft or {}
-        # Try platform-specific text or root text
-        plat_dict = draft_dict.get("platforms", {}).get(platform, {})
-        text = (
-            plat_dict.get("text")
-            if isinstance(plat_dict, dict) and plat_dict.get("text")
-            else draft_dict.get("text", "")
-        )
+        # Prefer this platform's own copy. A multi-platform draft that has no copy
+        # for this platform has nothing to validate here.
+        platforms = draft_dict.get("platforms") or {}
+        plat_dict = platforms.get(platform, {})
+        if isinstance(plat_dict, dict) and plat_dict.get("text"):
+            text = plat_dict["text"]
+        elif platforms:
+            return True, []
+        else:
+            text = draft_dict.get("text", "")
 
     text = (text or "").strip()
     if not text:
@@ -694,9 +697,14 @@ def validate_draft_guardrails(
         if raise_on_error:
             raise CharacterLimitNotMeasuredError(msg)
 
-    # 3. Text length vs measured limit
+    # 3. Text length vs the limit that actually applies to this platform
     max_c = 280
-    if cfg:
+    if platform and platform.lower() != "x":
+        from scripts.platform_limits import LIMITS
+        lim = LIMITS.get(platform.lower())
+        if lim:
+            max_c = int(lim["max"])
+    elif cfg:
         try:
             from scripts import settings
             max_c = settings.limit(cfg)["chars"]

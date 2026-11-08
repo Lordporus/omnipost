@@ -37,8 +37,10 @@ import settings
 try:
     import ledger
     import validator
+    from notify_webhook import dispatch_webhook
 except ImportError:
     from scripts import ledger, validator
+    from scripts.notify_webhook import dispatch_webhook
 
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
@@ -250,16 +252,46 @@ def due(max_lag: float = MAX_LAG_HOURS) -> dict | None:
                     best = key
                 continue
 
-            # Guardrail check: do not queue posts that violate hard rules or warmup caps
-            valid, errs = validator.validate_draft_guardrails(
-                draft=slot,
-                cfg=settings.load(),
-                state=st,
-                raise_on_error=False,
-                check_warmup=True,
-            )
+            # Guardrail check: do not queue posts that violate hard rules or warmup caps.
+            # Every platform in the slot is checked; a slot is only as valid as its worst copy.
+            cfg_now = settings.load()
+            valid = True
+            errs: list[str] = []
+            for plat, plat_cfg in (slot.get("platforms") or {"x": None}).items():
+                if isinstance(plat_cfg, dict) and plat_cfg.get("enabled") is False:
+                    continue
+                plat_valid, plat_errs = validator.validate_draft_guardrails(
+                    draft=slot,
+                    cfg=cfg_now,
+                    state=st,
+                    platform=plat,
+                    raise_on_error=False,
+                    check_warmup=True,
+                )
+                if not plat_valid:
+                    valid = False
+                    errs.extend(f"{plat}: {err}" for err in plat_errs)
             if not valid:
                 slot["guardrail_blocked"] = errs
+                if not slot.get("guardrail_alerted"):
+                    slot["guardrail_alerted"] = True
+                    try:
+                        path.write_text(json.dumps(plan, indent=2, ensure_ascii=False), encoding="utf-8")
+                    except Exception:
+                        pass
+                    dispatch_webhook(
+                        event_type="guardrail_drop",
+                        title="OmniPost blocked a slot",
+                        message=(
+                            f"Slot {slot.get('slot')} on {plan.get('date')} was blocked by "
+                            "guardrails. Nothing will be published."
+                        ),
+                        metadata={
+                            "slot": slot.get("slot"),
+                            "date": plan.get("date"),
+                            "violations": "; ".join(errs)[:900],
+                        },
+                    )
                 continue
 
             key = (when, path, plan, slot)

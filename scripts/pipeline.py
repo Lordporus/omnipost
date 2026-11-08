@@ -79,24 +79,72 @@ def _humanity_violations(
     return violations
 
 
-def _drop_slot_for_humanity(
+def _drop_slot(
     plan: dict[str, Any],
     slot_data: dict[str, Any],
+    reason: str,
     violations: list[str],
 ) -> None:
     slot = str(slot_data.get("slot") or "unknown-slot")
     detail = "; ".join(violations)[:900]
-    slot_data["skipped"] = "humanity_gate"
-    print(f"[PIPELINE] Dropping slot {slot}: failed the humanity gate twice. {detail}")
+    slot_data["skipped"] = reason
+    print(f"[PIPELINE] Dropping slot {slot}: failed {reason} twice. {detail}")
     dispatch_webhook(
-        event_type="humanity_gate_drop",
+        event_type=f"{reason}_drop",
         title="OmniPost dropped a slot",
         message=(
-            f"Slot {slot} on {plan.get('date')} failed the humanity gate twice. "
+            f"Slot {slot} on {plan.get('date')} failed {reason} twice. "
             "Nothing was published."
         ),
-        metadata={"slot": slot, "date": plan.get("date"), "violations": detail},
+        metadata={"slot": slot, "date": plan.get("date"), "reason": reason, "violations": detail},
     )
+
+
+def _guardrail_violations(
+    poly_data: dict[str, Any],
+    active_platforms: set[str] | None = None,
+    cfg: dict | None = None,
+    state: dict | None = None,
+) -> list[str]:
+    """Run the hard guardrails on every drafted platform, not just X."""
+    active = active_platforms or set(HUMANITY_PLATFORMS)
+    violations: list[str] = []
+    for platform in HUMANITY_PLATFORMS:
+        if platform not in active:
+            continue
+        plat = (poly_data or {}).get(platform) or {}
+        if plat.get("enabled") is False:
+            continue
+        text = plat.get("text") or ""
+        if not text.strip():
+            continue
+        ok, errs = validator.validate_draft_guardrails(
+            draft={"text": text},
+            cfg=cfg,
+            state=state,
+            platform=platform,
+            raise_on_error=False,
+        )
+        if not ok:
+            violations.extend(f"{platform}: {err}" for err in errs)
+    return violations
+
+
+def _draft_violations(
+    poly_data: dict[str, Any],
+    active_platforms: set[str] | None = None,
+) -> tuple[list[str], str]:
+    """Humanity first (it owns the regenerate path), then the hard guardrails."""
+    violations = _humanity_violations(poly_data, active_platforms)
+    if violations:
+        return violations, "humanity_gate"
+    violations = _guardrail_violations(
+        poly_data,
+        active_platforms,
+        cfg=settings.load(),
+        state=due.load_state(),
+    )
+    return violations, ("guardrails" if violations else "")
 
 
 def _drop_candidate(
@@ -226,10 +274,10 @@ def populate_daily_plan(plan: dict[str, Any], swipe_items: list[dict[str, Any]],
                 poly_data = None
                 continue
 
-            violations = _humanity_violations(poly_data, active_platforms)
+            violations, reason = _draft_violations(poly_data, active_platforms)
             if violations:
                 print(
-                    f"[PIPELINE] Humanity gate rejected slot {slot_data.get('slot')}, "
+                    f"[PIPELINE] {reason} rejected slot {slot_data.get('slot')}, "
                     f"regenerating once: {violations}"
                 )
                 try:
@@ -257,9 +305,9 @@ def populate_daily_plan(plan: dict[str, Any], swipe_items: list[dict[str, Any]],
                         f"{slot_data.get('slot')}: {exc}"
                     )
 
-                violations = _humanity_violations(poly_data, active_platforms)
+                violations, reason = _draft_violations(poly_data, active_platforms)
                 if violations:
-                    _drop_slot_for_humanity(plan, slot_data, violations)
+                    _drop_slot(plan, slot_data, reason, violations)
                     topic = None
                     poly_data = None
                     dropped = True

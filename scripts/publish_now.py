@@ -34,13 +34,14 @@ sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "scripts"))
 
 try:
-    from scripts import settings, ledger, notify_webhook
+    from scripts import settings, ledger, notify_webhook, validator
     from scripts.errors import CopyValidationError
     from scripts.platform_limits import LIMITS, count_for, fit
 except ImportError:
     import settings
     import ledger
     import notify_webhook
+    import validator
     from errors import CopyValidationError
     from platform_limits import LIMITS, count_for, fit
 
@@ -555,6 +556,43 @@ def main() -> int:
         else:
             measured = len(post_text)
             print(f"[{p_name}] Copy: {measured}/{caps.max_characters}c", flush=True)
+
+        # publish_now is a privileged path: it must not skip the guardrails that the
+        # scheduled publisher enforces. Validate the fitted text that will dispatch.
+        ok, errs = validator.validate_draft_guardrails(
+            draft={"text": post_text},
+            cfg=settings.load(),
+            state=st,
+            platform=plat_key,
+            raise_on_error=False,
+        )
+        if not ok:
+            res = PublishResult(
+                platform=plat_key,
+                success=False,
+                verified=False,
+                error="; ".join(errs),
+            )
+            results[plat_key] = res
+            ledger.record_platform_status(
+                st,
+                today,
+                slot,
+                plat_key,
+                res,
+                text=post_text,
+                kind="manual_test",
+                idempotency_key=key,
+            )
+            print(f"[FAIL] [{p_name}] {res.error}", flush=True)
+            notify_webhook.dispatch_webhook(
+                "failure",
+                f"[{p_name}] Copy Validation Failed",
+                res.error,
+                {"platform": p_name, "error": res.error},
+            )
+            print("-" * 50, flush=True)
+            continue
 
         plat_media = list(media_paths)
         if plat_key in tailored_media:
