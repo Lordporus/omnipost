@@ -365,6 +365,7 @@ def build_system_prompt(
         "- Write as one person talking to another, not as a brand.",
         "- Vary sentence length. At least one sentence must be under 8 words.",
         "- Include at least one concrete token: a number, version string, URL, or proper noun.",
+        "- Default post shape: (1) a technical tension or paradox, (2) a real, named entity such as a post-mortem, repo, paper, or product, (3) a definitive engineering axiom. No greeting, no preamble, no generic closer.",
         "- Never use: delve, game-changer, leverage, unlock, tapestry, testament,",
         "  \"in today's fast-paced\", \"it's not just X, it's Y\", revolutionize, seamless, robust.",
         "- No hashtags. No emoji.",

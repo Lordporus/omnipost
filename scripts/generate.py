@@ -462,6 +462,13 @@ def load_daily_swipe(date_str: str) -> list[dict[str, Any]]:
     if not swipe_file.exists():
         return []
     try:
-        return json.loads(swipe_file.read_text(encoding="utf-8"))
+        data = json.loads(swipe_file.read_text(encoding="utf-8"))
     except Exception:
         return []
+    if not isinstance(data, list):
+        return data
+    try:
+        from scripts.research import sanitize_item
+    except ImportError:
+        from research import sanitize_item
+    return [sanitize_item(it) if isinstance(it, dict) else it for it in data]
