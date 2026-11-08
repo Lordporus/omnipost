@@ -119,7 +119,7 @@ def alive() -> bool:
         return False
 
 
-def ensure_chrome(wait: float = 25, url: str = "about:blank") -> bool:
+def ensure_chrome(wait: float = 25, url: str = "https://x.com/home") -> bool:
     """Return True if the debug port answers, launching the browser if needed.
 
     Detached so that an agent process exiting does not kill the browser (and so
@@ -151,6 +151,9 @@ def ensure_chrome(wait: float = 25, url: str = "about:blank") -> bool:
         f"--remote-debugging-port={_port()}",
         "--remote-allow-origins=*",
         f"--user-data-dir={prof}",
+        "--new-window",
+        "--window-size=1280,800",
+        "--window-position=50,50",
         "--no-first-run",
         "--no-default-browser-check",
         "--disable-background-mode",
@@ -170,12 +173,13 @@ def ensure_chrome(wait: float = 25, url: str = "about:blank") -> bool:
         for flag in ("--no-sandbox", "--disable-dev-shm-usage", "--disable-gpu"):
             if flag not in flags:
                 flags.append(flag)
-    DETACHED = 0x00000200                        # Windows: CREATE_NEW_PROCESS_GROUP
+    DETACHED = 0x00000008 | 0x00000200           # Windows: DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP
     kwargs: dict[str, Any] = {"stdout": subprocess.DEVNULL,
                               "stderr": subprocess.DEVNULL,
                               "stdin": subprocess.DEVNULL}
     if sys.platform.startswith("win"):
         kwargs["creationflags"] = DETACHED
+        kwargs["close_fds"] = True
     else:
         kwargs["start_new_session"] = True
     subprocess.Popen(flags, **kwargs)
@@ -413,9 +417,15 @@ def close_tabs_matching(substr: str) -> int:
 
 
 def cleanup_ephemeral_tabs() -> int:
-    """Closes all orphan rendering and preview tabs."""
+    """Closes all orphan rendering and preview tabs without killing the browser."""
+    try:
+        tabs = list_tabs()
+        if len(tabs) <= 1:
+            return 0
+    except Exception:
+        return 0
     count = 0
-    for pattern in ("data:text/html", "preview.html", "about:blank"):
+    for pattern in ("data:text/html", "preview.html"):
         count += close_tabs_matching(pattern)
     return count
 

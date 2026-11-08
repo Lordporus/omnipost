@@ -662,6 +662,7 @@ def validate_draft_guardrails(
     raise_on_error: bool = True,
     swipe_dir: Path | None = None,
     check_warmup: bool = False,
+    check_measured: bool = True,
 ) -> tuple[bool, list[str]]:
     """Runs all enforcement-first guard rail checks on a candidate post draft."""
     errors: list[str] = []
@@ -672,13 +673,16 @@ def validate_draft_guardrails(
         draft_dict = {"text": draft}
     else:
         draft_dict = draft or {}
-        # Try platform-specific text or root text
-        plat_dict = draft_dict.get("platforms", {}).get(platform, {})
-        text = (
-            plat_dict.get("text")
-            if isinstance(plat_dict, dict) and plat_dict.get("text")
-            else draft_dict.get("text", "")
-        )
+        # Prefer this platform's own copy. A multi-platform draft that has no copy
+        # for this platform has nothing to validate here.
+        platforms = draft_dict.get("platforms") or {}
+        plat_dict = platforms.get(platform, {})
+        if isinstance(plat_dict, dict) and plat_dict.get("text"):
+            text = plat_dict["text"]
+        elif platforms:
+            return True, []
+        else:
+            text = draft_dict.get("text", "")
 
     text = (text or "").strip()
     if not text:
@@ -687,16 +691,22 @@ def validate_draft_guardrails(
             raise GuardRailError("Draft text is empty.")
         return False, errors
 
-    # 2. Character ceiling measured
-    if not verify_character_ceiling_measured(platform, cfg, state):
+    # 2. Character ceiling measured. Account readiness, not content shape: the
+    # scheduled publisher enforces it, generation validates content only.
+    if check_measured and not verify_character_ceiling_measured(platform, cfg, state):
         msg = f"Character limit not measured for platform '{platform}'. Run post.py measure --save first."
         errors.append(msg)
         if raise_on_error:
             raise CharacterLimitNotMeasuredError(msg)
 
-    # 3. Text length vs measured limit
+    # 3. Text length vs the limit that actually applies to this platform
     max_c = 280
-    if cfg:
+    if platform and platform.lower() != "x":
+        from scripts.platform_limits import LIMITS
+        lim = LIMITS.get(platform.lower())
+        if lim:
+            max_c = int(lim["max"])
+    elif cfg:
         try:
             from scripts import settings
             max_c = settings.limit(cfg)["chars"]

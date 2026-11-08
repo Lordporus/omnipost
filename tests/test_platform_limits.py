@@ -197,6 +197,36 @@ def test_dispatch_fits_oversized(tmp_path, monkeypatch):
     assert calls[0].text.endswith("...")
 
 
+def test_dispatch_blocks_on_guardrail_violation(tmp_path, monkeypatch):
+    """publish_now must not dispatch a draft the scheduled publisher would reject."""
+    calls: list[PublishPayload] = []
+
+    def dispatch(adapter, payload, timeout):
+        calls.append(payload)
+        return PublishResult(platform="x", success=True, verified=True)
+
+    text = "Latency on the ledger write path dropped after one index. " * 4
+    monkeypatch.setattr(
+        publish_now.validator,
+        "validate_draft_guardrails",
+        lambda *args, **kwargs: (False, ["Humanity gate failed (42/100): slop"]),
+    )
+    code, state_path = _run_publish_now(tmp_path, monkeypatch, text, dispatch)
+
+    assert code == 1
+    assert calls == []
+    state = ledger.load_state(state_path)
+    record = ledger.get_platform_status(
+        state,
+        datetime.now().strftime("%Y-%m-%d"),
+        "13:00",
+        "x",
+    )
+    assert record is not None
+    assert record["status"] == ledger.STATUS_FAILED
+    assert "Humanity gate" in str(record.get("error") or "")
+
+
 def test_linkedin_carousel_contract(tmp_path, monkeypatch):
     pdf_path = tmp_path / "linkedin_deck.pdf"
     # Must clear the renderer's blank-stub floor (a real deck is 500KB+; the

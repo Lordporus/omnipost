@@ -106,6 +106,12 @@ TRIGGER_COMPOSER_JS = r"""
   const existingEd = document.querySelector('div[contenteditable="true"]');
   if (existingEd && existingEd.offsetParent !== null) return 'already_open';
 
+  // Only consider modal open if the menu dialog with 'New thread' header exists
+  const modalHeader = document.querySelector('div[role="menu"] h1');
+  if (modalHeader && (modalHeader.innerText || '').toLowerCase().includes('new thread')) {
+    return 'already_open';
+  }
+
   const btn = document.querySelector('svg[aria-label*="Create" i]')?.closest('div[role="button"], a, button')
     || document.querySelector('svg[aria-label*="New thread" i]')?.closest('div[role="button"], a, button')
     || document.querySelector('div[role="button"][aria-label*="Create" i]')
@@ -201,11 +207,10 @@ SUBMIT_CONFIRMED_JS = r"""
 (() => {
   const ed = document.querySelector('div[contenteditable="true"][role="textbox"]')
     || document.querySelector('div[contenteditable="true"]');
-  const toasts = [...document.querySelectorAll('div[role="alert"], [data-testid*="toast"], [class*="toast"], [class*="Toast"]')];
+  const toasts = [...document.querySelectorAll('div[role="alert"], [data-testid*="toast"], [class*="toast"], [class*="Toast"], [role="status"]')];
   const toastText = toasts.map(t => t.innerText || '').join(' ');
-  const bodyText = document.body ? (document.body.innerText || '') : '';
 
-  const isPosting = /posting\.\.\./i.test(toastText) || /posting\.\.\./i.test(bodyText);
+  const isPosting = /posting/i.test(toastText);
   const isPosted = /posted|sent|shared/i.test(toastText) || /\/post\//.test(toastText);
 
   return JSON.stringify({
@@ -265,8 +270,8 @@ THREADS_PERMALINK_JS = r"""
 # live post that sits further down the timeline.
 THREADS_VERIFY_JS = r"""
 (() => {
-  const posts = [...document.querySelectorAll('div[data-pressable-container="true"]')];
-  return JSON.stringify(posts.slice(0, 8).map(p => (p.innerText || '')));
+  const posts = [...document.querySelectorAll('article, div[data-pressable-container="true"]')];
+  return JSON.stringify(posts.slice(0, 12).map(p => (p.innerText || '')));
 })()
 """
 
@@ -378,7 +383,7 @@ class ThreadsAdapter(PlatformAdapter):
         await page.send("Runtime.enable")
         await page.send(
             "Page.addScriptToEvaluateOnNewDocument",
-            source=STEALTH_JS,
+            source=STEALTH_JS + "\nwindow.addEventListener('beforeunload', (e) => { e.stopImmediatePropagation(); }, true);\n",
         )
         # The script only applies to documents created after it is registered, so
         # the page must be (re)navigated here; otherwise the first load runs with
@@ -553,8 +558,8 @@ class ThreadsAdapter(PlatformAdapter):
                 if trig not in ("clicked", "already_open"):
                     await asyncio.sleep(0.5)
                     continue
-                for _ in range(20):
-                    await asyncio.sleep(0.5)
+                for _ in range(30):
+                    await asyncio.sleep(1.0)
                     foc_data = _threads_focus_data(await page.eval(FOCUS_EDITOR_JS))
                     if foc_data.get("status") == "focused":
                         break
@@ -649,7 +654,7 @@ class ThreadsAdapter(PlatformAdapter):
             # toast) before claiming the post exists.
             confirmed = False
             confirm_state: dict[str, Any] = {}
-            for _ in range(20):
+            for _ in range(45):
                 await asyncio.sleep(1.0)
                 try:
                     confirm_state = json.loads(await page.eval(SUBMIT_CONFIRMED_JS) or "{}")
@@ -698,6 +703,10 @@ class ThreadsAdapter(PlatformAdapter):
                 raw_response=raw_response,
             )
         finally:
+            try:
+                await page.eval("window.onbeforeunload = null;")
+            except Exception:
+                pass
             await page.__aexit__(None, None, None)
 
     def publish(self, payload: PublishPayload) -> PublishResult:

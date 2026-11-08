@@ -87,6 +87,17 @@ class TestGuardRails(unittest.TestCase):
         self.assertTrue(ok)
         self.assertEqual(errors, [])
 
+    def test_unmeasured_ceiling_can_be_skipped_for_generation(self):
+        ok, errors = validate_draft_guardrails(
+            draft={"text": HUMAN_SAMPLE},
+            cfg={"max_chars": 280, "max_chars_verified": False},
+            state={"posts": []},
+            platform="x",
+            raise_on_error=False,
+            check_measured=False,
+        )
+        self.assertTrue(ok, errors)
+
     def test_duplicate_post_detection(self):
         state = {
             "posts": [
@@ -353,5 +364,46 @@ class TestHumanityGate(unittest.TestCase):
         self.assertTrue(any("metadata" in v.lower() for v in violations))
 
 
-if __name__ == "__main__":
-    unittest.main()
+class TestMultiPlatformValidation(unittest.TestCase):
+    """A slot's guardrails must run against each platform's own copy."""
+
+    CFG = {"max_chars": 280, "max_chars_verified": True}
+
+    def test_platform_without_copy_has_nothing_to_validate(self):
+        draft = {"platforms": {"bluesky": {"text": SLOP_SAMPLE[:270]}}}
+        ok, errors = validate_draft_guardrails(
+            draft, cfg=self.CFG, state={"posts": []}, platform="x", raise_on_error=False
+        )
+        self.assertTrue(ok)
+        self.assertEqual(errors, [])
+
+    def test_each_platform_is_judged_on_its_own_text(self):
+        draft = {
+            "platforms": {
+                "x": {"text": HUMAN_SAMPLE},
+                "bluesky": {"text": SLOP_SAMPLE[:270]},
+            }
+        }
+        ok_x, errors_x = validate_draft_guardrails(
+            draft, cfg=self.CFG, state={"posts": []}, platform="x", raise_on_error=False
+        )
+        ok_b, errors_b = validate_draft_guardrails(
+            draft, cfg=self.CFG, state={"posts": []}, platform="bluesky", raise_on_error=False
+        )
+        self.assertTrue(ok_x, errors_x)
+        self.assertFalse(ok_b)
+        self.assertTrue(any("Humanity gate" in e for e in errors_b))
+
+    def test_length_uses_the_platform_ceiling(self):
+        text = "Neutral engineering note about latency in database writes. " * 10
+        long_cfg = dict(self.CFG, humanity_gate=False)
+
+        ok_x, _ = validate_draft_guardrails(
+            {"text": text}, cfg=long_cfg, state={"posts": []}, platform="x", raise_on_error=False
+        )
+        ok_li, _ = validate_draft_guardrails(
+            {"text": text}, cfg=long_cfg, state={"posts": []}, platform="linkedin", raise_on_error=False
+        )
+        self.assertFalse(ok_x)
+        self.assertTrue(ok_li)
+

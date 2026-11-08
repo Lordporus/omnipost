@@ -76,6 +76,8 @@ def _last_linkedin_post_at(state: dict[str, Any]) -> datetime | None:
         record = platforms.get("linkedin")
         if not isinstance(record, dict):
             continue
+        if record.get("status") == "failed" and not record.get("verified") and not record.get("url"):
+            continue
         at_value = record.get("at")
         if not at_value:
             continue
@@ -234,9 +236,25 @@ TRIGGER_COMPOSER_JS = r"""
         || target.closest('button, [role="button"]')
         || target;
     }
-    if (!target || typeof target.click !== 'function') return null;
+    if (!target) return null;
     try { target.scrollIntoView({block: 'center', inline: 'nearest'}); } catch (e) {}
-    target.click();
+    try {
+      const r = target.getBoundingClientRect();
+      const x = r.left + r.width / 2;
+      const y = r.top + r.height / 2;
+      ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click'].forEach(evtType => {
+        target.dispatchEvent(new MouseEvent(evtType, {
+          bubbles: true,
+          cancelable: true,
+          view: window,
+          clientX: x,
+          clientY: y
+        }));
+      });
+    } catch (e) {}
+    if (typeof target.click === 'function') {
+      try { target.click(); } catch (e) {}
+    }
     return {result: 'clicked', selector: selector, candidates: candidates};
   };
 
@@ -283,7 +301,7 @@ FOCUS_EDITOR_JS = r"""
 (() => {
   // LinkedIn renders the composer as an inline overlay, not always inside
   // div[role="dialog"], so the editor is looked up directly.
-  const dialog = document.querySelector('div[role="dialog"]')
+  const dialog = document.querySelector('div[role="dialog"]:not(.vjs-modal-dialog)')
     || document.querySelector('div.artdeco-modal')
     || document.querySelector('.share-box');
 
@@ -751,7 +769,7 @@ class LinkedInAdapter(PlatformAdapter):
     async def _wait_for_composer_editor(
         self,
         page: Session,
-        attempts: int = 20,
+        attempts: int = 30,
         interval: float = 0.5,
     ) -> str:
         """Poll for a visible, enabled, focused composer editor."""
