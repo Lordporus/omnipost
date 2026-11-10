@@ -88,5 +88,12 @@
 - [ ] **REQ-E2E-OVERHAUL-01:** Prove relevance, uniqueness, limits, 9:16 assets, and duplicate safety in a deterministic dry-run.
 - [ ] **REQ-LIVE-VERIFY-01:** Run one controlled live drop, record verified URLs where available, and publish a telemetry report.
 
+### Phase 20: Growth & Pipeline Fixes (Post-Merge)
+- [ ] **REQ-INGEST-SWIPE-01:** Sanitize every research item at the collection and swipe-load boundaries; audit and clean historical `swipe/*.json` files for arXiv/HN/CMS metadata.
+- [ ] **REQ-CONTENT-TENSION-01:** Encode the tension → real entity → engineering axiom template in `build_system_prompt`, keeping the ban on engagement-bait closers.
+- [ ] **REQ-DEPLOY-MAIN-01:** Verify the deployed container runs merged `main` and that a read-only `due.py show` uses the per-platform guardrail path.
+- [ ] **REQ-LINKEDIN-REACH-01:** Diagnose LinkedIn's 0.038 reach ratio against the four §2.5 hypotheses and record the evidence.
+- [ ] **REQ-PROFILE-COPY-01:** Apply the §4 profile copy and the §6 distribution protocol, and record completion.
+
 
 

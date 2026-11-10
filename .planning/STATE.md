@@ -5,21 +5,22 @@ status: ready
 last_updated: "2026-11-01T23:55:00.000Z"
 state_head: e6a2136
 progress:
-  total_phases: 19
+  total_phases: 20
   completed_phases: 12
-  total_plans: 40
+  total_plans: 42
   completed_plans: 33
 ---
 
-Total Phases: 19
+Total Phases: 20
 
 # GSD State Memory
 
 ## Current Position
 
-- Milestone: OmniPost System Overhaul & Humanized Taste Overhaul (Phases 11–19)
+- Milestone: OmniPost System Overhaul & Humanized Taste Overhaul (Phases 11–20)
 - Completed Phases: Phase 1 through Phase 10, Phase 18 (Ingestion & Text Quality Overhaul), and Phase 19 (Visual Taste-Design Architecture)
-- Status: Phase 18 and Phase 19 are 100% complete, fully verified, and committed. All 442 unit and integration tests pass with zero regressions.
+- Phase 20 (Growth & Pipeline Fixes) is planned: `20-01` is autonomous code, `20-02` needs the operator's live accounts and deployment host.
+- Status: Phase 18 and Phase 19 are 100% complete, fully verified, and committed. PR #15 (`765a5de`) closed Defects 1, 2, 4, 5 and 6 from `GROWTH_AND_PIPELINE_FIX_PLAN.md`; the remaining growth and hygiene items are scoped in Phase 20. All 451 unit and integration tests pass with zero regressions.
 
 ## Key Decisions
 

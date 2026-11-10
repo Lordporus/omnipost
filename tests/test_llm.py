@@ -369,6 +369,15 @@ def test_system_prompt_bans_ai_tells():
         assert tell in prompt
 
 
+def test_system_prompt_encodes_tension_entity_axiom_template():
+    """The shape that worked on Bluesky must be stated, not left to chance."""
+    prompt = build_system_prompt()
+    assert "technical tension or paradox" in prompt
+    assert "real, named entity" in prompt
+    assert "definitive engineering axiom" in prompt
+    assert "Do not end with a question." in prompt
+
+
 def test_system_prompt_keeps_every_output_key():
     """The JSON contract is consumed by downstream code; it must not shrink."""
     prompt = build_system_prompt()

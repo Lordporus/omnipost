@@ -98,6 +98,26 @@ def sanitize_feed_text(raw: str | None) -> str:
     return cleaned
 
 
+RAW_MARKER_RE = re.compile(r"(arXiv:\d|Announce Type:|Article URL:|Comments URL:)")
+
+
+def sanitize_item(item: dict) -> dict:
+    """Sanitize the text fields of one normalised item; return a copy."""
+    cleaned = dict(item)
+    for key in ("title", "summary"):
+        if isinstance(cleaned.get(key), str):
+            cleaned[key] = sanitize_feed_text(cleaned[key])
+    extra = cleaned.get("extra")
+    if isinstance(extra, str):
+        cleaned["extra"] = sanitize_feed_text(extra)
+    elif isinstance(extra, dict):
+        cleaned["extra"] = dict(extra)
+        for key in ("summary", "text", "title"):
+            if isinstance(cleaned["extra"].get(key), str):
+                cleaned["extra"][key] = sanitize_feed_text(cleaned["extra"][key])
+    return cleaned
+
+
 def get(url: str, timeout: float = 25) -> str:
     req = urllib.request.Request(url, headers={
         "User-Agent": browser.UA,
@@ -370,6 +390,7 @@ def collect(hours: int = DEFAULT_WINDOW, skip: tuple[str, ...] = ()) -> dict:
         items += got
         status["x"] = f"ok ({len(got)})" if got else "EMPTY (needs login?)"
 
+    items = [sanitize_item(it) for it in items]
     items = dedupe(items)
     now_iso = _now().isoformat()
     for it in items:
@@ -391,6 +412,56 @@ def collect(hours: int = DEFAULT_WINDOW, skip: tuple[str, ...] = ()) -> dict:
     }
 
 
+def clean_swipe_bank(swipe_dir: Path | None = None, apply: bool = False) -> dict:
+    """Report (and optionally rewrite) raw feed markers in swipe/*.json."""
+    directory = swipe_dir or SWIPE
+    summary = {
+        "files": 0,
+        "files_changed": 0,
+        "items_changed": 0,
+        "markers_before": 0,
+        "markers_after": 0,
+        "applied": apply,
+        "skipped": [],
+    }
+    for path in sorted(directory.glob("*.json")):
+        summary["files"] += 1
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except Exception:
+            summary["skipped"].append(path.name)
+            continue
+        items = data.get("items") if isinstance(data, dict) else data
+        if not isinstance(items, list):
+            summary["skipped"].append(path.name)
+            continue
+        cleaned_items = []
+        changed = 0
+        for item in items:
+            if not isinstance(item, dict):
+                cleaned_items.append(item)
+                continue
+            summary["markers_before"] += len(
+                RAW_MARKER_RE.findall(json.dumps(item, ensure_ascii=False))
+            )
+            fixed = sanitize_item(item)
+            summary["markers_after"] += len(
+                RAW_MARKER_RE.findall(json.dumps(fixed, ensure_ascii=False))
+            )
+            if fixed != item:
+                changed += 1
+            cleaned_items.append(fixed)
+        if changed:
+            summary["files_changed"] += 1
+            summary["items_changed"] += changed
+            if apply:
+                payload = {**data, "items": cleaned_items} if isinstance(data, dict) else cleaned_items
+                path.write_text(
+                    json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8"
+                )
+    return summary
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -404,7 +475,15 @@ def main() -> None:
     ap.add_argument("--out", default=None)
     ap.add_argument("--skip", default=None, help="comma list of sources to SKIP: hn,rss,reddit,x")
     ap.add_argument("--only", default=None, help="comma list of sources to RUN: hn,rss,reddit,x")
+    ap.add_argument("--clean-swipe", action="store_true",
+                    help="Audit raw feed markers in swipe/*.json")
+    ap.add_argument("--apply", action="store_true",
+                    help="Rewrite cleaned swipe files (use with --clean-swipe)")
     a = ap.parse_args()
+
+    if a.clean_swipe:
+        print(json.dumps(clean_swipe_bank(apply=a.apply), indent=2))
+        return
 
     if a.cmd == "sources":
         _, st = rss(hours=a.hours)

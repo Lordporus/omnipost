@@ -24,6 +24,7 @@ OmniPost evolves from a proven single-platform X autonomous publishing engine in
 - [ ] **Phase 17: End-to-End Overhaul Verification & Live Drop** - Prove the overhaul with dry-run, controlled live publishing, verified URLs, duplicate checks, and a telemetry report.
 - [x] **Phase 18: Ingestion & Text Quality Overhaul** - Sanitize raw feed metadata (arXiv/HN), eliminate LinkedIn/Threads copy duplication, enforce word-boundary safe limits without dangling conjunctions, and add humanity guardrails.
 - [x] **Phase 19: Visual Taste-Design Architecture** - Establish semantic design contract (`render/DESIGN.md`), overhaul 9:16 storybook cards with architecture flow and code widgets, and re-architect 1080x1080 carousels for viral 4-slide narrative.
+- [ ] **Phase 20: Growth & Pipeline Fixes (Post-Merge)** - Close what PR #15 did not: sanitize every ingestion path including historical swipe banks, encode the tension→entity→axiom post template, verify production runs merged `main`, and diagnose LinkedIn's 3.8% reach.
 
 ## Phase Details
 
@@ -370,3 +371,23 @@ Plans:
 
 Plans:
 - [x] 19-01: Semantic Design Contract, High-Agency Storybook Cards & Viral Offline Carousels
+
+### Phase 20: Growth & Pipeline Fixes (Post-Merge)
+
+**Goal**: Finish `GROWTH_AND_PIPELINE_FIX_PLAN.md` after PR #15 closed the publishing defects: close the ingestion hygiene gap, encode the post template that already worked, prove production runs merged `main`, and diagnose why LinkedIn reaches 3.8% of 690 followers.
+**Depends on**: Phase 19
+**Requirements**: REQ-INGEST-SWIPE-01, REQ-CONTENT-TENSION-01, REQ-DEPLOY-MAIN-01, REQ-LINKEDIN-REACH-01, REQ-PROFILE-COPY-01
+**Success Criteria** (what must be TRUE):
+
+  1. No item reaches generation unsanitized; historical `swipe/*.json` files written before `8fd5da7` contain no arXiv/Article URL/Announce Type markers after the audit.
+  2. `build_system_prompt` states the tension → real entity → engineering axiom template and still forbids engagement-bait closers.
+  3. The deployed runner exposes the merged `check_measured` and per-platform guardrail code, and a read-only container `due.py show` run succeeds without publishing.
+  4. LinkedIn reach diagnosis names which of the four hypotheses in §2.5 holds, with evidence; no new LinkedIn post is scheduled until it is answered.
+  5. Profile copy (§4) and the 10-comments/day protocol (§6) are executed manually and recorded.
+
+**Already complete (PR #15, merged as `765a5de`)**: Defects 1, 2, 4, 5, 6 — see the `already_done` frontmatter in `20-01-PLAN.md` and the mapping in `20-CONTEXT.md`. Defect 3 remains a hygiene audit, not a confirmed live leak.
+**Plans**: 2 plans
+
+Plans:
+- [ ] 20-01: Ingestion Boundary Sanitization & Tension-Template Prompt Encoding
+- [ ] 20-02: Deployed-`main` Verification, LinkedIn Reach Diagnosis & Manual Profile/Channel Checklist
