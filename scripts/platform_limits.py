@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import re
 import unicodedata
+from typing import Any
 
 try:  # package import (tests, pipeline)
     from scripts.errors import CopyValidationError
@@ -31,6 +32,22 @@ LIMITS: dict[str, dict[str, int]] = {
     "bluesky": {"min": 240, "max": 295, "hard_max": 300},
     "threads": {"min": 350, "max": 480, "hard_max": 500},
     "linkedin": {"min": 500, "max": 2500, "hard_max": 3000},
+}
+
+# Editorial target bands. A shortfall is logged, never rejected: the hard
+# limits above are what the platform enforces, and dropping a slot because the
+# source material was thin loses a post for no reason.
+TARGETS: dict[str, tuple[int, int]] = {
+    "linkedin": (1300, 1800),
+}
+
+# Hashtags are a platform affordance, not a universal one. X and Threads stay
+# at zero; LinkedIn and Bluesky carry a short entity-specific tail.
+MAX_HASHTAGS: dict[str, int] = {
+    "x": 0,
+    "bluesky": 3,
+    "threads": 0,
+    "linkedin": 5,
 }
 
 _ALIASES = {
@@ -73,6 +90,40 @@ def _limits_for(platform: str) -> tuple[str, dict[str, int]]:
     if key not in LIMITS:
         raise ValueError(f"Unknown platform for copy limits: {platform!r}")
     return key, LIMITS[key]
+
+
+_HASHTAG_RE = re.compile(r"(?<!\w)#\w+")
+
+
+def count_hashtags(text: str) -> int:
+    """Count hashtags outside URLs, so a link fragment is not a tag."""
+    return len(_HASHTAG_RE.findall(re.sub(r"https?://\S+", "", text or "")))
+
+
+def normalise_hashtags(tags: Any, platform: str) -> list[str]:
+    """Clean, de-duplicate, cap and canonicalise tags for one platform.
+
+    Returns ``[]`` for platforms that do not take hashtags, so callers never
+    need to know the per-platform policy.
+    """
+    key = _normalise_platform(platform)
+    limit = MAX_HASHTAGS.get(key, 0)
+    if limit <= 0:
+        return []
+    out: list[str] = []
+    seen: set[str] = set()
+    for raw in tags or []:
+        tag = re.sub(r"[^\w]", "", str(raw or "").strip().lstrip("#"))
+        if not tag or len(tag) > 24:
+            continue
+        canonical = "#" + tag[0].upper() + tag[1:]
+        if canonical.lower() in seen:
+            continue
+        seen.add(canonical.lower())
+        out.append(canonical)
+        if len(out) >= limit:
+            break
+    return out
 
 
 def _is_zero_weight(ch: str) -> bool:

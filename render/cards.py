@@ -61,7 +61,11 @@ READINESS_JS = """
 (async () => {
   await document.fonts.ready;
   await Promise.all(Array.from(document.images).map(img => img.decode().catch(() => {})));
-  await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+  // rAF never fires in a background tab, so race it against a timer.
+  await Promise.race([
+    new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))),
+    new Promise(r => setTimeout(r, 250)),
+  ]);
   return true;
 })()
 """
@@ -355,6 +359,12 @@ async def _capture_card_png(
     page = await sess.__aenter__()
     try:
         await page.send("Page.enable")
+        # Background tabs throttle rAF and paint; bring the tab forward first.
+        # Best effort: headless/older targets may not support it.
+        try:
+            await page.send("Page.bringToFront")
+        except Exception:
+            pass
         await page.send(
             "Emulation.setDeviceMetricsOverride",
             width=CARD_WIDTH,

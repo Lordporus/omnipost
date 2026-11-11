@@ -258,6 +258,17 @@ TRIGGER_COMPOSER_JS = r"""
     return {result: 'clicked', selector: selector, candidates: candidates};
   };
 
+  // Check for exact "start a post" clickable element first
+  const allCandidates = [...document.querySelectorAll('button, [role="button"], div')];
+  for (const n of allCandidates) {
+    const txt = (n.innerText || '').trim().toLowerCase();
+    const aria = (n.getAttribute('aria-label') || '').trim().toLowerCase();
+    if (txt === 'start a post' || aria === 'start a post' || txt === 'create a post') {
+      const clicked = clickNode(n, 'exact:start_a_post', 1);
+      if (clicked) return clicked;
+    }
+  }
+
   for (const selector of scopedSelectors) {
     const nodes = [...document.querySelectorAll(selector)];
     if (!nodes.length) continue;

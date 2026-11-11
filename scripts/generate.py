@@ -14,9 +14,11 @@ from typing import Any
 
 try:  # package import (tests, pipeline)
     from scripts.errors import DuplicateTopic, NoRelevantTopic, TopicRejected
+    from scripts.platform_limits import truncate_words
     from scripts.relevance import score_candidates, score_item
 except ImportError:  # direct script execution
     from errors import DuplicateTopic, NoRelevantTopic, TopicRejected
+    from platform_limits import truncate_words
     from relevance import score_candidates, score_item
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -25,6 +27,17 @@ ROOT = Path(__file__).resolve().parent.parent
 def _clean_point(text: str) -> str:
     clean = re.sub(r"^[\s•\-*▸\d.)]+", "", str(text or "")).strip()
     return clean.strip(" \t\r\n,;:.!?")
+
+
+def _close_tail(text: str) -> str:
+    """Drop a trailing fragment the source feed cut mid-sentence."""
+    s = str(text or "").strip()
+    if not s or s[-1] in ".!?…":
+        return s
+    cut = max(s.rfind(". "), s.rfind("! "), s.rfind("? "))
+    if cut >= len(s) // 2:
+        return s[: cut + 1]
+    return s.rstrip(" ,;:-") + "..."
 
 
 def _normalise_point(text: str) -> str:
@@ -237,7 +250,9 @@ def generate_heuristic_topic(kind: str, items: list[dict[str, Any]]) -> dict[str
     points = extract_key_takeaways(summary, exclude_title=title, item=top_item)
 
     category = "AI UPDATE" if kind == "ai_update" else "TECH INSIGHT"
-    body = summary[:300]
+    # LinkedIn targets 1,300-1,800 chars, so keep the whole source summary as
+    # the body. Word-boundary cut: never a half-word at the end.
+    body = _close_tail(truncate_words(summary, 800, "linkedin"))
     takeaway = points[-1]
 
     # Craft 4 platform-native archetypes
@@ -332,7 +347,7 @@ def generate_platform_native_drafts(
     - 'x' (< 280 chars, contrarian hook, 0 hashtags)
     - 'bluesky' (< 300 chars, tech take)
     - 'threads' (< 500 chars, first-person note, no closing question)
-    - 'linkedin' (600-1200 chars, one story or result)
+    - 'linkedin' (1,300-1,800 chars, one story or result)
     - 'carousel' (title and 4 slides)
     - 'platforms' (dict mapping platform name to tailored text)
     """

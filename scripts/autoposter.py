@@ -38,7 +38,7 @@ except ImportError:
     import notify
     from publish_now import _dispatch_worker
 
-from adapters.base import PublishPayload
+from adapters.base import PublishPayload, PublishResult
 
 
 
@@ -226,6 +226,27 @@ def main() -> int:
                 resolved_media.append(mp)
             else:
                 print(f"[{datetime.now().strftime('%H:%M:%S')}] [{p_name}] [WARN] Media path not found: {mp}", file=sys.stderr)
+
+        if not resolved_media and bool((settings.load().get("media") or {}).get("required", False)):
+            res = PublishResult(
+                platform=plat_key,
+                success=False,
+                verified=False,
+                error="media_required: draft has no image or PDF; refusing text-only publish.",
+            )
+            ledger.record_platform_status(
+                st,
+                date,
+                slot,
+                plat_key,
+                res,
+                text=adapted_text,
+                kind=kind,
+                idempotency_key=key,
+            )
+            print(f"[{datetime.now().strftime('%H:%M:%S')}] [FAIL] [{p_name}] {res.error}", file=sys.stderr)
+            notify.send_notification(f"[{p_name}] Media Required", res.error, webhook=True)
+            continue
 
         # Enforce platform character limits
         caps = adapter.capabilities

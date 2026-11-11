@@ -10,6 +10,9 @@ services:
       - IS_DOCKER=1
       - BROWSER_PROFILE=/app/browser-data
       - CHROME_PATH=/usr/bin/chromium
+    extra_hosts:
+      # Docker Desktop does not inject this name; the browser runs on the Windows host.
+      - "host.docker.internal:host-gateway"
     volumes:
       - browser_profile:/app/browser-data
       - ./config.json:/app/config.json:ro
