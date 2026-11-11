@@ -21,10 +21,104 @@ from render import create_carousel_pdf
 
 try:  # package import (tests, pipeline)
     from scripts.errors import CopyValidationError, MediaContractError, RenderError
-    from scripts.platform_limits import LIMITS, count_for, fit, truncate_words, validate
+    from scripts.platform_limits import (
+        LIMITS,
+        MAX_HASHTAGS,
+        TARGETS,
+        count_for,
+        fit,
+        normalise_hashtags,
+        truncate_words,
+        validate,
+    )
 except ImportError:  # direct script execution
     from errors import CopyValidationError, MediaContractError, RenderError
-    from platform_limits import LIMITS, count_for, fit, truncate_words, validate
+    from platform_limits import (
+        LIMITS,
+        MAX_HASHTAGS,
+        TARGETS,
+        count_for,
+        fit,
+        normalise_hashtags,
+        truncate_words,
+        validate,
+    )
+
+# Deterministic fallback tags, used when the model gives none or when the
+# config asks for the category source. Entity-specific tags always win.
+CATEGORY_HASHTAGS: dict[str, list[str]] = {
+    "AI ARCHITECTURE": ["AI", "SystemDesign", "Architecture"],
+    "TECH INSIGHT": ["Engineering", "Tech"],
+    "AI UPDATE": ["AI", "MachineLearning"],
+}
+DEFAULT_HASHTAGS: list[str] = ["AI", "Engineering"]
+
+
+def hashtag_source(slot: str | None = None) -> str:
+    """Which tag source the config asks for this slot: llm or category."""
+    source = "auto"
+    try:
+        from scripts import settings
+
+        source = str(((settings.load().get("hashtags") or {}).get("source")) or "auto")
+    except Exception:
+        pass
+    source = source.strip().lower()
+    if source != "auto":
+        return source
+    try:
+        hour = int(str(slot or "0").split(":")[0])
+    except ValueError:
+        hour = 0
+    return "llm" if hour % 2 == 0 else "category"
+
+
+def hashtags_for(
+    topic_data: dict[str, Any], platform: str, slot: str | None = None
+) -> tuple[list[str], str]:
+    """Resolve this post's tags from the configured source.
+
+    Returns ``(tags, source_used)``. ``source_used`` is what actually produced
+    the tags, so the A/B ledger never credits the model for a category fallback.
+
+    ``llm``      use the model's tags, falling back to the category map
+    ``category`` always use the category map
+    ``auto``     alternate by slot hour so both sources get measured
+    """
+    if MAX_HASHTAGS.get(platform, 0) <= 0:
+        return [], "none"
+
+    source = hashtag_source(slot)
+
+    if source == "llm":
+        provided = (topic_data or {}).get("hashtags") or {}
+        if isinstance(provided, dict):
+            provided = provided.get(platform) or []
+        tags = normalise_hashtags(provided, platform)
+        if tags:
+            return tags, "llm"
+
+    category = str((topic_data or {}).get("category") or "").upper()
+    tags = normalise_hashtags(CATEGORY_HASHTAGS.get(category, DEFAULT_HASHTAGS), platform)
+    return tags, "category"
+
+
+def with_hashtags(platform: str, text: str, tags: list[str]) -> str:
+    """Append tags at the end, fitting the body first so a tag is never cut."""
+    clean = normalise_hashtags(tags, platform)
+    if not clean:
+        return text
+    block = " ".join(clean)
+    separator = "\n\n"
+    budget = LIMITS[platform]["max"] - count_for(platform, separator + block)
+    if budget < LIMITS[platform]["min"]:
+        return text
+    body = text if count_for(platform, text) <= budget else truncate_words(
+        text, budget, platform
+    )
+    # The budget keeps the result under max; the platform minimum stays the
+    # pipeline's job, so a word-boundary cut here cannot hard-fail a post.
+    return f"{body}{separator}{block}".strip()
 
 
 def format_x(headline: str, points: list[str]) -> str:
@@ -244,6 +338,18 @@ def repurpose_topic(
         takeaway,
         media_type=link_media_type,
     )
+    bsky_tags, bsky_source = hashtags_for(topic_data, "bluesky", slot)
+    link_tags, link_source = hashtags_for(topic_data, "linkedin", slot)
+    bsky_text = with_hashtags("bluesky", bsky_text, bsky_tags)
+    link_text = with_hashtags("linkedin", link_text, link_tags)
+    link_target = TARGETS.get("linkedin")
+    if link_target:
+        link_units = count_for("linkedin", link_text)
+        if link_units < link_target[0]:
+            print(
+                f"[REPURPOSE] linkedin copy is {link_units} units, "
+                f"target {link_target[0]}-{link_target[1]}"
+            )
     thrd_text = _calibrated_native_text(
         "threads", native_text("threads")
     ) or format_threads(headline, takeaway, body, points)
@@ -355,6 +461,17 @@ def repurpose_topic(
     }
     if link_media_type == "carousel":
         linkedin_payload["document_title"] = document_title
+    if link_tags:
+        linkedin_payload["tag_source"] = link_source
+
+    bluesky_payload: dict[str, Any] = {
+        "enabled": True,
+        "text": bsky_text,
+        "media": media_map.get("bluesky", []),
+        "media_type": "image",
+    }
+    if bsky_tags:
+        bluesky_payload["tag_source"] = bsky_source
 
     return {
         "x": {
@@ -363,12 +480,7 @@ def repurpose_topic(
             "media": media_map.get("x", []),
             "media_type": "image",
         },
-        "bluesky": {
-            "enabled": True,
-            "text": bsky_text,
-            "media": media_map.get("bluesky", []),
-            "media_type": "image",
-        },
+        "bluesky": bluesky_payload,
         "linkedin": linkedin_payload,
         "threads": {
             "enabled": True,

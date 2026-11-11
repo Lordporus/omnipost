@@ -67,7 +67,7 @@ def _humanity_violations(
         if not text.strip():
             continue
         try:
-            score, issues = validator.score_humanity(text)
+            score, issues = validator.score_humanity(text, platform=platform)
         except Exception as exc:
             print(
                 f"[PIPELINE] Humanity gate error on {platform}, failing open: {exc}",

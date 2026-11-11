@@ -23,8 +23,10 @@ if str(ROOT) not in sys.path:
 
 try:  # package import (tests, pipeline)
     from scripts.errors import CopyValidationError
+    from scripts.platform_limits import LIMITS, TARGETS
 except ImportError:  # direct script execution
     from errors import CopyValidationError
+    from platform_limits import LIMITS, TARGETS
 
 DEFAULT_TIMEOUT = 15.0
 USER_AGENT = "OmniPost-Synthesizer/2.0"
@@ -349,10 +351,13 @@ def build_system_prompt(
         "You MUST return ONLY a valid, parseable JSON object without markdown fences, commentary, or extra text.",
         "The JSON object must contain the following keys:",
         "- \"headline\": string (concise, hook-driven, under 90 characters)",
-        "- \"body\": string (dense technical breakdown, 150-300 characters)",
-        "- \"points\": list of strings (2-3 high-impact technical takeaways / architecture points)",
+        "- \"body\": string (dense technical breakdown, 300-600 characters)",
+        "- \"points\": list of strings (4-5 high-impact technical takeaways / architecture points)",
         "- \"takeaway\": string (bottom-line conclusion or actionable next step)",
         "- \"category\": string (e.g. \"AI ARCHITECTURE\", \"TECH INSIGHT\", \"AI UPDATE\")",
+        "- \"hashtags\": object — {\"linkedin\": [3-5 strings], \"bluesky\": [2-3 strings]}.",
+        "  Entity-specific only (a product, repo, paper, or company named in the item).",
+        "  No generic tags such as #AI, #Tech, #Innovation.",
         "- \"x\": string",
         "- \"bluesky\": string",
         "- \"threads\": string",
@@ -368,7 +373,9 @@ def build_system_prompt(
         "- Default post shape: (1) a technical tension or paradox, (2) a real, named entity such as a post-mortem, repo, paper, or product, (3) a definitive engineering axiom. No greeting, no preamble, no generic closer.",
         "- Never use: delve, game-changer, leverage, unlock, tapestry, testament,",
         "  \"in today's fast-paced\", \"it's not just X, it's Y\", revolutionize, seamless, robust.",
-        "- No hashtags. No emoji.",
+        "- No hashtags in the post body. Hashtags belong only in the \"hashtags\" field.",
+        "- Hashtags are allowed on LinkedIn (3-5) and Bluesky (2-3) only. X and Threads get none.",
+        "- No emoji.",
         "- At most one em-dash, plus one more per 150 characters.",
         "- Do not end with a question. Do not ask for likes, replies, follows, saves, or shares.",
         "- No abstract three-item lists (X, Y, and Z) where all three are buzzwords.",
@@ -377,11 +384,11 @@ def build_system_prompt(
         "- Never duplicate the body sentence inside the bullet points or takeaway.",
         "- Never end with a dangling conjunction (e.g. 'and...', 'with...').",
         "",
-        "Per-platform shape:",
-        "- \"x\": string — X post (180-260 characters). Open with the claim or the number. One post, not a thread. Zero hashtags.",
-        "- \"bluesky\": string — Bluesky post (160-270 characters). Conversational, open-web/developer angle. A link is fine here.",
-        "- \"threads\": string — Meta Threads post (250-420 characters). First-person observation. No closing question.",
-        "- \"linkedin\": string — LinkedIn post (600-1,200 characters). One specific story or result, then what changed. Whitespace between beats. No numbered framework.",
+        "Per-platform shape (the range is enforced by the publisher; text outside it is rejected):",
+        f"- \"x\": string — X post ({LIMITS['x']['min']}-{LIMITS['x']['max']} characters). Open with the claim or the number. One post, not a thread. Zero hashtags.",
+        f"- \"bluesky\": string — Bluesky post ({LIMITS['bluesky']['min']}-{LIMITS['bluesky']['max']} characters). Conversational, open-web/developer angle. A link is fine here.",
+        f"- \"threads\": string — Meta Threads post ({LIMITS['threads']['min']}-{LIMITS['threads']['max']} characters). First-person observation. No closing question.",
+        f"- \"linkedin\": string — LinkedIn post ({TARGETS['linkedin'][0]}-{TARGETS['linkedin'][1]} characters). One specific story or result, then what changed. Whitespace between beats. No numbered framework.",
     ]
 
     if rhetorical_move in _MOVE_BRIEF:
