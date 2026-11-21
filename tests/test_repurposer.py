@@ -55,10 +55,9 @@ class TestContentRepurposer(unittest.TestCase):
         takeaway = "Build on local tools and open protocols."
         formatted = format_linkedin(headline, RICH_BODY, points, takeaway)
 
-        self.assertIn("• Relying on paid APIs", formatted)
-        self.assertIn("Build on local tools and open protocols.", formatted)
-        self.assertNotIn("What changes in practice:", formatted)
-        self.assertNotIn("Bottom line:", formatted)
+        self.assertIn("What changes in practice:", formatted)
+        self.assertIn("▸ Relying on paid APIs", formatted)
+        self.assertIn("Bottom line: Build on local tools", formatted)
         self.assertNotIn("Architectural Bottleneck", formatted)
         self.assertNotIn("architecture carousel below", formatted)
         self.assertGreaterEqual(count_for("linkedin", formatted), LIMITS["linkedin"]["min"])

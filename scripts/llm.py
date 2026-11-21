@@ -32,7 +32,7 @@ DEFAULT_TIMEOUT = 45.0
 USER_AGENT = "OmniPost-Synthesizer/2.0"
 
 DEFAULT_MODELS: dict[str, str] = {
-    "gemini": "gemini-2.5-flash",
+    "gemini": "gemini-3.5-flash",
     "openai": "gpt-4o-mini",
     "claude": "claude-3-5-sonnet-20241022",
     "anthropic": "claude-3-5-sonnet-20241022",
@@ -382,14 +382,14 @@ def build_system_prompt(
         "- Write as an experienced builder talking directly to other engineers, not as a corporate news aggregator.",
         "- Vary sentence length. At least one sentence must be under 8 words.",
         "- Include at least one concrete token: a number, percentage, version string, or proper noun.",
-        "- Default post shape: (1) a pattern-interrupt hook or contrarian claim, (2) concrete engineering proof or war story, (3) a punchy builder axiom. No greeting, no preamble, no generic PR summaries.",
+        "- Default post shape: (1) a technical tension or paradox, (2) a real, named entity such as a post-mortem, repo, paper, or product, (3) a definitive engineering axiom. No greeting, no preamble, no generic closer.",
         "- Never use: delve, game-changer, leverage, unlock, tapestry, testament,",
-        "  \"in today's fast-paced\", \"it's not just X, it's Y\", revolutionize, seamless, robust, \"What changes in practice:\", \"Bottom line:\".",
+        "  \"in today's fast-paced\", \"it's not just X, it's Y\", revolutionize, seamless, robust.",
         "- No hashtags in the post body. Hashtags belong only in the \"hashtags\" field.",
         "- Hashtags are allowed on LinkedIn (3-5) and Bluesky (2-3) only. X and Threads get none.",
         "- No emoji.",
         "- At most one em-dash, plus one more per 150 characters.",
-        "- Do not ask for likes, follows, saves, or shares. For Threads, end with a natural builder question to spark debate.",
+        "- Do not end with a question. Do not ask for likes, replies, follows, saves, or shares.",
         "- No abstract three-item lists (X, Y, and Z) where all three are buzzwords.",
         "- Do not reuse the same rhetorical skeleton across posts.",
         "- Never echo raw feed or paper metadata (e.g. 'arXiv:', 'Announce Type:', 'Abstract:', 'Article URL:').",
@@ -397,9 +397,9 @@ def build_system_prompt(
         "- Never end with a dangling conjunction (e.g. 'and...', 'with...').",
         "",
         "Per-platform shape (the range is enforced by the publisher; text outside it is rejected):",
-        f"- \"x\": string — X post ({LIMITS['x']['min']}-{LIMITS['x']['max']} characters). Pattern-interrupt hook under 10 words, then 2-3 dense lines of proof. One post, not a thread. Zero hashtags.",
-        f"- \"bluesky\": string — Bluesky post ({LIMITS['bluesky']['min']}-{LIMITS['bluesky']['max']} characters). Conversational, open-web/developer angle. High technical depth.",
-        f"- \"threads\": string — Meta Threads post ({LIMITS['threads']['min']}-{LIMITS['threads']['max']} characters). First-person observation + provocative builder question to drive comments.",
+        f"- \"x\": string — X post ({LIMITS['x']['min']}-{LIMITS['x']['max']} characters). Open with the claim or the number. One post, not a thread. Zero hashtags.",
+        f"- \"bluesky\": string — Bluesky post ({LIMITS['bluesky']['min']}-{LIMITS['bluesky']['max']} characters). Conversational, open-web/developer angle. A link is fine here.",
+        f"- \"threads\": string — Meta Threads post ({LIMITS['threads']['min']}-{LIMITS['threads']['max']} characters). First-person observation. No closing question.",
         f"- \"linkedin\": string — LinkedIn post ({TARGETS['linkedin'][0]}-{TARGETS['linkedin'][1]} characters). First-person war story or architectural breakdown. Clean paragraphs with whitespace. No corporate boilerplate.",
     ]
 

@@ -276,12 +276,13 @@ def generate_heuristic_topic(kind: str, items: list[dict[str, Any]]) -> dict[str
             threads_text = threads_text[:477].rstrip() + "..."
 
     # LinkedIn: topic-derived context, practical changes, and bottom line.
-    bullet_section = "\n".join([f"• {p}" for p in points])
+    bullet_section = "\n".join([f"▸ {p}" for p in points])
     linkedin_text = (
         f"{title}\n\n"
         f"{body}\n\n"
+        "What changes in practice:\n"
         f"{bullet_section}\n\n"
-        f"{takeaway}"
+        f"Bottom line: {takeaway}"
     )
     if len(linkedin_text) > 3000:
         linkedin_text = linkedin_text[:2950].rstrip()

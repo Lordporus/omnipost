@@ -190,10 +190,15 @@ def format_linkedin(
     if clean_body:
         lines.extend(["", clean_body])
     if clean_points:
-        lines.append("")
-        lines.extend(f"• {point}" if not point.startswith("•") else point for point in clean_points)
+        lines.extend(["", "What changes in practice:"])
+        lines.extend(f"▸ {point}" for point in clean_points)
     if clean_tk:
-        lines.extend(["", clean_tk])
+        lines.extend(["", f"Bottom line: {clean_tk}"])
+
+    if media_type == "carousel":
+        lines.extend(["", "See the carousel below for the full visual breakdown."])
+    elif media_type == "image":
+        lines.extend(["", "See the visual breakdown above."])
 
     text = "\n".join(lines).strip()
     return fit("linkedin", text)
