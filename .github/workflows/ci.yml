@@ -38,6 +38,10 @@ jobs:
           pip install -r requirements.txt
           pip install -e .
 
+      - name: Setup test configuration
+        run: |
+          python -c "import shutil, pathlib; p = pathlib.Path('config.json'); p.exists() or shutil.copy('config.example.json', p)"
+
       - name: Verify CLI Entrypoint
         run: |
           python omnipost.py --help

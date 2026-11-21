@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -42,6 +43,8 @@ def check_deps() -> tuple[str, str]:
 
 def check_config() -> tuple[str, str]:
     if not settings.CONFIG_PATH.exists():
+        if os.environ.get("CI") and settings.EXAMPLE_PATH.exists():
+            return OK, f"CI environment active (template {settings.EXAMPLE_PATH.name} present)"
         return BAD, f"no config.json - run:  cp {settings.EXAMPLE_PATH.name} config.json"
     c = settings.load()
     platforms = settings.get_platforms(c)
