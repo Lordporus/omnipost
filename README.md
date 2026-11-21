@@ -3,15 +3,15 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/Lordporus/omnipost/releases"><img src="https://img.shields.io/badge/version-2.6.0-00F59B.svg?style=flat-square&labelColor=06090E" alt="Version 2.6.0" /></a>
+  <a href="https://github.com/Lordporus/omnipost/releases"><img src="https://img.shields.io/badge/version-3.0.0-00F59B.svg?style=flat-square&labelColor=06090E" alt="Version 3.0.0" /></a>
   <a href="https://python.org"><img src="https://img.shields.io/badge/python-3.10--3.12-06B6D4.svg?style=flat-square&labelColor=06090E" alt="Python 3.10-3.12" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-10B981.svg?style=flat-square&labelColor=06090E" alt="License MIT" /></a>
-  <a href="https://github.com/Lordporus/omnipost/actions"><img src="https://img.shields.io/badge/tests-362%20passed-00F59B.svg?style=flat-square&labelColor=06090E" alt="Tests 362 Passed" /></a>
+  <a href="https://github.com/Lordporus/omnipost/actions"><img src="https://img.shields.io/badge/tests-95%20passed-00F59B.svg?style=flat-square&labelColor=06090E" alt="Tests 95 Passed" /></a>
   <img src="https://img.shields.io/badge/api_cost-$0_forever-F59E0B.svg?style=flat-square&labelColor=06090E" alt="Zero API Cost" />
   <img src="https://img.shields.io/badge/docker-ready-38BDF8.svg?style=flat-square&labelColor=06090E" alt="Docker Ready" />
 </p>
 
-<h1 align="center">OmniPost V2.6</h1>
+<h1 align="center">OmniPost V3.0</h1>
 
 <p align="center">
   <b>Autonomous, Zero-Cost Cross-Platform Publishing Syndicate for AI Agents & Technical Builders.</b><br />
@@ -20,15 +20,13 @@
 
 ---
 
-## What's New in 2.6
+## What's New in 3.0 (Standalone Open-Source CLI & Viral Pivot)
 
-This release is about one thing: **a click is not a post.** Every path that used to report success without proof now fails loudly instead.
-
-* **Publishing from a background tab works.** Both X and Threads render a degraded composer when their tab is not active — X puts the editor outside its `[role="dialog"]` shell, Threads lays the modal out at `0×0` and the feed's inline "Post" button wins the click. The tab is now activated before every write, and navigation stays conditional so an already-open tab is not reloaded.
-* **X writes are scoped to the composer dialog.** Attach, insert and submit all resolve through the dialog-owned editor, and the body is read back through `COMPOSE_STATE_JS` before Post is clicked. A missing dialog or an empty body raises `SelectorError` instead of typing into the page.
-* **Threads must confirm the submit.** After clicking Post, OmniPost waits up to 15 s for the composer to close. An unconfirmed submit is a retryable `failed`, never a terminal `submitted_unverified` — the state that used to leave live posts marked as unverified forever.
-* **LinkedIn document uploads go through the real flow.** The content-type button, the anchor control, a full pointer sequence, and a captured file input (`Page.fileChooserOpened`) instead of blocking on the OS dialog.
-* **New rehearsal harness.** `scripts/rehearse_composer.py` opens a live composer, attaches media, asserts the attach contract, and dismisses without posting.
+* **Unified `omnipost` CLI & Zero-Agent Execution**: No external coding agents (Antigravity/OpenCode) needed. Install with `pip install -e .` and run `omnipost post`, `omnipost doctor`, or `omnipost setup` directly from any standard shell.
+* **100% Pure Text-Only Viral Engine**: Replaces low-converting corporate AI summaries with high-density, authentic builder perspectives across all 4 channels (X, Bluesky, LinkedIn, Threads).
+* **3-Tier Viral Friction Sourcing**: Scrapes real developer friction from Hacker News and tech discourse, scoring every topic on a 1-10 Viral Friction Gate (Myth-Busting, Developer Pain, Debate Potential) before generation.
+* **Self-Healing Browser Lifecycle**: The CLI automatically verifies, launches, and heals the background Chrome/Edge CDP automation session with persistent session profiles.
+* **Multi-LLM Native Support**: Seamlessly configure Google Gemini, OpenAI, Anthropic Claude, OpenRouter, or 100% local Ollama/vLLM models via `.env`.
 
 ---
 
@@ -171,57 +169,61 @@ python -m render.carousel --preview-only
 
 ---
 
-## Quickstart & Setup
+## Quickstart (Install & Post in 3 Minutes)
 
-> All commands below use `python`. On Windows, `py -3.12` works identically.
-
-### 1. 1-Click Zero-Friction Bootstrap (Recommended)
-
-OmniPost includes single-click bootstrap scripts that inspect Python, install dependencies from `requirements.txt`, and launch the onboarding ceremony:
+> Requires Python 3.10+. Works on Windows, macOS, and Linux.
 
 ```bash
+# 1. Clone the repository
 git clone https://github.com/Lordporus/omnipost.git
 cd omnipost
 
-# Windows
-.\setup.bat
+# 2. Install the package in editable mode
+pip install -e .
 
-# Linux / macOS
-bash setup.sh
+# 3. Run the interactive onboarding setup
+omnipost setup
+
+# 4. Check system readiness & browser sessions
+omnipost doctor
+
+# 5. Drop a live post across all platforms!
+omnipost post
 ```
 
-### 2. Interactive Onboarding Ceremony
+> **Prefer Zero-Install?** You can also run commands directly with Python:
+> `python omnipost.py post --dry-run` or `python omnipost.py doctor`
 
-The onboarding wizard guides you through credentials, platform channels, and LLM configuration with real-time pre-flight verification:
+---
 
-```
-╔═══════════════════════════════════════════════════════════════════╗
-║                      OMNIPOST V2.6 ONBOARDING                     ║
-║         Autonomous Sovereign Multi-Platform Distribution          ║
-╚═══════════════════════════════════════════════════════════════════╝
-
-[1/6] Account Credentials & Handles (X, Bluesky, LinkedIn, Threads)
-[2/6] Multi-LLM Provider & Model Selection:
-      • Google Gemini (Default: gemini-2.5-flash or custom model)
-      • OpenAI (Default: gpt-4o-mini or custom model)
-      • Anthropic Claude (Default: claude-3-5-sonnet-20241022 or custom model)
-      • OpenRouter (Default: meta-llama/llama-3.3-70b-instruct or custom model)
-      ↳ Pre-flight zero-token probe validation... [OK - Verified]
-[3/6] Content Strategy & Voice Profile Configuration
-[4/6] System Timezone Detection (Auto: Asia/Kolkata)
-[5/6] Remote Webhook Alerting (Telegram Bot / Discord Embeds)
-      ↳ Live Telegram bot ping test... [OK - "400: chat not found" prevented]
-[6/6] Operating Mode (Dry-Run vs Autonomous Live Dispatch)
-
-[SETUP] Configuration sealed to config.json & .env. Ready for production.
-```
-
-### 3. Automated / Non-Interactive CI Mode
-
-For CI/CD runners, Docker builds, or automated server provisioning:
+## The Core Command Suite
 
 ```bash
-python setup.py --non-interactive
+# Sourcing -> Scoring -> Drafting -> Guardrails -> 4-Channel Live Publish
+omnipost post
+
+# Simulate generation and inspect character budgets & Humanity Gate in terminal
+omnipost post --dry-run
+
+# Turn a custom thought or article URL into multi-platform viral copy
+omnipost post --topic "Why deterministic SQLite state beats vector database microservices"
+
+# Target specific networks only
+omnipost post --platforms x,linkedin
+
+# Publish an existing draft file
+omnipost post --draft drafts/2026-11-18.json
+
+# Check system health, accounts, and live CDP ports
+omnipost doctor
+
+# Browser session helpers
+omnipost browser start   # Launch automation browser session
+omnipost browser status  # Check CDP connectivity and active tabs
+omnipost browser close   # Terminate background automation browser
+
+# Run the 24/7 background scheduler daemon
+omnipost daemon
 ```
 
 ---
