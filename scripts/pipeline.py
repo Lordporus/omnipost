@@ -255,11 +255,12 @@ def populate_daily_plan(plan: dict[str, Any], swipe_items: list[dict[str, Any]],
                 topic = None
                 continue
 
+            media_required = bool((settings.load().get("media") or {}).get("required", False))
             try:
                 poly_data = repurpose.repurpose_topic(
                     topic_data=topic,
                     date_str=plan.get("date"),
-                    generate_media=True,
+                    generate_media=media_required,
                     author=f"@{settings.load().get('handle', 'Lordporus')} • OmniPost",
                     slot=slot_data.get("slot"),
                 )
@@ -294,7 +295,7 @@ def populate_daily_plan(plan: dict[str, Any], swipe_items: list[dict[str, Any]],
                     poly_data = repurpose.repurpose_topic(
                         topic_data=topic,
                         date_str=plan.get("date"),
-                        generate_media=True,
+                        generate_media=media_required,
                         author=f"@{settings.load().get('handle', 'Lordporus')} • OmniPost",
                         slot=slot_data.get("slot"),
                     )

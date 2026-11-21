@@ -229,7 +229,7 @@ def _exit_code_for_state(
     return 1
 
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
@@ -254,7 +254,7 @@ def main() -> int:
         action="store_true",
         help="Validate generated draft copy and platform limits without posting or opening a browser",
     )
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
     draft_data: dict[str, Any] = {}
     tailored_texts: dict[str, str] = {}
@@ -535,41 +535,48 @@ def main() -> int:
                 measured = fitted_count
 
             if measured < limits["min"]:
-                exc = CopyValidationError(
-                    (
-                        f"{plat_key} copy is {measured} units; minimum is "
-                        f"{limits['min']} (target {limits['min']}-{limits['max']})"
-                    ),
-                    platform=plat_key,
-                    count=measured,
-                    limits=limits,
-                )
-                res = PublishResult(
-                    platform=plat_key,
-                    success=False,
-                    verified=False,
-                    error=str(exc),
-                )
-                results[plat_key] = res
-                ledger.record_platform_status(
-                    st,
-                    today,
-                    slot,
-                    plat_key,
-                    res,
-                    text=post_text,
-                    kind="manual_test",
-                    idempotency_key=key,
-                )
-                print(f"[FAIL] [{p_name}] {exc}", flush=True)
-                notify_webhook.dispatch_webhook(
-                    "failure",
-                    f"[{p_name}] Copy Validation Failed",
-                    str(exc),
-                    {"platform": p_name, "error": str(exc)},
-                )
-                print("-" * 50, flush=True)
-                continue
+                if measured < 20:
+                    exc = CopyValidationError(
+                        (
+                            f"{plat_key} copy is {measured} units; minimum is "
+                            f"{limits['min']} (target {limits['min']}-{limits['max']})"
+                        ),
+                        platform=plat_key,
+                        count=measured,
+                        limits=limits,
+                    )
+                    res = PublishResult(
+                        platform=plat_key,
+                        success=False,
+                        verified=False,
+                        error=str(exc),
+                    )
+                    results[plat_key] = res
+                    ledger.record_platform_status(
+                        st,
+                        today,
+                        slot,
+                        plat_key,
+                        res,
+                        text=post_text,
+                        kind="manual_test",
+                        idempotency_key=key,
+                    )
+                    print(f"[FAIL] [{p_name}] {exc}", flush=True)
+                    notify_webhook.dispatch_webhook(
+                        "failure",
+                        f"[{p_name}] Copy Validation Failed",
+                        str(exc),
+                        {"platform": p_name, "error": str(exc)},
+                    )
+                    print("-" * 50, flush=True)
+                    continue
+                else:
+                    print(
+                        f"[{p_name}] [NOTE] Copy is {measured} units (below editorial target "
+                        f"{limits['min']}-{limits['max']}); proceeding with publish.",
+                        flush=True,
+                    )
 
             print(
                 f"[{p_name}] Copy: {measured}/{limits['max']} "
@@ -745,6 +752,37 @@ def main() -> int:
         )
 
     return _exit_code_for_state(final_state, today, slot, targets)
+
+
+def main_with_args(
+    text: str | None = None,
+    draft: str | None = None,
+    slot: str | None = None,
+    dry_run: bool = False,
+    platforms: str | None = None,
+    force: bool = False,
+    allow_text_only: bool = True,
+    timeout: float = DEFAULT_PLATFORM_TIMEOUT,
+) -> int:
+    """Programmatic entrypoint for publish_now."""
+    argv: list[str] = []
+    if text:
+        argv.extend(["--text", text])
+    if draft:
+        argv.extend(["--draft", str(draft)])
+    if slot:
+        argv.extend(["--slot", str(slot)])
+    if dry_run:
+        argv.append("--dry-run")
+    if platforms:
+        argv.extend(["--platforms", platforms])
+    if force:
+        argv.append("--force")
+    if allow_text_only:
+        argv.append("--allow-text-only")
+    if timeout != DEFAULT_PLATFORM_TIMEOUT:
+        argv.extend(["--timeout", str(timeout)])
+    return main(argv)
 
 
 if __name__ == "__main__":

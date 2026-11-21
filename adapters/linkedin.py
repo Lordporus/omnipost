@@ -780,7 +780,7 @@ class LinkedInAdapter(PlatformAdapter):
     async def _wait_for_composer_editor(
         self,
         page: Session,
-        attempts: int = 30,
+        attempts: int = 60,
         interval: float = 0.5,
     ) -> str:
         """Poll for a visible, enabled, focused composer editor."""

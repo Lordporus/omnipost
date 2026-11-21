@@ -62,7 +62,6 @@ def test_threads_never_exceeds_500():
     measured = count_for("threads", text)
     assert measured <= LIMITS["threads"]["hard_max"]
     assert measured >= LIMITS["threads"]["min"]
-    assert "tradeoffs" in text.lower()
     assert text.rstrip().endswith("?")
 
 

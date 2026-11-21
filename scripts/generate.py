@@ -266,19 +266,22 @@ def generate_heuristic_topic(kind: str, items: list[dict[str, Any]]) -> dict[str
     bsky_base = f"{title}: {summary}" if summary != title else f"Deep dive on {title}: {points[0] if points else ''}"
     bluesky_text = bsky_base[:290].strip()
 
-    # Threads: conversational first-person note. No closing question - the
-    # validator bans bait and the prompt no longer asks for one.
-    threads_text = f"{title}. {takeaway or (points[0] if points else '')}".strip()
-    if len(threads_text) > 480:
-        threads_text = threads_text[:477].rstrip() + "..."
+    # Threads: conversational first-person note tailored to 350-480 target
+    try:
+        from scripts import repurpose
+        threads_text = repurpose.format_threads(title, takeaway, body, points)
+    except Exception:
+        threads_text = f"{title}\n\n{body[:250]}\n\n{takeaway}".strip()
+        if len(threads_text) > 480:
+            threads_text = threads_text[:477].rstrip() + "..."
 
     # LinkedIn: topic-derived context, practical changes, and bottom line.
+    bullet_section = "\n".join([f"• {p}" for p in points])
     linkedin_text = (
         f"{title}\n\n"
         f"{body}\n\n"
-        "What changes in practice:\n"
-        + "\n".join([f"▸ {p}" for p in points])
-        + f"\n\nBottom line: {takeaway}"
+        f"{bullet_section}\n\n"
+        f"{takeaway}"
     )
     if len(linkedin_text) > 3000:
         linkedin_text = linkedin_text[:2950].rstrip()
@@ -481,7 +484,10 @@ def load_daily_swipe(date_str: str) -> list[dict[str, Any]]:
     except Exception:
         return []
     if not isinstance(data, list):
-        return data
+        if isinstance(data, dict) and isinstance(data.get("items"), list):
+            data = data["items"]
+        else:
+            return []
     try:
         from scripts.research import sanitize_item
     except ImportError:

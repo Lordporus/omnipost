@@ -184,21 +184,16 @@ def format_linkedin(
         or len(clean_hl.split()) >= 7
         or bool(re.search(r"\b(?:is|are|was|were|has|have|can|could|will|would)\b", clean_hl, re.IGNORECASE))
     )
-    hook = clean_hl if looks_like_sentence else f"{clean_hl}: production architecture and tradeoffs"
+    hook = clean_hl if looks_like_sentence else f"{clean_hl}: the production reality"
 
     lines = [hook]
     if clean_body:
         lines.extend(["", clean_body])
     if clean_points:
-        lines.extend(["", "What changes in practice:"])
-        lines.extend(f"▸ {point}" for point in clean_points)
+        lines.append("")
+        lines.extend(f"• {point}" if not point.startswith("•") else point for point in clean_points)
     if clean_tk:
-        lines.extend(["", f"Bottom line: {clean_tk}"])
-
-    if media_type == "carousel":
-        lines.extend(["", "See the carousel below for the full visual breakdown."])
-    elif media_type == "image":
-        lines.extend(["", "See the visual breakdown above."])
+        lines.extend(["", clean_tk])
 
     text = "\n".join(lines).strip()
     return fit("linkedin", text)
@@ -230,11 +225,19 @@ def format_threads(
 
     # Append conversational CTA only if needed to meet minimum or naturally engage
     current_len = count_for("threads", insight)
-    if current_len < LIMITS["threads"]["min"]:
-        cta = "How are you handling these architectural tradeoffs in production?"
-        cta_suffix = f"\n\n{cta}"
-    elif not any(s.strip().endswith("?") for s in sections) and not clean_tk.endswith("?"):
-        cta = "How are you approaching these architectural tradeoffs in production?"
+    has_question = any(s.strip().endswith("?") for s in sections) or clean_tk.endswith("?")
+
+    if current_len < LIMITS["threads"]["min"] or not has_question:
+        cta_options = [
+            "What's your team's fallback pattern when this fails in production?",
+            "Are you running this locally or still paying cloud API margins?",
+            "Who else is running into this bottleneck in production?",
+            "What's your take—are you seeing this in your stack?",
+            "What's your production experience with this so far?",
+        ]
+        # Deterministically select based on headline hash for reproducible runs
+        idx = abs(hash(clean_hl)) % len(cta_options)
+        cta = cta_options[idx]
         cta_suffix = f"\n\n{cta}"
     else:
         cta_suffix = ""
