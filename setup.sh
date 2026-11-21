@@ -2,7 +2,7 @@
 set -e
 
 echo "==================================================="
-echo "OmniPost v2.5 - Local Setup & Onboarding Installer"
+echo "OmniPost v3.0 - Local Setup & Onboarding Installer"
 echo "==================================================="
 
 # 1. Check for python3
@@ -27,6 +27,7 @@ source .venv/bin/activate
 echo "[*] Installing / updating dependencies from requirements.txt..."
 python3 -m pip install --upgrade pip > /dev/null 2>&1 || true
 pip install -r requirements.txt
+pip install -e .
 
 # 5. Launch Wizard
 echo ""

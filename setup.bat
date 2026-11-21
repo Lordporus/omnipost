@@ -2,7 +2,7 @@
 setlocal enabledelayedexpansion
 
 echo ===================================================
-echo OmniPost v2.5 - Local Setup & Onboarding Installer
+echo OmniPost v3.0 - Local Setup & Onboarding Installer
 echo ===================================================
 
 :: 1. Check for Python
@@ -43,6 +43,7 @@ if exist ".venv\Scripts\activate.bat" (
 echo [*] Installing / updating dependencies from requirements.txt...
 python -m pip install --upgrade pip >nul 2>&1
 pip install -r requirements.txt
+pip install -e .
 if %ERRORLEVEL% NEQ 0 (
     echo [ERROR] Failed to install dependencies.
     pause

@@ -325,7 +325,7 @@ def tick() -> int:
     return n
 
 
-def main() -> None:
+def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("cmd", nargs="?", default="check",
@@ -338,7 +338,7 @@ def main() -> None:
     ap.add_argument("--image", default=None)
     ap.add_argument("--allow-skip", action="store_true", default=None,
                     help="Allow deterministic optional slot skip")
-    a = ap.parse_args()
+    a = ap.parse_args(argv)
 
     if a.cmd == "make-plan":
         p = make_plan(a.date, allow_skip=a.allow_skip)
