@@ -1,8 +1,8 @@
 #!/usr/bin/env python
-"""OmniPost V2.0 Setup & Onboarding CLI Entrypoint.
+"""OmniPost dual-purpose setup entrypoint.
 
-Dispatches to scripts.wizard.main() to run the interactive 6-step onboarding
-wizard or headless non-interactive CI setup.
+Acts as standard setuptools packaging script when called by pip/build tools,
+and dispatches to the onboarding wizard when run directly with wizard args.
 """
 from __future__ import annotations
 
@@ -15,7 +15,22 @@ if str(ROOT) not in sys.path:
 if str(ROOT / "scripts") not in sys.path:
     sys.path.insert(0, str(ROOT / "scripts"))
 
-from scripts.wizard import main
+WIZARD_FLAGS = {"--non-interactive", "--test-mode", "--defaults", "--root"}
+
+
+def is_wizard_call() -> bool:
+    """Return True only if human user runs setup.py directly or test passes wizard flags."""
+    if any(arg in WIZARD_FLAGS for arg in sys.argv[1:]):
+        return True
+    if len(sys.argv) == 1:
+        return True
+    return False
+
 
 if __name__ == "__main__":
-    main()
+    if is_wizard_call():
+        from scripts.wizard import main
+        main()
+    else:
+        from setuptools import setup
+        setup()

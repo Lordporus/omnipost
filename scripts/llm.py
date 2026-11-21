@@ -23,10 +23,12 @@ if str(ROOT) not in sys.path:
 
 try:  # package import (tests, pipeline)
     from scripts.errors import CopyValidationError
+    from scripts.platform_limits import LIMITS, TARGETS
 except ImportError:  # direct script execution
     from errors import CopyValidationError
+    from platform_limits import LIMITS, TARGETS
 
-DEFAULT_TIMEOUT = 15.0
+DEFAULT_TIMEOUT = 45.0
 USER_AGENT = "OmniPost-Synthesizer/2.0"
 
 DEFAULT_MODELS: dict[str, str] = {
@@ -35,6 +37,8 @@ DEFAULT_MODELS: dict[str, str] = {
     "claude": "claude-3-5-sonnet-20241022",
     "anthropic": "claude-3-5-sonnet-20241022",
     "openrouter": "meta-llama/llama-3.3-70b-instruct",
+    "ollama": "qwen2.5-coder:latest",
+    "local": "qwen2.5-coder:latest",
 }
 
 ENV_MODEL_OVERRIDES: dict[str, str] = {
@@ -43,6 +47,8 @@ ENV_MODEL_OVERRIDES: dict[str, str] = {
     "claude": "ANTHROPIC_MODEL",
     "anthropic": "ANTHROPIC_MODEL",
     "openrouter": "OPENROUTER_MODEL",
+    "ollama": "OLLAMA_MODEL",
+    "local": "LOCAL_MODEL",
 }
 
 ENV_API_KEY_NAMES: dict[str, list[str]] = {
@@ -51,6 +57,8 @@ ENV_API_KEY_NAMES: dict[str, list[str]] = {
     "claude": ["ANTHROPIC_API_KEY", "CLAUDE_API_KEY"],
     "anthropic": ["ANTHROPIC_API_KEY", "CLAUDE_API_KEY"],
     "openrouter": ["OPENROUTER_API_KEY"],
+    "ollama": ["OLLAMA_API_KEY"],
+    "local": ["LOCAL_API_KEY"],
 }
 
 
@@ -342,33 +350,44 @@ def build_system_prompt(
 ) -> str:
     """Builds the system prompt: JSON schema, editorial rules, per-platform shape."""
     lines = [
-        "You are OmniPost Content Synthesizer, an elite technical ghostwriter for engineers and AI researchers.",
-        "Your mission is to transform raw intelligence items (Hacker News, RSS, arXiv) into culturally native, high-impact posts for 4 distinct social networks in one pass.",
+        "You are OmniPost Content Synthesizer, an authoritative, pragmatic Staff Engineer and Tech Founder.",
+        "You are allergic to corporate PR buzzwords and AI marketing hype. You write with raw, first-person builder conviction.",
+        "Your mission is to transform raw intelligence items (Hacker News, RSS, arXiv, Reddit) into culturally native, high-impact pure-text posts for 4 distinct social networks in one pass.",
+        "",
+        "Content Archetypes (Rotate and apply the best fit):",
+        "1. The Contrarian Reality Check (40%): Myth-bust AI hype, call out leaky abstractions, explain why multi-agent swarms fail in production.",
+        "2. The Production War Story / Autopsy (35%): Ground-level engineering breakdown (e.g. latency, token bills, local vs cloud tradeoffs).",
+        "3. The Tactical Stack Breakdown (25%): Minimalist, zero-BS architecture frameworks and comparisons.",
         "",
         "Output Format Requirements:",
         "You MUST return ONLY a valid, parseable JSON object without markdown fences, commentary, or extra text.",
         "The JSON object must contain the following keys:",
-        "- \"headline\": string (concise, hook-driven, under 90 characters)",
-        "- \"body\": string (dense technical breakdown, 150-300 characters)",
-        "- \"points\": list of strings (2-3 high-impact technical takeaways / architecture points)",
-        "- \"takeaway\": string (bottom-line conclusion or actionable next step)",
+        "- \"headline\": string (punchy hook under 90 characters)",
+        "- \"body\": string (dense technical breakdown, 300-600 characters)",
+        "- \"points\": list of strings (3-4 high-impact technical takeaways / architecture points)",
+        "- \"takeaway\": string (bottom-line conclusion or punchy builder axiom)",
         "- \"category\": string (e.g. \"AI ARCHITECTURE\", \"TECH INSIGHT\", \"AI UPDATE\")",
+        "- \"hashtags\": object — {\"linkedin\": [3-5 strings], \"bluesky\": [2-3 strings]}.",
+        "  Entity-specific only (a product, repo, paper, or company named in the item).",
+        "  No generic tags such as #AI, #Tech, #Innovation.",
         "- \"x\": string",
         "- \"bluesky\": string",
         "- \"threads\": string",
         "- \"linkedin\": string",
-        "- \"carousel\": object — Multi-slide carousel breakdown:",
+        "- \"carousel\": object — Multi-slide breakdown (fallback metadata):",
         "    \"title\": string (framework title),",
         "    \"slides\": list of 4 objects [{\"header\": string, \"body\": string}]",
         "",
         "Editorial rules (apply to every platform):",
-        "- Write as one person talking to another, not as a brand.",
+        "- Write as an experienced builder talking directly to other engineers, not as a corporate news aggregator.",
         "- Vary sentence length. At least one sentence must be under 8 words.",
-        "- Include at least one concrete token: a number, version string, URL, or proper noun.",
+        "- Include at least one concrete token: a number, percentage, version string, or proper noun.",
         "- Default post shape: (1) a technical tension or paradox, (2) a real, named entity such as a post-mortem, repo, paper, or product, (3) a definitive engineering axiom. No greeting, no preamble, no generic closer.",
         "- Never use: delve, game-changer, leverage, unlock, tapestry, testament,",
         "  \"in today's fast-paced\", \"it's not just X, it's Y\", revolutionize, seamless, robust.",
-        "- No hashtags. No emoji.",
+        "- No hashtags in the post body. Hashtags belong only in the \"hashtags\" field.",
+        "- Hashtags are allowed on LinkedIn (3-5) and Bluesky (2-3) only. X and Threads get none.",
+        "- No emoji.",
         "- At most one em-dash, plus one more per 150 characters.",
         "- Do not end with a question. Do not ask for likes, replies, follows, saves, or shares.",
         "- No abstract three-item lists (X, Y, and Z) where all three are buzzwords.",
@@ -377,11 +396,11 @@ def build_system_prompt(
         "- Never duplicate the body sentence inside the bullet points or takeaway.",
         "- Never end with a dangling conjunction (e.g. 'and...', 'with...').",
         "",
-        "Per-platform shape:",
-        "- \"x\": string — X post (180-260 characters). Open with the claim or the number. One post, not a thread. Zero hashtags.",
-        "- \"bluesky\": string — Bluesky post (160-270 characters). Conversational, open-web/developer angle. A link is fine here.",
-        "- \"threads\": string — Meta Threads post (250-420 characters). First-person observation. No closing question.",
-        "- \"linkedin\": string — LinkedIn post (600-1,200 characters). One specific story or result, then what changed. Whitespace between beats. No numbered framework.",
+        "Per-platform shape (the range is enforced by the publisher; text outside it is rejected):",
+        f"- \"x\": string — X post ({LIMITS['x']['min']}-{LIMITS['x']['max']} characters). Open with the claim or the number. One post, not a thread. Zero hashtags.",
+        f"- \"bluesky\": string — Bluesky post ({LIMITS['bluesky']['min']}-{LIMITS['bluesky']['max']} characters). Conversational, open-web/developer angle. A link is fine here.",
+        f"- \"threads\": string — Meta Threads post ({LIMITS['threads']['min']}-{LIMITS['threads']['max']} characters). First-person observation. No closing question.",
+        f"- \"linkedin\": string — LinkedIn post ({TARGETS['linkedin'][0]}-{TARGETS['linkedin'][1]} characters). First-person war story or architectural breakdown. Clean paragraphs with whitespace. No corporate boilerplate.",
     ]
 
     if rhetorical_move in _MOVE_BRIEF:
@@ -542,12 +561,43 @@ def call_llm_api(
         req_data = json.dumps(payload).encode("utf-8")
         req = urllib.request.Request(url, data=req_data, headers=headers, method="POST")
 
+    elif p in ("ollama", "local"):
+        host = get_env_var("OLLAMA_HOST", "http://localhost:11434").rstrip("/")
+        url = f"{host}/v1/chat/completions"
+        if api_key:
+            headers["Authorization"] = f"Bearer {api_key}"
+        messages = []
+        if system_prompt:
+            messages.append({"role": "system", "content": system_prompt})
+        messages.append({"role": "user", "content": prompt})
+        payload = {
+            "model": active_model,
+            "messages": messages,
+            "response_format": {"type": "json_object"},
+            "temperature": 0.7,
+        }
+        req_data = json.dumps(payload).encode("utf-8")
+        req = urllib.request.Request(url, data=req_data, headers=headers, method="POST")
+
     else:
         raise ValueError(f"Unsupported LLM provider: '{provider}'")
 
-    with urllib.request.urlopen(req, timeout=timeout) as resp:
-        resp_bytes = resp.read()
-        resp_text = resp_bytes.decode("utf-8", errors="replace")
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            resp_bytes = resp.read()
+            resp_text = resp_bytes.decode("utf-8", errors="replace")
+    except urllib.error.HTTPError as http_err:
+        # If Gemini returned 404 (model deprecated or missing), attempt fallback to gemini-2.5-flash / gemini-flash-latest
+        if p == "gemini" and http_err.code == 404 and active_model != "gemini-2.5-flash":
+            fallback_model = "gemini-2.5-flash"
+            encoded_key = urllib.parse.quote(api_key)
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/{fallback_model}:generateContent?key={encoded_key}"
+            req_fallback = urllib.request.Request(url, data=req_data, headers=headers, method="POST")
+            with urllib.request.urlopen(req_fallback, timeout=timeout) as resp:
+                resp_bytes = resp.read()
+                resp_text = resp_bytes.decode("utf-8", errors="replace")
+        else:
+            raise
 
     data = json.loads(resp_text)
 
@@ -560,7 +610,7 @@ def call_llm_api(
             raise KeyError("Gemini response candidate contained no parts")
         return parts[0].get("text", "")
 
-    elif p in ("openai", "openrouter"):
+    elif p in ("openai", "openrouter", "ollama", "local"):
         choices = data.get("choices", [])
         if not choices:
             raise KeyError(f"{p} response contained no choices")

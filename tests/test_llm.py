@@ -602,3 +602,16 @@ def test_build_system_prompt_empty_voice_samples_is_noop():
     prompt = build_system_prompt(voice_profile="Operator profile", voice_samples="   ")
     assert "Operator Voice Samples" not in prompt
     assert "Few-Shot Winning Examples" not in prompt
+
+
+def test_prompt_ranges_match_enforced_limits():
+    """Advertised ranges must equal the publisher's limits, or drafts get rejected."""
+    from scripts.platform_limits import LIMITS, TARGETS
+
+    prompt = build_system_prompt()
+    for platform, limits in LIMITS.items():
+        if platform in TARGETS:
+            low, high = TARGETS[platform]
+            assert f"({low}-{high} characters)" in prompt, platform
+        else:
+            assert f"({limits['min']}-{limits['max']} characters)" in prompt, platform

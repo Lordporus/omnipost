@@ -17,6 +17,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+try:  # package import (tests, pipeline)
+    from scripts.platform_limits import MAX_HASHTAGS, count_hashtags
+except ImportError:  # direct script execution
+    from platform_limits import MAX_HASHTAGS, count_hashtags
+
 STATUS_PUBLISHED_VERIFIED = "published_verified"
 
 DEFAULT_TIMEOUT = 8.0
@@ -402,11 +407,12 @@ def _abstract_tricolon(text: str) -> str:
     return ""
 
 
-def score_humanity(text: str) -> tuple[int, list[str]]:
+def score_humanity(text: str, platform: str = "x") -> tuple[int, list[str]]:
     """Scores draft text 0-100 for measurable AI tells. Higher is more human.
 
     These are the same rules the generation prompt states, so the prompt and the
-    gate cannot drift apart.
+    gate cannot drift apart. Hashtag tolerance is per-platform: above the cap is
+    a violation, at or below it is not.
     """
     body = (text or "").strip()
     if not body:
@@ -435,9 +441,14 @@ def score_humanity(text: str) -> tuple[int, list[str]]:
     if emoji_count > 0:
         violations.append(f"{emoji_count} emoji (none allowed)")
         score -= 10
-    hashtags = _HASHTAG_RE.findall(re.sub(r"https?://\S+", "", body))
-    if hashtags:
-        violations.append(f"Hashtag used: {hashtags[0]}")
+    hashtag_count = count_hashtags(body)
+    tag_limit = MAX_HASHTAGS.get(platform, 0)
+    if hashtag_count > tag_limit:
+        found = _HASHTAG_RE.findall(re.sub(r"https?://\S+", "", body))
+        violations.append(
+            f"Hashtag cap exceeded: {hashtag_count} on {platform} (max {tag_limit}): "
+            f"{found[0] if found else ''}"
+        )
         score -= 15
 
     if not _has_concrete_token(body):
@@ -752,7 +763,7 @@ def validate_draft_guardrails(
     # 8. Humanity gate: measurable AI tells. Fail open if the scorer itself breaks.
     if (cfg or {}).get("humanity_gate", True):
         try:
-            humanity_score, humanity_violations = score_humanity(text)
+            humanity_score, humanity_violations = score_humanity(text, platform=platform)
         except Exception as exc:
             print(f"[VALIDATOR] Humanity gate error, failing open: {exc}", file=sys.stderr)
             humanity_score, humanity_violations = 100, []

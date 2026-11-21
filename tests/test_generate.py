@@ -8,6 +8,7 @@ from scripts.generate import (
     generate_topic_from_items,
     load_daily_swipe,
 )
+from scripts.platform_limits import LIMITS, count_for
 from scripts.validator import engagement_bait_pattern_detected
 
 
@@ -118,6 +119,16 @@ def test_generate_platform_native_drafts_with_items():
     assert len(drafts["carousel"]["slides"]) == 4
 
 
+def test_close_tail_drops_a_feed_cut_fragment():
+    from scripts.generate import _close_tail
+
+    assert _close_tail("This is the whole first sentence. And a trailing frag") == (
+        "This is the whole first sentence."
+    )
+    assert _close_tail("No terminator here") == "No terminator here..."
+    assert _close_tail("Already closed.") == "Already closed."
+
+
 def test_repurpose_preserves_platform_native_texts():
     """Native copy is preserved when it already fits the platform contract."""
     from scripts.repurpose import repurpose_topic
@@ -140,7 +151,12 @@ def test_repurpose_preserves_platform_native_texts():
     }
     slot_dict = repurpose_topic(custom_native, generate_media=False)
     assert slot_dict["x"]["text"] == native_x
-    assert slot_dict["bluesky"]["text"] == native_bluesky
     assert slot_dict["threads"]["text"] == native_threads
-    assert slot_dict["linkedin"]["text"] == native_linkedin
+    # LinkedIn and Bluesky now carry a hashtag tail, so the body is fitted to
+    # leave room for it instead of arriving byte-identical.
+    for platform, native in (("bluesky", native_bluesky), ("linkedin", native_linkedin)):
+        text = slot_dict[platform]["text"]
+        assert text.startswith(native[:100]), platform
+        assert text.rstrip().split()[-1].startswith("#"), platform
+        assert count_for(platform, text) <= LIMITS[platform]["max"], platform
 
