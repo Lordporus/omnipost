@@ -15,28 +15,22 @@ if str(ROOT) not in sys.path:
 if str(ROOT / "scripts") not in sys.path:
     sys.path.insert(0, str(ROOT / "scripts"))
 
-SETUPTOOLS_COMMANDS = {
-    "develop", "install", "bdist_wheel", "egg_info", "dist_info",
-    "build", "sdist", "bdist", "check", "clean", "--help", "-h",
-    "--help-commands", "--version",
-}
+WIZARD_FLAGS = {"--non-interactive", "--test-mode", "--defaults", "--root"}
 
 
-def is_setuptools_call() -> bool:
-    """Return True if sys.argv represents a setuptools/pip build invocation."""
-    if len(sys.argv) > 1:
-        first_arg = sys.argv[1].lower()
-        if first_arg in SETUPTOOLS_COMMANDS:
-            return True
-        if any(cmd in sys.argv for cmd in ("dist_info", "egg_info", "bdist_wheel")):
-            return True
+def is_wizard_call() -> bool:
+    """Return True only if human user runs setup.py directly or test passes wizard flags."""
+    if any(arg in WIZARD_FLAGS for arg in sys.argv[1:]):
+        return True
+    if len(sys.argv) == 1:
+        return True
     return False
 
 
 if __name__ == "__main__":
-    if is_setuptools_call():
-        from setuptools import setup
-        setup()
-    else:
+    if is_wizard_call():
         from scripts.wizard import main
         main()
+    else:
+        from setuptools import setup
+        setup()
