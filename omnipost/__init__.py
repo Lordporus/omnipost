@@ -1,0 +1,4 @@
+"""OmniPost: Autonomous Multi-Platform Thought Leadership Engine for Builders."""
+from __future__ import annotations
+
+__version__ = "2.0.0"

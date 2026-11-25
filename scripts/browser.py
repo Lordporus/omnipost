@@ -279,8 +279,10 @@ async def open_page(url: str = "about:blank") -> str:
         if domain:
             for tab in list_tabs():
                 tab_url = tab.get("url", "").lower()
-                is_threads = ("threads.com" in domain or "threads.net" in domain) and ("threads.com" in tab_url or "threads.net" in tab_url)
-                if domain in tab_url or is_threads:
+                tab_parsed = urllib.parse.urlparse(tab_url)
+                tab_domain = tab_parsed.netloc.replace("www.", "").lower()
+                is_threads = ("threads.com" in domain or "threads.net" in domain) and ("threads.com" in tab_domain or "threads.net" in tab_domain)
+                if tab_domain == domain or tab_domain.endswith("." + domain) or is_threads:
                     ws = tab["webSocketDebuggerUrl"]
                     # If target url differs, navigate existing tab. For threads, navigate if on subpage or different host
                     clean_tab = tab_url.split("?")[0].rstrip("/").lower()

@@ -35,7 +35,7 @@
     "relevance": {
       "min_score": 2,
       "blocklist": ["politics", "election", "president", "trump", "kushner", "celebrity", "sports", "movie", "music", "crypto price", "stock price", "weather", "crime", "war"],
-      "taxonomy_strong": ["ai", "llm", "agent", "model", "inference", "kubernetes", "docker", "database", "distributed", "latency", "reliability", "observability", "compiler", "rust", "python", "typescript", "api", "architecture", "state machine", "queue", "retry", "deployment", "security", "autonomous", "workflow", "swarm", "deterministic"],
+      "taxonomy_strong": ["ai", "llm", "agent", "model", "inference", "kubernetes", "docker", "database", "postgres", "sqlite", "distributed", "latency", "reliability", "observability", "compiler", "rust", "python", "typescript", "api", "architecture", "state machine", "queue", "retry", "deployment", "security", "autonomous", "workflow", "swarm", "deterministic"],
       "taxonomy_weak": ["engineering", "production", "system", "scale", "performance", "design", "code", "software"]
     }
   },

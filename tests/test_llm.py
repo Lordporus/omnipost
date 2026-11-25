@@ -685,3 +685,16 @@ def test_gemini_503_falls_back_to_next_model(monkeypatch):
     assert len(called_urls) == 2
     assert "gemini-3.8-flash" in called_urls[0]
     assert "gemini-2.5-flash-lite" in called_urls[1]
+
+
+def test_prompt_ranges_match_enforced_limits():
+    """Advertised ranges must equal the publisher's limits, or drafts get rejected."""
+    from scripts.platform_limits import LIMITS, TARGETS
+
+    prompt = build_system_prompt()
+    for platform, limits in LIMITS.items():
+        if platform in TARGETS:
+            low, high = TARGETS[platform]
+            assert f"({low}-{high} characters)" in prompt, platform
+        else:
+            assert f"({limits['min']}-{limits['max']} characters)" in prompt, platform

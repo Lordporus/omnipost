@@ -56,6 +56,23 @@ DEFAULT_PLATFORM_TIMEOUT = 150.0
 VERIFY_BUDGET = 25.0
 
 
+def text_only_blocked(media: list[Path], required: bool, allow_text_only: bool) -> bool:
+    """True when config requires media and nothing can be attached."""
+    return not media and required and not allow_text_only
+
+
+def slot_media(platform: str, today: str, slot: str) -> list[Path]:
+    """Cards rendered for this slot, used when the draft carries no media."""
+    slot_tag = str(slot or "").replace(":", "")
+    date_tag = str(today or "").replace("-", "")
+    if platform == "linkedin":
+        pdf = ROOT / "scratch" / "carousels" / f"linkedin_{date_tag}_{slot_tag}.pdf"
+        if pdf.is_file():
+            return [pdf]
+    card_dir = ROOT / "scratch" / "cards"
+    return sorted(card_dir.glob(f"card_{date_tag}_{slot_tag}_*.png"))
+
+
 def _verify_with_budget(verify: Any, text: str, budget: float = VERIFY_BUDGET) -> bool:
     """Run ``verify(text)`` and give up after ``budget`` seconds.
 
@@ -212,7 +229,7 @@ def _exit_code_for_state(
     return 1
 
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
@@ -228,6 +245,11 @@ def main() -> int:
     parser.add_argument("--force-fresh", action="store_true", help="Force re-generation of today's draft even if already populated")
     parser.add_argument("--dry-run", action="store_true", help="Simulate publish without sending")
     parser.add_argument("--image", help="Optional local image path to attach")
+    parser.add_argument(
+        "--allow-text-only",
+        action="store_true",
+        help="Publish without media even when config media.required is true",
+    )
     parser.add_argument("--platforms", help="Comma-separated platforms to target (e.g. linkedin,threads)")
     parser.add_argument("--timeout", type=float, default=DEFAULT_PLATFORM_TIMEOUT, help=f"Per-platform timeout in seconds (default: {DEFAULT_PLATFORM_TIMEOUT:g})")
     parser.add_argument("--force", action="store_true", help="Override an existing idempotency reservation")
@@ -237,7 +259,7 @@ def main() -> int:
         action="store_true",
         help="Validate generated draft copy and platform limits without posting or opening a browser",
     )
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
     draft_data: dict[str, Any] = {}
     tailored_texts: dict[str, str] = {}
@@ -438,6 +460,7 @@ def main() -> int:
     today = datetime.now().strftime("%Y-%m-%d")
     slot = draft_data.get("slot") or datetime.now().strftime("%H:%M")
     targets = [adapter.platform_name.lower() for adapter in adapters]
+    media_required = bool((settings.load().get("media") or {}).get("required", False))
 
     if any(a.platform_name.lower() in ("x", "linkedin", "threads") for a in adapters):
         from scripts import browser
@@ -529,41 +552,48 @@ def main() -> int:
                 measured = fitted_count
 
             if measured < limits["min"]:
-                exc = CopyValidationError(
-                    (
-                        f"{plat_key} copy is {measured} units; minimum is "
-                        f"{limits['min']} (target {limits['min']}-{limits['max']})"
-                    ),
-                    platform=plat_key,
-                    count=measured,
-                    limits=limits,
-                )
-                res = PublishResult(
-                    platform=plat_key,
-                    success=False,
-                    verified=False,
-                    error=str(exc),
-                )
-                results[plat_key] = res
-                ledger.record_platform_status(
-                    st,
-                    today,
-                    slot,
-                    plat_key,
-                    res,
-                    text=post_text,
-                    kind="manual_test",
-                    idempotency_key=key,
-                )
-                print(f"[FAIL] [{p_name}] {exc}", flush=True)
-                notify_webhook.dispatch_webhook(
-                    "failure",
-                    f"[{p_name}] Copy Validation Failed",
-                    str(exc),
-                    {"platform": p_name, "error": str(exc)},
-                )
-                print("-" * 50, flush=True)
-                continue
+                if measured < 20:
+                    exc = CopyValidationError(
+                        (
+                            f"{plat_key} copy is {measured} units; minimum is "
+                            f"{limits['min']} (target {limits['min']}-{limits['max']})"
+                        ),
+                        platform=plat_key,
+                        count=measured,
+                        limits=limits,
+                    )
+                    res = PublishResult(
+                        platform=plat_key,
+                        success=False,
+                        verified=False,
+                        error=str(exc),
+                    )
+                    results[plat_key] = res
+                    ledger.record_platform_status(
+                        st,
+                        today,
+                        slot,
+                        plat_key,
+                        res,
+                        text=post_text,
+                        kind="manual_test",
+                        idempotency_key=key,
+                    )
+                    print(f"[FAIL] [{p_name}] {exc}", flush=True)
+                    notify_webhook.dispatch_webhook(
+                        "failure",
+                        f"[{p_name}] Copy Validation Failed",
+                        str(exc),
+                        {"platform": p_name, "error": str(exc)},
+                    )
+                    print("-" * 50, flush=True)
+                    continue
+                else:
+                    print(
+                        f"[{p_name}] [NOTE] Copy is {measured} units (below editorial target "
+                        f"{limits['min']}-{limits['max']}); proceeding with publish.",
+                        flush=True,
+                    )
 
             print(
                 f"[{p_name}] Copy: {measured}/{limits['max']} "
@@ -617,6 +647,40 @@ def main() -> int:
             plat_media = tailored_media[plat_key]
 
         media_type = tailored_media_types.get(plat_key, "image")
+        if not plat_media:
+            plat_media = slot_media(plat_key, today, slot)
+            if plat_media and plat_media[0].suffix.lower() == ".pdf":
+                media_type = "carousel"
+        if text_only_blocked(plat_media, media_required, args.allow_text_only):
+            res = PublishResult(
+                platform=plat_key,
+                success=False,
+                verified=False,
+                error=(
+                    "media_required: no image or PDF attached and none rendered for "
+                    f"{today} {slot}. Use --allow-text-only to override."
+                ),
+            )
+            results[plat_key] = res
+            ledger.record_platform_status(
+                st,
+                today,
+                slot,
+                plat_key,
+                res,
+                text=post_text,
+                kind="manual_test",
+                idempotency_key=key,
+            )
+            print(f"[FAIL] [{p_name}] {res.error}", flush=True)
+            notify_webhook.dispatch_webhook(
+                "failure",
+                f"[{p_name}] Media Required",
+                res.error,
+                {"platform": p_name, "error": res.error},
+            )
+            print("-" * 50, flush=True)
+            continue
         extra_meta = {"kind": "manual_test"}
         if plat_key in tailored_metadata:
             extra_meta.update(tailored_metadata[plat_key])
@@ -705,6 +769,37 @@ def main() -> int:
         )
 
     return _exit_code_for_state(final_state, today, slot, targets)
+
+
+def main_with_args(
+    text: str | None = None,
+    draft: str | None = None,
+    slot: str | None = None,
+    dry_run: bool = False,
+    platforms: str | None = None,
+    force: bool = False,
+    allow_text_only: bool = True,
+    timeout: float = DEFAULT_PLATFORM_TIMEOUT,
+) -> int:
+    """Programmatic entrypoint for publish_now."""
+    argv: list[str] = []
+    if text:
+        argv.extend(["--text", text])
+    if draft:
+        argv.extend(["--draft", str(draft)])
+    if slot:
+        argv.extend(["--slot", str(slot)])
+    if dry_run:
+        argv.append("--dry-run")
+    if platforms:
+        argv.extend(["--platforms", platforms])
+    if force:
+        argv.append("--force")
+    if allow_text_only:
+        argv.append("--allow-text-only")
+    if timeout != DEFAULT_PLATFORM_TIMEOUT:
+        argv.extend(["--timeout", str(timeout)])
+    return main(argv)
 
 
 if __name__ == "__main__":

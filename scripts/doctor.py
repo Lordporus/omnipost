@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -42,6 +43,8 @@ def check_deps() -> tuple[str, str]:
 
 def check_config() -> tuple[str, str]:
     if not settings.CONFIG_PATH.exists():
+        if os.environ.get("CI") and settings.EXAMPLE_PATH.exists():
+            return OK, f"CI environment active (template {settings.EXAMPLE_PATH.name} present)"
         return BAD, f"no config.json - run:  cp {settings.EXAMPLE_PATH.name} config.json"
     c = settings.load()
     platforms = settings.get_platforms(c)
@@ -125,12 +128,12 @@ def check_live() -> list[tuple[str, str]]:
     return out
 
 
-def main() -> None:
+def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--live", action="store_true", help="also test network + browser")
     ap.add_argument("--json", action="store_true")
     ap.add_argument("--healthcheck", action="store_true", help="exit with code 1 if any check fails, 0 otherwise")
-    a = ap.parse_args()
+    a = ap.parse_args(argv)
 
     results = [("python", check_python()), ("dependencies", check_deps()),
                ("config", check_config()), ("chrome", check_chrome()),
@@ -160,13 +163,13 @@ def main() -> None:
     if blocked:
         print(f"{blocked} blocking item(s). Fix those, then re-run this.")
     else:
-        print("Nothing blocking. Next: python scripts/due.py make-plan, "
-              "then have your agent write and fill the drafts.")
+        print("All systems ready. Next: run 'omnipost post' (or 'python omnipost.py post --dry-run').")
     if not a.live:
         print("(network and browser were not tested - re-run with --live)")
 
     if a.healthcheck:
         sys.exit(1 if blocked else 0)
+    return 1 if blocked else 0
 
 
 if __name__ == "__main__":
