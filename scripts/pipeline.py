@@ -176,7 +176,12 @@ def _drop_candidate(
         candidates.pop(0)
 
 
-def populate_daily_plan(plan: dict[str, Any], swipe_items: list[dict[str, Any]], force: bool = False) -> dict[str, Any]:
+def populate_daily_plan(
+    plan: dict[str, Any],
+    swipe_items: list[dict[str, Any]],
+    force: bool = False,
+    single: bool = False,
+) -> dict[str, Any]:
     """Populate every empty slot with unique, relevant, voice-aligned content."""
     voice_profile = load_voice_profile()
     slot_order = [str(s.get("slot") or "") for s in plan.get("slots", [])]
@@ -259,7 +264,7 @@ def populate_daily_plan(plan: dict[str, Any], swipe_items: list[dict[str, Any]],
                 poly_data = repurpose.repurpose_topic(
                     topic_data=topic,
                     date_str=plan.get("date"),
-                    generate_media=True,
+                    generate_media=False,
                     author=f"@{settings.load().get('handle', 'Lordporus')} • OmniPost",
                     slot=slot_data.get("slot"),
                 )
@@ -294,7 +299,7 @@ def populate_daily_plan(plan: dict[str, Any], swipe_items: list[dict[str, Any]],
                     poly_data = repurpose.repurpose_topic(
                         topic_data=topic,
                         date_str=plan.get("date"),
-                        generate_media=True,
+                        generate_media=False,
                         author=f"@{settings.load().get('handle', 'Lordporus')} • OmniPost",
                         slot=slot_data.get("slot"),
                     )
@@ -321,12 +326,10 @@ def populate_daily_plan(plan: dict[str, Any], swipe_items: list[dict[str, Any]],
         if topic is None or poly_data is None:
             date = plan.get("date") or "unknown-date"
             slot = slot_data.get("slot") or "unknown-slot"
-            if duplicate_seen and not any(not item.startswith("duplicate_slot_content:") for item in rejections):
-                raise DuplicateTopic(f"duplicate_slot_content: date={date} slot={slot}")
             reasons = "; ".join(rejections) or "no_candidates"
-            raise NoRelevantTopic(
-                f"no_publishable_candidate_for_slot: date={date} slot={slot} reasons={reasons}"
-            )
+            print(f"[PIPELINE] Notice: Slot {slot} could not find a publishable candidate ({reasons}). Skipping slot.")
+            slot_data["skipped"] = f"insufficient_candidates: {reasons}"
+            continue
 
         seen_content.add(content_hash)
         seen_bullets.add(bullet_hash)
@@ -337,10 +340,29 @@ def populate_daily_plan(plan: dict[str, Any], swipe_items: list[dict[str, Any]],
         if poly_data["x"].get("media"):
             slot_data["image"] = poly_data["x"]["media"][0]
 
+        if single:
+            print(f"[PIPELINE] Single-post mode active: slot {slot_data.get('slot')} populated, stopping further slots.")
+            break
+
+    # Verify at least one slot was populated
+    populated = [
+        s for s in plan.get("slots", [])
+        if (s.get("text") or (isinstance(s.get("platforms"), dict) and s.get("platforms")))
+        and not s.get("skipped")
+    ]
+    if not populated:
+        if any(s.get("skipped") in ("humanity_gate", "guardrails") for s in plan.get("slots", [])):
+            return plan
+        date = plan.get("date") or "unknown-date"
+        if duplicate_seen and not any(not item.startswith("duplicate_slot_content:") for item in rejections):
+            raise DuplicateTopic(f"duplicate_slot_content: date={date}")
+        reasons = "; ".join(rejections) or "no_candidates"
+        raise NoRelevantTopic(f"no_publishable_candidate_for_any_slot: date={date} reasons={reasons}")
+
     return plan
 
 
-def run_daily_pipeline(date_str: str | None = None, force: bool = False) -> Path:
+def run_daily_pipeline(date_str: str | None = None, force: bool = False, single: bool = False) -> Path:
     """Executes the complete daily preparation pipeline."""
     target_date = date_str or datetime.now().strftime("%Y-%m-%d")
     print(f"[PIPELINE] Running daily autonomous pipeline for {target_date}...")
@@ -348,16 +370,16 @@ def run_daily_pipeline(date_str: str | None = None, force: bool = False) -> Path
     # 1. Health check browser daemon
     ensure_browser_running()
 
-    # 2. Collect swipe intelligence if missing
+    # 2. Collect swipe intelligence if missing or forced
     swipe_items = generate.load_daily_swipe(target_date)
-    if not swipe_items:
+    if not swipe_items or force:
         print("[PIPELINE] Collecting fresh intelligence from HN, RSS, and tech feeds...")
         try:
             try:
                 from scripts import research
             except ImportError:
                 import research
-            swipe_items = research.hn(points=100, hours=24) or []
+            swipe_items = research.hn(points=50, hours=36) or []
             try:
                 rss_items, _ = research.rss(hours=48)
                 swipe_items += (rss_items or [])
@@ -386,7 +408,7 @@ def run_daily_pipeline(date_str: str | None = None, force: bool = False) -> Path
 
     # 4. Populate slots with polymorphic content & media
     print("[PIPELINE] Synthesizing polymorphic content and rendering media cards...")
-    updated_plan = populate_daily_plan(plan_data, swipe_items, force=force)
+    updated_plan = populate_daily_plan(plan_data, swipe_items, force=force, single=single)
 
     plan_file.write_text(json.dumps(updated_plan, indent=2, ensure_ascii=False), encoding="utf-8")
     print(f"[PIPELINE] Successfully generated and stored daily plan: {plan_file}")
@@ -397,5 +419,6 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--date", help="Target date YYYY-MM-DD (defaults to today)")
     parser.add_argument("--force", action="store_true", help="Force re-generation of all slots even if already populated")
+    parser.add_argument("--single", action="store_true", help="Synthesize only one ready slot and finish immediately")
     args = parser.parse_args()
-    run_daily_pipeline(args.date, force=args.force)
+    run_daily_pipeline(args.date, force=args.force, single=args.single)

@@ -4,7 +4,7 @@ Transforms a single research insight/topic into 4 distinct channel formats:
 1. X (Twitter): 220-275 weighted chars + punchy bullets + optional 16:9 card
 2. Bluesky: 240-295 graphemes + byte-facet friendly URLs
 3. LinkedIn: 1,500-2,500 code points + optional 1080x1080 PDF carousel
-4. Meta Threads: 350-480 code points (hard ceiling 500) + conversational CTA
+4. Meta Threads: 250-480 code points (hard ceiling 500) + conversational CTA
 """
 from __future__ import annotations
 
@@ -27,25 +27,63 @@ except ImportError:  # direct script execution
     from platform_limits import LIMITS, count_for, fit, truncate_words, validate
 
 
-def format_x(headline: str, points: list[str]) -> str:
-    """Format for X: 220-275 weighted characters with punchy bullets."""
-    clean_hl = str(headline or "").strip()
-    bullet_lines = [f"• {str(point).strip()}" for point in points[:3] if str(point).strip()]
-    body = "\n".join(bullet_lines)
+def format_x(
+    headline: str,
+    points: list[str],
+    body: str = "",
+    takeaway: str = "",
+) -> str:
+    """Format for X: 220-275 weighted characters in a 3-beat narrative.
 
-    text = f"{clean_hl}\n\n{body}".strip()
+    Beat 1: Hook / Core thesis
+    Beat 2: Architectural friction / What breaks
+    Beat 3: Practical takeaway for builders
+    No bullets (•), separated by blank lines.
+    """
+    clean_hl = str(headline or "").strip()
+    clean_body = str(body or "").strip()
+    clean_tk = str(takeaway or "").strip()
+    raw_points = [
+        re.sub(r"^[\s•\-*▸\d.)]+", "", str(p)).strip()
+        for p in points
+        if str(p).strip()
+    ]
+
+    beat1 = clean_hl
+    if clean_body or clean_tk:
+        beat2 = clean_body or (raw_points[0] if raw_points else "")
+        beat3 = clean_tk or (raw_points[-1] if len(raw_points) > 1 else "")
+        beats = [b for b in (beat1, beat2, beat3) if b]
+    else:
+        beats = [b for b in (beat1, *raw_points[:3]) if b]
+    text = "\n\n".join(beats).strip()
     return fit("x", text)
 
 
-def format_bluesky(headline: str, points: list[str]) -> str:
-    """Format for Bluesky: 240-295 graphemes with technical depth."""
+def format_bluesky(
+    headline: str,
+    points: list[str],
+    body: str = "",
+    takeaway: str = "",
+) -> str:
+    """Format for Bluesky: 240-295 graphemes in a 3-beat natural narrative."""
     clean_hl = str(headline or "").strip()
-    bullets = " ".join(
-        f"({idx + 1}) {str(point).strip()}"
-        for idx, point in enumerate(points[:3])
-        if str(point).strip()
-    )
-    text = f"{clean_hl} {bullets}".strip()
+    clean_body = str(body or "").strip()
+    clean_tk = str(takeaway or "").strip()
+    raw_points = [
+        re.sub(r"^[\s•\-*▸\d.)]+", "", str(p)).strip()
+        for p in points
+        if str(p).strip()
+    ]
+
+    beat1 = clean_hl
+    if clean_body or clean_tk:
+        beat2 = clean_body or (raw_points[0] if raw_points else "")
+        beat3 = clean_tk or (raw_points[-1] if len(raw_points) > 1 else "")
+        beats = [b for b in (beat1, beat2, beat3) if b]
+    else:
+        beats = [b for b in (beat1, *raw_points[:3]) if b]
+    text = "\n\n".join(beats).strip()
     return fit("bluesky", text)
 
 
@@ -66,21 +104,21 @@ def format_linkedin(
     takeaway: str = "",
     media_type: str | None = None,
 ) -> str:
-    """Format for LinkedIn using only topic-derived context, changes, and takeaway."""
+    """Format for LinkedIn: 500-2500 chars with thoughtful spacing, zero bullets, and closing tags."""
     clean_hl = str(headline or "").strip()
     clean_body = str(body or "").strip()
     raw_points = [
-        str(point).strip().lstrip("•-*▸ ")
+        re.sub(r"^[\s•\-*▸\d.)]+", "", str(point)).strip()
         for point in points
         if str(point).strip()
     ]
-    # Deduplicate points that mirror body
-    clean_points = [p for p in raw_points if not _is_similar(clean_body, p, threshold=0.6)]
+    # Deduplicate points that mirror body, keeping up to 2 for concise narrative
+    clean_points = [p for p in raw_points if not _is_similar(clean_body, p, threshold=0.6)][:2]
     if not clean_points and raw_points:
         clean_points = raw_points[:1]
 
     clean_tk = str(takeaway or "").strip()
-    # Deduplicate takeaway if it mirrors last point
+    # Deduplicate takeaway if it mirrors last displayed point
     if clean_tk and clean_points and _is_similar(clean_tk, clean_points[-1], threshold=0.6):
         clean_tk = ""
 
@@ -96,16 +134,18 @@ def format_linkedin(
     if clean_body:
         lines.extend(["", clean_body])
     if clean_points:
-        lines.extend(["", "What changes in practice:"])
-        lines.extend(f"▸ {point}" for point in clean_points)
+        lines.extend(["", "In production environments:"])
+        for point in clean_points[:2]:
+            lines.extend(["", point])
     if clean_tk:
-        lines.extend(["", f"Bottom line: {clean_tk}"])
+        lines.extend(["", f"The takeaway: {clean_tk}"])
 
     if media_type == "carousel":
         lines.extend(["", "See the carousel below for the full visual breakdown."])
     elif media_type == "image":
         lines.extend(["", "See the visual breakdown above."])
 
+    lines.extend(["", "#AIArchitecture #SystemDesign #SoftwareEngineering"])
     text = "\n".join(lines).strip()
     return fit("linkedin", text)
 
@@ -116,11 +156,15 @@ def format_threads(
     body: str = "",
     points: list[str] | None = None,
 ) -> str:
-    """Format for Meta Threads: 350-480 characters without redundant boilerplate."""
+    """Format for Meta Threads: 250-480 characters in a conversational 3-beat narrative."""
     clean_hl = str(headline or "").strip()
     clean_tk = str(takeaway or "").strip()
     clean_body = str(body or "").strip()
-    raw_points = [str(point).strip() for point in (points or []) if str(point).strip()]
+    raw_points = [
+        re.sub(r"^[\s•\-*▸\d.)]+", "", str(point)).strip()
+        for point in (points or [])
+        if str(point).strip()
+    ]
 
     # Deduplicate points that mirror body
     clean_points = [p for p in raw_points if not _is_similar(clean_body, p, threshold=0.6)]
@@ -128,32 +172,15 @@ def format_threads(
     sections = [clean_hl]
     if clean_body:
         sections.append(clean_body)
-    if clean_points:
-        sections.append("\n".join(f"• {point}" for point in clean_points[:3]))
-    if clean_tk and (not clean_points or not _is_similar(clean_tk, clean_points[-1], threshold=0.6)):
+    elif clean_points:
+        sections.append(clean_points[0])
+
+    if clean_tk and not _is_similar(clean_tk, sections[-1], threshold=0.6):
         sections.append(clean_tk)
-    insight = "\n\n".join(section for section in sections if section).strip()
+    elif len(clean_points) > 1 and not _is_similar(clean_points[-1], sections[-1], threshold=0.6):
+        sections.append(clean_points[-1])
 
-    # Append conversational CTA only if needed to meet minimum or naturally engage
-    current_len = count_for("threads", insight)
-    if current_len < LIMITS["threads"]["min"]:
-        cta = "How are you handling these architectural tradeoffs in production?"
-        cta_suffix = f"\n\n{cta}"
-    elif not any(s.strip().endswith("?") for s in sections) and not clean_tk.endswith("?"):
-        cta = "How are you approaching these architectural tradeoffs in production?"
-        cta_suffix = f"\n\n{cta}"
-    else:
-        cta_suffix = ""
-
-    if cta_suffix:
-        cta_cost = count_for("threads", cta_suffix)
-        insight_budget = LIMITS["threads"]["max"] - cta_cost
-        if count_for("threads", insight) > insight_budget:
-            insight = truncate_words(insight, insight_budget, "threads")
-        full_text = f"{insight}{cta_suffix}".strip()
-    else:
-        full_text = insight
-
+    full_text = "\n\n".join(section for section in sections if section).strip()
     return fit("threads", full_text)
 
 
@@ -174,16 +201,16 @@ def _calibrated_native_text(platform: str, text: str) -> str:
 def repurpose_topic(
     topic_data: dict[str, Any],
     date_str: str | None = None,
-    generate_media: bool = True,
+    generate_media: bool = False,
     author: str = "@Lordporus • OmniPost",
     slot: str | None = None,
 ) -> dict[str, Any]:
-    """Converts topic dict into a polymorphic slot structure with generated visual assets.
+    """Converts topic dict into a polymorphic slot structure.
     
     Args:
         topic_data: Dict containing 'headline', 'body', 'points' (list), and optional 'takeaway'.
         date_str: Target date string (defaults to today).
-        generate_media: If True, renders 9:16 storybook cards and carousel PDF to disk.
+        generate_media: If True, renders visual assets to disk (defaults to False for pure text).
         author: Attribution handle.
         slot: Specific slot string (e.g. 20:00) for unique asset naming.
         
@@ -231,9 +258,11 @@ def repurpose_topic(
 
     # Calibrated synthesis for each platform. Native copy is preserved only when
     # it already fits the platform contract; otherwise the formatter rebuilds it.
-    x_text = _calibrated_native_text("x", native_text("x")) or format_x(headline, points)
+    x_text = _calibrated_native_text("x", native_text("x")) or format_x(
+        headline, points, body=body, takeaway=takeaway
+    )
     bsky_text = _calibrated_native_text("bluesky", native_text("bluesky")) or format_bluesky(
-        headline, points
+        headline, points, body=body, takeaway=takeaway
     )
     link_text = _calibrated_native_text(
         "linkedin", native_text("linkedin")
