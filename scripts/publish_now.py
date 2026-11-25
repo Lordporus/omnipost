@@ -237,6 +237,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--draft", default=None, help="Path to draft JSON or JSON string with platform-native texts")
     parser.add_argument("--slot", help="Specific time slot to publish from daily draft (e.g. 13:00)")
     parser.add_argument("--fresh", action="store_true", help="Harvest fresh intelligence, generate today's multi-slot draft, and compile unique assets")
+    parser.add_argument(
+        "--single",
+        action="store_true",
+        help="Harvest/pick top intelligence, synthesize 1 post across platforms, and publish immediately",
+    )
     parser.add_argument("--force-fresh", action="store_true", help="Force re-generation of today's draft even if already populated")
     parser.add_argument("--dry-run", action="store_true", help="Simulate publish without sending")
     parser.add_argument("--image", help="Optional local image path to attach")
@@ -262,15 +267,16 @@ def main(argv: list[str] | None = None) -> int:
     tailored_media_types: dict[str, str] = {}
     tailored_metadata: dict[str, dict[str, Any]] = {}
 
-    if args.fresh:
+    if args.fresh or args.single:
         try:
             from scripts import pipeline
             today_str = datetime.now().strftime("%Y-%m-%d")
-            print(f"[*] Running autonomous intelligence pipeline for {today_str}...", flush=True)
-            plan_file = pipeline.run_daily_pipeline(date_str=today_str, force=args.force_fresh)
+            mode_desc = "on-demand single post" if args.single else "daily pipeline"
+            print(f"[*] Running autonomous intelligence pipeline ({mode_desc}) for {today_str}...", flush=True)
+            plan_file = pipeline.run_daily_pipeline(date_str=today_str, force=args.force_fresh, single=args.single)
             args.draft = str(plan_file)
         except Exception as exc:
-            print(f"[ERROR] Failed to run fresh pipeline: {exc}", file=sys.stderr, flush=True)
+            print(f"[ERROR] Failed to run pipeline: {exc}", file=sys.stderr, flush=True)
             return 1
 
     if args.draft:
@@ -302,8 +308,19 @@ def main(argv: list[str] | None = None) -> int:
                     print(f"[ERROR] Slot '{args.slot}' not found in draft file. Available: {available}", flush=True)
                     return 1
             else:
-                # Default to first unposted slot, or slots[0]
-                selected = next((s for s in draft_data["slots"] if not s.get("posted", False)), draft_data["slots"][0])
+                # Default to first ready, unposted, non-skipped slot with text/platforms
+                selected = next(
+                    (
+                        s for s in draft_data["slots"]
+                        if not s.get("posted", False)
+                        and not s.get("skipped")
+                        and (s.get("text") or s.get("platforms"))
+                    ),
+                    None,
+                )
+                if not selected:
+                    # Fallback to any unposted slot
+                    selected = next((s for s in draft_data["slots"] if not s.get("posted", False)), draft_data["slots"][0])
             draft_data = selected
 
         # Extract platform tailored texts and media

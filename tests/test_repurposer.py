@@ -30,20 +30,23 @@ class TestContentRepurposer(unittest.TestCase):
         formatted = format_x(headline, points)
         self.assertLessEqual(len(formatted), 280)
         self.assertIn("Breaking:", formatted)
-        self.assertIn("• Quantized kernels", formatted)
+        self.assertIn("Quantized kernels", formatted)
+        self.assertNotIn("•", formatted)
+        self.assertIn("\n\n", formatted)
 
     def test_format_bluesky_length_and_structure(self):
         headline = "New paper proves deterministic state machines reduce agent hallucinations by 80%."
         points = [
-            "Strict Pydantic schemas prevent malformed tool inputs.",
+            "Strict Pydantic schemas prevent malformed tool inputs across multi-step workflows.",
             "Atomic ledgers isolate network failures.",
             "Deterministic replay makes every retry auditable and safe.",
         ]
         formatted = format_bluesky(headline, points)
         self.assertLessEqual(count_for("bluesky", formatted), 300)
         self.assertGreaterEqual(count_for("bluesky", formatted), LIMITS["bluesky"]["min"])
-        self.assertIn("(1)", formatted)
-        self.assertIn("(2)", formatted)
+        self.assertIn("Strict Pydantic schemas", formatted)
+        self.assertNotIn("(1)", formatted)
+        self.assertNotIn("•", formatted)
 
     def test_format_linkedin_storytelling_and_cta(self):
         headline = "Why your engineering team should rethink its AI stack."
@@ -55,9 +58,11 @@ class TestContentRepurposer(unittest.TestCase):
         takeaway = "Build on local tools and open protocols."
         formatted = format_linkedin(headline, RICH_BODY, points, takeaway)
 
-        self.assertIn("What changes in practice:", formatted)
-        self.assertIn("▸ Relying on paid APIs", formatted)
-        self.assertIn("Bottom line: Build on local tools", formatted)
+        self.assertIn("In production environments:", formatted)
+        self.assertIn("Relying on paid APIs", formatted)
+        self.assertIn("The takeaway: Build on local tools", formatted)
+        self.assertNotIn("▸", formatted)
+        self.assertNotIn("•", formatted)
         self.assertNotIn("Architectural Bottleneck", formatted)
         self.assertNotIn("architecture carousel below", formatted)
         self.assertGreaterEqual(count_for("linkedin", formatted), LIMITS["linkedin"]["min"])

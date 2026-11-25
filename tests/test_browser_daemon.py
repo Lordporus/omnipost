@@ -21,7 +21,8 @@ def test_ensure_browser_running_already_active():
 
 
 def test_ensure_browser_running_spawns_process():
-    with patch("scripts.browser_daemon.is_browser_running", side_effect=[False, True]), \
+    with patch.dict("os.environ", {"HEADLESS": "1"}), \
+         patch("scripts.browser_daemon.is_browser_running", side_effect=[False, True]), \
          patch("subprocess.Popen") as mock_popen:
         assert ensure_browser_running() is True
         mock_popen.assert_called_once()
@@ -70,7 +71,8 @@ def test_browser_daemon_appends_linux_flags():
 
 
 def test_ensure_browser_running_uses_legacy_profile_when_present():
-    with patch("scripts.browser_daemon.is_browser_running", side_effect=[False, True]), \
+    with patch.dict("os.environ", {"HEADLESS": "1"}), \
+         patch("scripts.browser_daemon.is_browser_running", side_effect=[False, True]), \
          patch("subprocess.Popen") as mock_popen, \
          patch("pathlib.Path.home") as mock_home, \
          patch("settings.get_browser_config", return_value={}):
@@ -104,7 +106,8 @@ def test_ensure_browser_running_uses_legacy_profile_when_present():
 
 
 def test_ensure_browser_running_uses_default_profile_when_legacy_absent():
-    with patch("scripts.browser_daemon.is_browser_running", side_effect=[False, True]), \
+    with patch.dict("os.environ", {"HEADLESS": "1"}), \
+         patch("scripts.browser_daemon.is_browser_running", side_effect=[False, True]), \
          patch("subprocess.Popen") as mock_popen, \
          patch("pathlib.Path.home") as mock_home, \
          patch("settings.get_browser_config", return_value={}):
@@ -137,7 +140,8 @@ def test_ensure_browser_running_uses_default_profile_when_legacy_absent():
 
 
 def test_ensure_browser_running_uses_configured_profile():
-    with patch("scripts.browser_daemon.is_browser_running", side_effect=[False, True]), \
+    with patch.dict("os.environ", {"HEADLESS": "1"}), \
+         patch("scripts.browser_daemon.is_browser_running", side_effect=[False, True]), \
          patch("subprocess.Popen") as mock_popen, \
          patch("settings.get_browser_config", return_value={"profile_dir": "/custom/profile"}):
         assert ensure_browser_running() is True

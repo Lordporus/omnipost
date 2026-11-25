@@ -42,7 +42,8 @@ def test_multiplatform_repurpose_simultaneous_invariants(core_insight):
     x_slot = adapted["x"]
     assert x_slot["enabled"] is True
     assert LIMITS["x"]["min"] <= count_for("x", x_slot["text"]) <= LIMITS["x"]["hard_max"]
-    assert "• Direct WebSocket" in x_slot["text"] or "Browser Automation" in x_slot["text"]
+    assert "Direct WebSocket" in x_slot["text"] or "Browser Automation" in x_slot["text"]
+    assert "•" not in x_slot["text"]
 
     # 2. Bluesky Invariants
     bsky_slot = adapted["bluesky"]
@@ -52,16 +53,18 @@ def test_multiplatform_repurpose_simultaneous_invariants(core_insight):
         <= count_for("bluesky", bsky_slot["text"])
         <= LIMITS["bluesky"]["hard_max"]
     )
-    assert "(1)" in bsky_slot["text"]
+    assert "(1)" not in bsky_slot["text"]
+    assert "•" not in bsky_slot["text"]
 
     # 3. LinkedIn Invariants
     li_slot = adapted["linkedin"]
     assert li_slot["enabled"] is True
     assert li_slot["media_type"] == "image"
     assert "document_title" not in li_slot
-    assert "What changes in practice:" in li_slot["text"]
-    assert "▸ Direct WebSocket" in li_slot["text"]
-    assert "Bottom line:" in li_slot["text"]
+    assert "In production environments:" in li_slot["text"]
+    assert "Direct WebSocket" in li_slot["text"]
+    assert "The takeaway:" in li_slot["text"]
+    assert "▸" not in li_slot["text"]
     assert "Architectural Bottleneck" not in li_slot["text"]
     assert "cards below" not in li_slot["text"]
     assert (
@@ -79,7 +82,7 @@ def test_multiplatform_repurpose_simultaneous_invariants(core_insight):
         <= LIMITS["threads"]["hard_max"]
     )
     assert "Browser Automation" in th_slot["text"]
-    assert th_slot["text"].rstrip().endswith("?")
+    assert "•" not in th_slot["text"]
 
 
 def test_bluesky_richtext_facet_byte_offset_calculation():
@@ -121,20 +124,20 @@ def test_boundary_truncation_with_extremely_long_insight():
     ]
     long_takeaway = " ".join(["Deterministic"] * 30)
 
-    # X: strictly <= 280, word-boundary ellipsis.
+    # X: strictly <= 280, clean word-boundary truncation without dangling ellipsis.
     x_out = format_x(long_headline, long_points)
     assert count_for("x", x_out) <= LIMITS["x"]["hard_max"]
-    assert x_out.endswith("...")
+    assert not x_out.endswith("...")
 
-    # Bluesky: strictly <= 300, word-boundary ellipsis.
+    # Bluesky: strictly <= 300, clean word-boundary truncation without dangling ellipsis.
     bsky_out = format_bluesky(long_headline, long_points)
     assert count_for("bluesky", bsky_out) <= LIMITS["bluesky"]["hard_max"]
-    assert bsky_out.endswith("...")
+    assert not bsky_out.endswith("...")
 
-    # Threads: strictly <= 500 and still ends on a discussion question.
+    # Threads: strictly <= 500, clean word-boundary truncation without dangling ellipsis.
     th_out = format_threads(long_headline, long_takeaway, points=long_points)
     assert count_for("threads", th_out) <= LIMITS["threads"]["hard_max"]
-    assert th_out.endswith("?")
+    assert not th_out.endswith("...")
 
 
 def test_minimal_insight_payload():

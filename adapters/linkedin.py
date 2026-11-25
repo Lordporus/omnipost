@@ -211,6 +211,9 @@ CHECK_SESSION_JS = r"""
 # generic tertiary artdeco button class is not used because it is shared by
 # Like/Comment and other feed controls.
 LINKEDIN_COMPOSER_SELECTORS = [
+    'div[role="button"][aria-label="Start a post"]',
+    'div#draft-text-replaceable-component',
+    'div[aria-label="Start a post"]',
     'button[id*="share-box"]',
     'button.share-box-feed-entry__trigger',
     'div.share-box-feed-entry__wrapper',
@@ -222,6 +225,9 @@ LINKEDIN_COMPOSER_SELECTORS = [
 TRIGGER_COMPOSER_JS = r"""
 (() => {
   const scopedSelectors = [
+    'div[role="button"][aria-label="Start a post"]',
+    'div#draft-text-replaceable-component',
+    'div[aria-label="Start a post"]',
     'button[id*="share-box"]',
     'button.share-box-feed-entry__trigger',
     'div.share-box-feed-entry__wrapper',
@@ -312,7 +318,7 @@ FOCUS_EDITOR_JS = r"""
 (() => {
   // LinkedIn renders the composer as an inline overlay, not always inside
   // div[role="dialog"], so the editor is looked up directly.
-  const dialog = document.querySelector('div[role="dialog"]:not(.vjs-modal-dialog)')
+  const dialog = document.querySelector('dialog, div[role="dialog"]:not(.vjs-modal-dialog)')
     || document.querySelector('div.artdeco-modal')
     || document.querySelector('.share-box');
 

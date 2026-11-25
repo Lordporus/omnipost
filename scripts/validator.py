@@ -428,6 +428,21 @@ def score_humanity(text: str, platform: str = "x") -> tuple[int, list[str]]:
             violations.append(f"AI tell: '{match.group(0)}'")
             score -= 20
 
+    # Humanized guardrail: Ban robotic bullet symbols
+    if "•" in body or re.search(r"^\s*[-*▸]\s+", body, re.MULTILINE):
+        violations.append("Bullet points used (prohibited in humanized posts)")
+        score -= 30
+
+    # Humanized guardrail: Ban dangling ellipses (cut-off text)
+    if body.rstrip().endswith("..."):
+        violations.append("Dangling ellipsis (...) indicates cut-off/robotic post")
+        score -= 30
+
+    # Humanized guardrail: Enforce paragraph breathing room on long posts
+    if len(body) > 350 and "\n\n" not in body and "\n" not in body:
+        violations.append("Dense wall of text without paragraph breaks")
+        score -= 10
+
     if body.count("\u2014") > max(1, len(body) // 150):
         violations.append(f"Em-dash density: {body.count(chr(8212))} in {len(body)} chars")
         score -= 10

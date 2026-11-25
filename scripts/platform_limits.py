@@ -30,7 +30,7 @@ except ImportError:  # direct script execution
 LIMITS: dict[str, dict[str, int]] = {
     "x": {"min": 220, "max": 275, "hard_max": 280},
     "bluesky": {"min": 240, "max": 295, "hard_max": 300},
-    "threads": {"min": 350, "max": 480, "hard_max": 500},
+    "threads": {"min": 250, "max": 480, "hard_max": 500},
     "linkedin": {"min": 500, "max": 2500, "hard_max": 3000},
 }
 
@@ -306,14 +306,29 @@ def validate(platform: str, text: str) -> None:
 
 
 def fit(platform: str, text: str) -> str:
-    """Fit *text* to the platform's target maximum without padding.
+    """Fit *text* to the platform's target maximum without padding or dangling ellipses.
 
     If the source cannot reach the platform minimum after word-boundary
     truncation, raise :class:`CopyValidationError` rather than fabricating
     filler copy.
     """
     key, limits = _limits_for(platform)
-    fitted = truncate_words(text, limits["max"], key)
+    if count_for(key, text) <= limits["max"]:
+        fitted = text
+    else:
+        fitted = truncate_words(text, limits["max"], key, ellipsis="")
+        if fitted and not fitted.endswith((".", "!", "?")):
+            fitted = re.sub(r"[,;:\-\–\—\s]+$", "", fitted)
+            if not fitted.endswith((".", "!", "?")):
+                if count_for(key, fitted + ".") <= limits["max"]:
+                    fitted += "."
+                else:
+                    shorter = truncate_words(text, limits["max"] - 1, key, ellipsis="")
+                    shorter = re.sub(r"[,;:\-\–\—\s]+$", "", shorter)
+                    if shorter and not shorter.endswith((".", "!", "?")):
+                        shorter += "."
+                    if shorter:
+                        fitted = shorter
     measured = count_for(key, fitted)
     if measured < limits["min"]:
         raise CopyValidationError(

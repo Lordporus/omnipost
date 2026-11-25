@@ -62,7 +62,8 @@ def test_threads_never_exceeds_500():
     measured = count_for("threads", text)
     assert measured <= LIMITS["threads"]["hard_max"]
     assert measured >= LIMITS["threads"]["min"]
-    assert text.rstrip().endswith("?")
+    assert "•" not in text
+    assert not text.rstrip().endswith("...")
 
 
 def test_truncate_words_never_splits():
@@ -193,7 +194,8 @@ def test_dispatch_fits_oversized(tmp_path, monkeypatch):
     assert len(calls) == 1
     measured = count_for("x", calls[0].text)
     assert LIMITS["x"]["min"] <= measured <= LIMITS["x"]["max"]
-    assert calls[0].text.endswith("...")
+    assert not calls[0].text.endswith("...")
+    assert calls[0].text.endswith((".", "!", "?"))
 
 
 def test_dispatch_blocks_on_guardrail_violation(tmp_path, monkeypatch):

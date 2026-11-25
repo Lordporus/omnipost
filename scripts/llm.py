@@ -32,7 +32,7 @@ DEFAULT_TIMEOUT = 45.0
 USER_AGENT = "OmniPost-Synthesizer/2.0"
 
 DEFAULT_MODELS: dict[str, str] = {
-    "gemini": "gemini-3.5-flash",
+    "gemini": "gemini-flash-lite-latest",
     "openai": "gpt-4o-mini",
     "claude": "claude-3-5-sonnet-20241022",
     "anthropic": "claude-3-5-sonnet-20241022",
@@ -379,14 +379,15 @@ def build_system_prompt(
         "    \"slides\": list of 4 objects [{\"header\": string, \"body\": string}]",
         "",
         "Editorial rules (apply to every platform):",
-        "- Write as an experienced builder talking directly to other engineers, not as a corporate news aggregator.",
+        "- Write as one practitioner talking to another, not as a brand, PR, or news aggregator.",
+        "- STRICT BAN: Absolutely NO bullet points (•, -, *, ▸) or numbered lists (1, 2, 3) in any platform copy. Write in natural paragraphs separated by blank lines (\\n\\n).",
+        "- STRICT BAN: Do not end sentences with dangling ellipses (...). Complete every sentence with full punctuation.",
+        "- Default post shape: 3-beat rhythm separated by blank lines (\\n\\n): (1) a technical tension or paradox, (2) a real, named entity such as a post-mortem, repo, paper, or product, (3) a definitive engineering axiom. No greeting, no preamble, no generic closer.",
         "- Vary sentence length. At least one sentence must be under 8 words.",
-        "- Include at least one concrete token: a number, percentage, version string, or proper noun.",
-        "- Default post shape: (1) a technical tension or paradox, (2) a real, named entity such as a post-mortem, repo, paper, or product, (3) a definitive engineering axiom. No greeting, no preamble, no generic closer.",
+        "- Include at least one concrete token: a number, version string, URL, or proper noun.",
         "- Never use: delve, game-changer, leverage, unlock, tapestry, testament,",
         "  \"in today's fast-paced\", \"it's not just X, it's Y\", revolutionize, seamless, robust.",
-        "- No hashtags in the post body. Hashtags belong only in the \"hashtags\" field.",
-        "- Hashtags are allowed on LinkedIn (3-5) and Bluesky (2-3) only. X and Threads get none.",
+        "- No hashtags on X or Threads. On LinkedIn, place 3 entity-specific hashtags at the very bottom. On Bluesky, optional 2 tags at the bottom.",
         "- No emoji.",
         "- At most one em-dash, plus one more per 150 characters.",
         "- Do not end with a question. Do not ask for likes, replies, follows, saves, or shares.",
@@ -397,10 +398,10 @@ def build_system_prompt(
         "- Never end with a dangling conjunction (e.g. 'and...', 'with...').",
         "",
         "Per-platform shape (the range is enforced by the publisher; text outside it is rejected):",
-        f"- \"x\": string — X post ({LIMITS['x']['min']}-{LIMITS['x']['max']} characters). Open with the claim or the number. One post, not a thread. Zero hashtags.",
-        f"- \"bluesky\": string — Bluesky post ({LIMITS['bluesky']['min']}-{LIMITS['bluesky']['max']} characters). Conversational, open-web/developer angle. A link is fine here.",
-        f"- \"threads\": string — Meta Threads post ({LIMITS['threads']['min']}-{LIMITS['threads']['max']} characters). First-person observation. No closing question.",
-        f"- \"linkedin\": string — LinkedIn post ({TARGETS['linkedin'][0]}-{TARGETS['linkedin'][1]} characters). First-person war story or architectural breakdown. Clean paragraphs with whitespace. No corporate boilerplate.",
+        f"- \"x\": string — X post ({LIMITS['x']['min']}-{LIMITS['x']['max']} characters). 2-3 short beats separated by a blank line (\\n\\n). Zero hashtags. Zero bullets.",
+        f"- \"bluesky\": string — Bluesky post ({LIMITS['bluesky']['min']}-{LIMITS['bluesky']['max']} characters). 2-3 beats separated by a blank line. Zero bullets.",
+        f"- \"threads\": string — Meta Threads post ({LIMITS['threads']['min']}-{LIMITS['threads']['max']} characters). Conversational first-person builder observation with blank line pacing. Zero bullets. No closing question.",
+        f"- \"linkedin\": string — LinkedIn post ({TARGETS['linkedin'][0]}-{TARGETS['linkedin'][1]} characters). Practitioner breakdown. Generous whitespace between beats (\\n\\n). Zero bullets. End with 3 targeted hashtags.",
     ]
 
     if rhetorical_move in _MOVE_BRIEF:
@@ -493,25 +494,85 @@ def call_llm_api(
     }
 
     if p == "gemini":
+        import random
+        import time
+
         encoded_key = urllib.parse.quote(api_key)
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/{active_model}:generateContent?key={encoded_key}"
-        payload: dict[str, Any] = {
-            "contents": [
-                {
-                    "parts": [{"text": prompt}]
-                }
-            ],
-            "generationConfig": {
-                "responseMimeType": "application/json",
-                "temperature": 0.7,
-            },
-        }
-        if system_prompt:
-            payload["systemInstruction"] = {
-                "parts": [{"text": system_prompt}]
+        candidate_models = []
+        for m in (
+            active_model,
+            "gemini-2.5-flash-lite",
+            "gemini-flash-lite-latest",
+            "gemini-pro-latest",
+        ):
+            if m and m not in candidate_models:
+                candidate_models.append(m)
+
+        def _retry_delay(exc: urllib.error.HTTPError, retry_idx: int) -> float:
+            header_val = ""
+            if getattr(exc, "headers", None):
+                header_val = str(exc.headers.get("Retry-After") or "").strip()
+            if header_val.isdigit():
+                return min(20.0, max(1.0, float(header_val)))
+            base = 2.0 * (2 ** retry_idx)
+            return min(20.0, base + random.uniform(0.2, 0.6))
+
+        last_exc: Exception | None = None
+        resp_text = ""
+        budget_deadline = time.monotonic() + 25.0
+        for attempt_idx, try_model in enumerate(candidate_models):
+            url = (
+                f"https://generativelanguage.googleapis.com/v1beta/models/"
+                f"{try_model}:generateContent?key={encoded_key}"
+            )
+            payload: dict[str, Any] = {
+                "contents": [
+                    {
+                        "parts": [{"text": prompt}]
+                    }
+                ],
+                "generationConfig": {
+                    "responseMimeType": "application/json",
+                    "temperature": 0.7,
+                },
             }
-        req_data = json.dumps(payload).encode("utf-8")
-        req = urllib.request.Request(url, data=req_data, headers=headers, method="POST")
+            if system_prompt:
+                payload["systemInstruction"] = {
+                    "parts": [{"text": system_prompt}]
+                }
+            req_data = json.dumps(payload).encode("utf-8")
+
+            rate_retries = 0
+            while True:
+                req = urllib.request.Request(url, data=req_data, headers=headers, method="POST")
+                try:
+                    with urllib.request.urlopen(req, timeout=timeout) as resp:
+                        resp_text = resp.read().decode("utf-8", errors="replace")
+                    last_exc = None
+                    break
+                except urllib.error.HTTPError as exc:
+                    last_exc = exc
+                    if exc.code == 429 and rate_retries < 2:
+                        delay = _retry_delay(exc, rate_retries)
+                        if time.monotonic() + delay <= budget_deadline:
+                            rate_retries += 1
+                            time.sleep(delay)
+                            continue
+                    if exc.code in (404, 429, 500, 502, 503, 504) and attempt_idx + 1 < len(candidate_models):
+                        time.sleep(0.5)
+                        break
+                    raise
+                except (urllib.error.URLError, TimeoutError) as exc:
+                    last_exc = exc
+                    if attempt_idx + 1 < len(candidate_models):
+                        time.sleep(0.5)
+                        break
+                    raise
+            if last_exc is None:
+                break
+        if last_exc is not None:
+            raise last_exc
+        data = json.loads(resp_text)
 
     elif p == "openai":
         url = "https://api.openai.com/v1/chat/completions"
@@ -582,24 +643,12 @@ def call_llm_api(
     else:
         raise ValueError(f"Unsupported LLM provider: '{provider}'")
 
-    try:
+    if p != "gemini":
         with urllib.request.urlopen(req, timeout=timeout) as resp:
             resp_bytes = resp.read()
             resp_text = resp_bytes.decode("utf-8", errors="replace")
-    except urllib.error.HTTPError as http_err:
-        # If Gemini returned 404 (model deprecated or missing), attempt fallback to gemini-2.5-flash / gemini-flash-latest
-        if p == "gemini" and http_err.code == 404 and active_model != "gemini-2.5-flash":
-            fallback_model = "gemini-2.5-flash"
-            encoded_key = urllib.parse.quote(api_key)
-            url = f"https://generativelanguage.googleapis.com/v1beta/models/{fallback_model}:generateContent?key={encoded_key}"
-            req_fallback = urllib.request.Request(url, data=req_data, headers=headers, method="POST")
-            with urllib.request.urlopen(req_fallback, timeout=timeout) as resp:
-                resp_bytes = resp.read()
-                resp_text = resp_bytes.decode("utf-8", errors="replace")
-        else:
-            raise
 
-    data = json.loads(resp_text)
+        data = json.loads(resp_text)
 
     if p == "gemini":
         candidates = data.get("candidates", [])

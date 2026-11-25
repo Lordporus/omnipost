@@ -270,8 +270,9 @@ THREADS_PERMALINK_JS = r"""
 # live post that sits further down the timeline.
 THREADS_VERIFY_JS = r"""
 (() => {
-  const posts = [...document.querySelectorAll('article, div[data-pressable-container="true"]')];
-  return JSON.stringify(posts.slice(0, 12).map(p => (p.innerText || '')));
+  const root = document.querySelector('main') || document;
+  const posts = [...root.querySelectorAll('article, div[data-pressable-container="true"]')];
+  return JSON.stringify(posts.slice(0, 25).map(p => (p.innerText || '')));
 })()
 """
 
@@ -504,7 +505,7 @@ class ThreadsAdapter(PlatformAdapter):
         self,
         page: Session,
         attempts: int = 5,
-        interval: float = 1.0,
+        interval: float = 1.2,
     ) -> str | None:
         """Poll the toast and latest activity for a real /post/ permalink."""
         for attempt in range(attempts):
@@ -743,8 +744,15 @@ class ThreadsAdapter(PlatformAdapter):
                 norm_snippet = re.sub(r"\s+", " ", text_snippet[:35]).strip().lower()
 
                 check_js = THREADS_VERIFY_JS
+                attempt = 0
 
                 while time.time() < deadline:
+                    if attempt > 0:
+                        try:
+                            await page.send("Page.reload", ignoreCache=True)
+                        except (CDPError, OSError, asyncio.TimeoutError):
+                            pass
+                    attempt += 1
                     await browser.settle_page(page, 3.5)
                     try:
                         raw = await page.eval(check_js)

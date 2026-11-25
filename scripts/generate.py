@@ -255,37 +255,33 @@ def generate_heuristic_topic(kind: str, items: list[dict[str, Any]]) -> dict[str
     body = _close_tail(truncate_words(summary, 800, "linkedin"))
     takeaway = points[-1]
 
-    # Craft 4 platform-native archetypes
-    # X: <280 chars, punchy 1-2 liner, no hashtags
-    x_hook = f"{title}. {points[0]}" if points else title
-    if len(x_hook) > 275:
-        x_hook = x_hook[:272].rstrip() + "..."
-    x_text = x_hook
+    # Craft 4 platform-native archetypes in 3-beat natural paragraphs (no bullets)
+    from scripts.platform_limits import LIMITS
 
-    # Bluesky: <300 chars, technical insider tone
-    bsky_base = f"{title}: {summary}" if summary != title else f"Deep dive on {title}: {points[0] if points else ''}"
-    bluesky_text = bsky_base[:290].strip()
+    p0 = points[0] if points else ""
+    p1 = points[1] if len(points) > 1 else ""
 
-    # Threads: conversational first-person note tailored to 350-480 target
-    try:
-        from scripts import repurpose
-        threads_text = repurpose.format_threads(title, takeaway, body, points)
-    except Exception:
-        threads_text = f"{title}\n\n{body[:250]}\n\n{takeaway}".strip()
-        if len(threads_text) > 480:
-            threads_text = threads_text[:477].rstrip() + "..."
+    # X: <= 275 chars, 3-beat blank-line narrative, zero hashtags, zero bullets
+    x_beats = [b for b in (title, p0, takeaway) if b]
+    x_text = truncate_words("\n\n".join(x_beats), LIMITS["x"]["max"], "x", ellipsis="")
 
-    # LinkedIn: topic-derived context, practical changes, and bottom line.
-    bullet_section = "\n".join([f"▸ {p}" for p in points])
-    linkedin_text = (
-        f"{title}\n\n"
-        f"{body}\n\n"
-        "What changes in practice:\n"
-        f"{bullet_section}\n\n"
-        f"Bottom line: {takeaway}"
-    )
-    if len(linkedin_text) > 3000:
-        linkedin_text = linkedin_text[:2950].rstrip()
+    # Bluesky: <= 295 chars, clean tech take
+    bsky_beats = [b for b in (title, p0, takeaway) if b]
+    bluesky_text = truncate_words("\n\n".join(bsky_beats), LIMITS["bluesky"]["max"], "bluesky", ellipsis="")
+
+    # Threads: <= 480 chars conversational take
+    th_beats = [b for b in (title, body or p0, takeaway or p1) if b]
+    threads_text = truncate_words("\n\n".join(th_beats), LIMITS["threads"]["max"], "threads", ellipsis="")
+
+    # LinkedIn: <= 2500 chars, narrative structure with tags
+    li_beats = [
+        f"{title}: production architecture and tradeoffs",
+        body,
+        f"In production environments:\n\n{p0}" if p0 else "",
+        f"The takeaway: {takeaway}" if takeaway else "",
+        "#AIArchitecture #SystemDesign #SoftwareEngineering",
+    ]
+    linkedin_text = truncate_words("\n\n".join(b for b in li_beats if b), LIMITS["linkedin"]["max"], "linkedin", ellipsis="")
 
     carousel = {
         "title": title[:70],

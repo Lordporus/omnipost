@@ -87,7 +87,7 @@ def test_run_daily_pipeline(tmp_path):
 
         mock_make_plan.side_effect = fake_make_plan
 
-        def fake_populate(plan, items, force=False):
+        def fake_populate(plan, items, force=False, single=False):
             plan["slots"][0]["text"] = "Populated text"
             return plan
 
