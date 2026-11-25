@@ -156,9 +156,10 @@ def test_linkedin_has_no_hardcoded_boilerplate():
         "Test the runtime boundary before scaling.",
         media_type="image",
     )
-    assert "What changes in practice:" in text
-    assert "▸ Relying on host networking" in text
-    assert "Bottom line: Test the runtime boundary" in text
+    assert "In production environments:" in text
+    assert "Relying on host networking" in text
+    assert "The takeaway: Test the runtime boundary" in text
+    assert "▸" not in text
     assert "Matters in Production" not in text
     assert "Architectural Bottleneck" not in text
     assert "Production Principles to Remember" not in text
@@ -178,7 +179,8 @@ def test_threads_has_no_verified_reference_or_state_drift():
     assert "Verified Reference" not in text
     assert "state drift and unverified retry loops" not in text.lower()
     assert LIMITS["threads"]["min"] <= count_for("threads", text) <= LIMITS["threads"]["hard_max"]
-    assert text.rstrip().endswith("?")
+    assert "•" not in text
+    assert not text.rstrip().endswith("...")
 
 
 def test_duplicate_bullet_set_rejected():
@@ -215,8 +217,9 @@ def test_duplicate_bullet_set_rejected():
     with patch("scripts.generate.generate_topic_from_items", return_value=topic), patch(
         "scripts.repurpose.repurpose_topic", return_value=poly
     ):
-        with pytest.raises((NoRelevantTopic, DuplicateTopic)):
-            populate_daily_plan(plan, [{"title": "candidate"}], force=True)
+        updated = populate_daily_plan(plan, [{"title": "candidate"}], force=True)
+    assert updated["slots"][0]["text"] == "X text"
+    assert "duplicate_slot_content" in str(updated["slots"][1].get("skipped") or "")
 
 
 def test_generic_fallback_sentence_absent():

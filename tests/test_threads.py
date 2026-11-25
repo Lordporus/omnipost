@@ -271,6 +271,23 @@ class TestThreadsAdapter(unittest.TestCase):
         self.assertNotIn("x1i10hfl", js)
         self.assertNotIn("slice(0, 6)", js)
 
+    @patch("asyncio.sleep", new_callable=AsyncMock)
+    @patch("scripts.browser.settle_page", new_callable=AsyncMock)
+    @patch("adapters.threads.ThreadsAdapter._open_stealth")
+    def test_verify_reloads_on_retry_and_finds_post(self, mock_open, mock_settle, mock_sleep):
+        """When the first readback hits a stale DOM, retry reloads the page and succeeds."""
+        mock_page = AsyncMock()
+        mock_page.eval.side_effect = [
+            json.dumps(["Old post"]),
+            json.dumps(["Old post", "Fresh pure-text post verified after reload"]),
+        ]
+        mock_open.return_value = mock_page
+
+        verified = self.adapter.verify(None, "Fresh pure-text post verified after reload")
+
+        self.assertTrue(verified)
+        mock_page.send.assert_awaited_once_with("Page.reload", ignoreCache=True)
+
 
 if __name__ == "__main__":
     unittest.main()

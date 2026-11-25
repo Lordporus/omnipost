@@ -55,7 +55,7 @@ def test_resolve_model_defaults_and_overrides(monkeypatch):
     """Verifies modern defaults and env overrides across providers."""
     # Gemini default and override
     monkeypatch.delenv("GEMINI_MODEL", raising=False)
-    assert resolve_model("gemini") == "gemini-3.5-flash"
+    assert resolve_model("gemini") == "gemini-flash-lite-latest"
     monkeypatch.setenv("GEMINI_MODEL", "gemini-1.5-pro")
     assert resolve_model("gemini") == "gemini-1.5-pro"
 
@@ -80,7 +80,7 @@ def test_resolve_model_defaults_and_overrides(monkeypatch):
 
     # Whitespace override falls back to default
     monkeypatch.setenv("GEMINI_MODEL", "   ")
-    assert resolve_model("gemini") == "gemini-3.5-flash"
+    assert resolve_model("gemini") == "gemini-flash-lite-latest"
 
 
 def test_resolve_api_key_and_provider(monkeypatch):
@@ -602,3 +602,86 @@ def test_build_system_prompt_empty_voice_samples_is_noop():
     prompt = build_system_prompt(voice_profile="Operator profile", voice_samples="   ")
     assert "Operator Voice Samples" not in prompt
     assert "Few-Shot Winning Examples" not in prompt
+
+
+def test_gemini_429_retries_same_model_with_backoff(monkeypatch):
+    """429 rate limits retry the same model with Retry-After backoff instead of burning fallback quota."""
+    import io
+    import urllib.error
+
+    monkeypatch.setattr("time.sleep", lambda s: None)
+    called_urls = []
+
+    err_429 = urllib.error.HTTPError(
+        url="https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-lite-latest:generateContent",
+        code=429,
+        msg="Too Many Requests",
+        hdrs={"Retry-After": "1"},
+        fp=io.BytesIO(b"{}"),
+    )
+    ok_resp = MagicMock()
+    ok_resp.read.return_value = json.dumps(
+        {"candidates": [{"content": {"parts": [{"text": '{"status": "ok"}'}]}}]}
+    ).encode("utf-8")
+
+    def fake_urlopen(req, timeout=15.0):
+        called_urls.append(req.full_url)
+        if len(called_urls) == 1:
+            raise err_429
+        cm = MagicMock()
+        cm.__enter__.return_value = ok_resp
+        return cm
+
+    with patch("urllib.request.urlopen", side_effect=fake_urlopen):
+        out = call_llm_api(
+            provider="gemini",
+            api_key="test-key",
+            prompt="hello",
+            model="gemini-flash-lite-latest",
+        )
+
+    assert json.loads(out) == {"status": "ok"}
+    assert len(called_urls) == 2
+    assert all("gemini-flash-lite-latest" in u for u in called_urls)
+
+
+def test_gemini_503_falls_back_to_next_model(monkeypatch):
+    """503 service unavailable immediately falls back to the next Gemini candidate model."""
+    import io
+    import urllib.error
+
+    monkeypatch.setattr("time.sleep", lambda s: None)
+    called_urls = []
+
+    err_503 = urllib.error.HTTPError(
+        url="https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent",
+        code=503,
+        msg="Service Unavailable",
+        hdrs={},
+        fp=io.BytesIO(b"{}"),
+    )
+    ok_resp = MagicMock()
+    ok_resp.read.return_value = json.dumps(
+        {"candidates": [{"content": {"parts": [{"text": '{"status": "fallback_ok"}'}]}}]}
+    ).encode("utf-8")
+
+    def fake_urlopen(req, timeout=15.0):
+        called_urls.append(req.full_url)
+        if len(called_urls) == 1:
+            raise err_503
+        cm = MagicMock()
+        cm.__enter__.return_value = ok_resp
+        return cm
+
+    with patch("urllib.request.urlopen", side_effect=fake_urlopen):
+        out = call_llm_api(
+            provider="gemini",
+            api_key="test-key",
+            prompt="hello",
+            model="gemini-3.8-flash",
+        )
+
+    assert json.loads(out) == {"status": "fallback_ok"}
+    assert len(called_urls) == 2
+    assert "gemini-3.8-flash" in called_urls[0]
+    assert "gemini-2.5-flash-lite" in called_urls[1]

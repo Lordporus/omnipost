@@ -80,7 +80,9 @@ def test_generate_platform_native_drafts_heuristic_bounds():
 
     assert "linkedin" in drafts
     assert len(drafts["linkedin"]) >= 200
-    assert "3 Architecture Rules" in drafts["linkedin"] or "▸" in drafts["linkedin"]
+    assert "In production environments:" in drafts["linkedin"]
+    assert "▸" not in drafts["linkedin"]
+    assert "•" not in drafts["x"]
 
     # Carousel metadata
     assert "carousel" in drafts
