@@ -116,8 +116,9 @@ class TestXAdapter(unittest.TestCase):
         self.assertFalse(res["ok"])
         self.assertIsNotNone(res["error"])
 
+    @patch("scripts.browser.ensure_chrome", return_value=True)
     @patch("scripts.post.do_post")
-    def test_x_adapter_publish_delegates_to_do_post(self, mock_do_post):
+    def test_x_adapter_publish_delegates_to_do_post(self, mock_do_post, _mock_chrome):
         async def fake_do_post(text, image=None, **kwargs):
             return {
                 "posted": True,

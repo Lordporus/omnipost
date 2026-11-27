@@ -33,7 +33,10 @@ def _do_post_result(**overrides):
 
 
 def _publish(**overrides):
-    with patch.object(ax.post, "do_post", return_value=_do_post_result(**overrides)):
+    with (
+        patch("scripts.browser.ensure_chrome", return_value=True),
+        patch.object(ax.post, "do_post", return_value=_do_post_result(**overrides)),
+    ):
         return XAdapter().publish(PAYLOAD)
 
 
