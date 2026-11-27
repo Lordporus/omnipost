@@ -288,6 +288,33 @@ class TestThreadsAdapter(unittest.TestCase):
         self.assertTrue(verified)
         mock_page.send.assert_awaited_once_with("Page.reload", ignoreCache=True)
 
+    @patch.object(ThreadsAdapter, "_async_verify", return_value=True)
+    @patch("adapters.threads.asyncio.sleep", new_callable=AsyncMock)
+    @patch("scripts.browser.settle_page", new_callable=AsyncMock)
+    @patch("adapters.threads.ThreadsAdapter._open_stealth")
+    @patch("scripts.browser.ensure_chrome")
+    def test_slow_posting_toast_extends_budget_and_confirms(
+        self, mock_ensure, mock_open, mock_settle, mock_sleep, mock_verify
+    ):
+        """A slow 'Posting...' toast >45s extends the budget and still verifies."""
+        mock_page = AsyncMock()
+        mock_page.eval.side_effect = [
+            json.dumps({"loading": False, "button": True}),
+            "clicked",
+            "focused",
+            json.dumps({"clicked": True}),
+            *([json.dumps({"editor_open": False, "posting": True, "posted": False})] * 50),
+            json.dumps({"editor_open": False, "posting": False, "posted": True}),
+            "https://www.threads.net/@lordporus_ai/post/SLOW123",
+        ]
+        mock_open.return_value = mock_page
+
+        res = self.adapter.publish(PublishPayload(text="Slow network Threads post"))
+
+        self.assertTrue(res.success)
+        self.assertTrue(res.verified)
+        self.assertEqual(res.post_id, "SLOW123")
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -167,17 +167,44 @@ def _cmd_post(args: argparse.Namespace) -> int:
     print(f"\n[3/4] Synthesizing platform-native copy for '{headline}'...")
     raw_platforms = topic_data.get("platforms") or {}
 
-    x_copy = raw_platforms.get("x") or topic_data.get("x") or repurpose.format_x(headline, body, points, takeaway)
-    bsky_copy = raw_platforms.get("bluesky") or topic_data.get("bluesky") or repurpose.format_bluesky(headline, body, points, takeaway)
-    li_copy = raw_platforms.get("linkedin") or topic_data.get("linkedin") or repurpose.format_linkedin(headline, body, points, takeaway)
-    threads_copy = raw_platforms.get("threads") or topic_data.get("threads")
-    if not threads_copy or count_for("threads", str(threads_copy)) < 250:
-        try:
-            threads_copy = repurpose.format_threads(headline, takeaway, body, points)
-        except Exception:
-            threads_copy = str(threads_copy or f"{headline}\n\n{body[:250]}\n\n{takeaway}")
+    from scripts.platform_limits import fit
 
-    # Validate and fit limits
+    def _calibrate(plat: str, raw_val: Any, fallback_fn: Any) -> str:
+        raw = str(raw_val or "").strip()
+        if raw:
+            if count_for(plat, raw) > LIMITS[plat]["max"]:
+                try:
+                    return fit(plat, raw)
+                except Exception:
+                    pass
+            if count_for(plat, raw) >= LIMITS[plat]["min"]:
+                return raw
+        try:
+            return str(fallback_fn()).strip()
+        except Exception:
+            return raw
+
+    x_copy = _calibrate(
+        "x",
+        raw_platforms.get("x") or topic_data.get("x"),
+        lambda: repurpose.format_x(headline, points, body=body, takeaway=takeaway),
+    )
+    bsky_copy = _calibrate(
+        "bluesky",
+        raw_platforms.get("bluesky") or topic_data.get("bluesky"),
+        lambda: repurpose.format_bluesky(headline, points, body=body, takeaway=takeaway),
+    )
+    li_copy = _calibrate(
+        "linkedin",
+        raw_platforms.get("linkedin") or topic_data.get("linkedin"),
+        lambda: repurpose.format_linkedin(headline, body, points, takeaway),
+    )
+    threads_copy = _calibrate(
+        "threads",
+        raw_platforms.get("threads") or topic_data.get("threads"),
+        lambda: repurpose.format_threads(headline, takeaway, body, points),
+    )
+
     draft_payload = {
         "slot": args.slot or "manual",
         "headline": headline,
@@ -318,6 +345,18 @@ def _cmd_daemon(args: argparse.Namespace) -> int:
     return autoposter.main()
 
 
+def _cmd_analytics(args: argparse.Namespace) -> int:
+    """Audit live profile metrics via CDP and sync winning hooks into voice-samples.md."""
+    from scripts import profile_audit
+    return profile_audit.run_analytics(sync_samples=not getattr(args, "no_sync", False))
+
+
+def _cmd_radar(args: argparse.Namespace) -> int:
+    """Scan X/Threads feeds via CDP for high-velocity AI/automation posts to reply/quote."""
+    from scripts import profile_audit
+    return profile_audit.run_radar(limit=getattr(args, "limit", 5))
+
+
 def build_parser() -> argparse.ArgumentParser:
     """Build the root argument parser."""
     parser = argparse.ArgumentParser(
@@ -335,7 +374,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_post.add_argument("--draft", help="Path to draft JSON file to publish")
     p_post.add_argument("--slot", help="Time slot identifier (e.g. 13:00)")
     p_post.add_argument("--platforms", help="Comma-separated platforms to target (e.g. x,linkedin,bluesky,threads)")
-    p_post.add_argument("--archetype", choices=["war_story", "contrarian", "framework"], help="Content archetype")
+    p_post.add_argument("--archetype", choices=["war_story", "contrarian", "framework", "build_in_public"], help="Content archetype")
     p_post.add_argument("--force", action="store_true", help="Override idempotency reservations")
     p_post.set_defaults(func=_cmd_post)
 
@@ -347,7 +386,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_drop.add_argument("--draft")
     p_drop.add_argument("--slot")
     p_drop.add_argument("--platforms")
-    p_drop.add_argument("--archetype", choices=["war_story", "contrarian", "framework"], help="Content archetype")
+    p_drop.add_argument("--archetype", choices=["war_story", "contrarian", "framework", "build_in_public"], help="Content archetype")
     p_drop.add_argument("--force", action="store_true")
     p_drop.set_defaults(func=_cmd_post)
 
@@ -376,6 +415,16 @@ def build_parser() -> argparse.ArgumentParser:
     # daemon
     p_daemon = subparsers.add_parser("daemon", help="Run the continuous scheduler autoposter service")
     p_daemon.set_defaults(func=_cmd_daemon)
+
+    # analytics
+    p_analytics = subparsers.add_parser("analytics", help="Collect real CDP metrics across profiles and sync winning hooks")
+    p_analytics.add_argument("--no-sync", action="store_true", help="Print metrics without updating references/voice-samples.md")
+    p_analytics.set_defaults(func=_cmd_analytics)
+
+    # radar
+    p_radar = subparsers.add_parser("radar", help="Find trending AI/automation posts on X/Threads for manual reply/quote growth")
+    p_radar.add_argument("--limit", type=int, default=5, help="Number of opportunities per platform (default: 5)")
+    p_radar.set_defaults(func=_cmd_radar)
 
     return parser
 

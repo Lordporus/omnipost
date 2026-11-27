@@ -62,7 +62,7 @@ def test_with_hashtags_fits_body_before_appending():
 
 def test_with_hashtags_skips_tags_that_break_the_minimum():
     body = "x " * 240
-    tags = ["#" + "A" * 24, "#" + "B" * 24, "#" + "C" * 24]
+    tags = ["#" + "A" * 44, "#" + "B" * 44, "#" + "C" * 44]
     assert with_hashtags("bluesky", body, tags) == body
 
 

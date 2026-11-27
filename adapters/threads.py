@@ -655,20 +655,33 @@ class ThreadsAdapter(PlatformAdapter):
             # toast) before claiming the post exists.
             confirmed = False
             confirm_state: dict[str, Any] = {}
-            for _ in range(45):
+            saw_posting = False
+            max_checks = 45
+            checks = 0
+            while checks < max_checks:
+                checks += 1
                 await asyncio.sleep(1.0)
                 try:
                     confirm_state = json.loads(await page.eval(SUBMIT_CONFIRMED_JS) or "{}")
                 except (CDPError, OSError, asyncio.TimeoutError, ValueError):
                     confirm_state = {}
 
-                # If media upload is actively in-flight ("Posting..."), keep waiting
+                # If upload/publish is actively in-flight ("Posting..."), keep waiting
+                # (extend budget up to 90s on slow connections).
                 if confirm_state.get("posting") is True:
+                    if not saw_posting:
+                        saw_posting = True
+                        max_checks = 90
                     continue
 
                 if confirm_state.get("posted") is True or confirm_state.get("editor_open") is False:
                     confirmed = True
                     break
+
+            # If the composer already closed while "Posting..." was in-flight,
+            # proceed to permalink/readback verification instead of falsely failing.
+            if not confirmed and confirm_state.get("editor_open") is False:
+                confirmed = True
             if not confirmed:
                 arts = await capture_failure_artifacts(page, "threads")
                 raise SelectorError(
@@ -753,7 +766,7 @@ class ThreadsAdapter(PlatformAdapter):
                         except (CDPError, OSError, asyncio.TimeoutError):
                             pass
                     attempt += 1
-                    await browser.settle_page(page, 3.5)
+                    await browser.settle_page(page, 2.0)
                     try:
                         raw = await page.eval(check_js)
                         posts = json.loads(raw or "[]")
@@ -765,7 +778,7 @@ class ThreadsAdapter(PlatformAdapter):
                     for p_text in posts:
                         if norm_snippet in re.sub(r"\s+", " ", str(p_text)).lower():
                             return True
-                    await asyncio.sleep(2.5)
+                    await asyncio.sleep(1.5)
                 return False
             finally:
                 await page.__aexit__(None, None, None)

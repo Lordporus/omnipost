@@ -100,6 +100,15 @@ class TestOmniPostCLIDispatch(unittest.TestCase):
         exit_code = cli_main([])
         self.assertEqual(exit_code, 0)
 
+    def test_dispatch_analytics_and_radar(self):
+        with patch("scripts.profile_audit.run_analytics", return_value=0) as mock_an:
+            self.assertEqual(cli_main(["analytics", "--no-sync"]), 0)
+            mock_an.assert_called_once_with(sync_samples=False)
+
+        with patch("scripts.profile_audit.run_radar", return_value=0) as mock_rad:
+            self.assertEqual(cli_main(["radar", "--limit", "3"]), 0)
+            mock_rad.assert_called_once_with(limit=3)
+
 
 class TestOmniPostCLIExecutable(unittest.TestCase):
     """Test running omnipost CLI entrypoints as standalone processes."""

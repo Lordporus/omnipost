@@ -28,8 +28,8 @@ except ImportError:  # direct script execution
 
 
 LIMITS: dict[str, dict[str, int]] = {
-    "x": {"min": 220, "max": 275, "hard_max": 280},
-    "bluesky": {"min": 240, "max": 295, "hard_max": 300},
+    "x": {"min": 160, "max": 275, "hard_max": 280},
+    "bluesky": {"min": 170, "max": 295, "hard_max": 300},
     "threads": {"min": 250, "max": 480, "hard_max": 500},
     "linkedin": {"min": 500, "max": 2500, "hard_max": 3000},
 }

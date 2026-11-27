@@ -47,13 +47,13 @@ except ImportError:
 
 from adapters.base import PublishPayload, PublishResult
 
-# A publish is ~25s on X plus up to 90s of stale-timeline readback; Threads runs
-# ~60-75s end to end. 80s killed both mid-flight and left posts unreconciled.
-DEFAULT_PLATFORM_TIMEOUT = 150.0
+# A publish is ~25s on X plus up to 90s of stale-timeline readback; Threads on
+# slower connections can take 160-190s end to end. 210s avoids mid-flight kills.
+DEFAULT_PLATFORM_TIMEOUT = 210.0
 
-# Reconciliation runs after the worker was already killed, so it must not add
-# another full readback to the slot.
-VERIFY_BUDGET = 25.0
+# Reconciliation runs after the worker was already killed; Threads profile
+# reload + readback takes ~40s on slower links, so allow 45s.
+VERIFY_BUDGET = 45.0
 
 
 def text_only_blocked(media: list[Path], required: bool, allow_text_only: bool) -> bool:

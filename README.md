@@ -6,7 +6,7 @@
   <a href="https://github.com/Lordporus/omnipost/releases"><img src="https://img.shields.io/badge/version-3.0.0-00F59B.svg?style=flat-square&labelColor=06090E" alt="Version 3.0.0" /></a>
   <a href="https://python.org"><img src="https://img.shields.io/badge/python-3.10--3.12-06B6D4.svg?style=flat-square&labelColor=06090E" alt="Python 3.10-3.12" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-10B981.svg?style=flat-square&labelColor=06090E" alt="License MIT" /></a>
-  <a href="https://github.com/Lordporus/omnipost/actions"><img src="https://img.shields.io/badge/tests-95%20passed-00F59B.svg?style=flat-square&labelColor=06090E" alt="Tests 95 Passed" /></a>
+  <a href="https://github.com/Lordporus/omnipost/actions"><img src="https://img.shields.io/badge/tests-494%20passed-00F59B.svg?style=flat-square&labelColor=06090E" alt="Tests 494 Passed" /></a>
   <img src="https://img.shields.io/badge/api_cost-$0_forever-F59E0B.svg?style=flat-square&labelColor=06090E" alt="Zero API Cost" />
   <img src="https://img.shields.io/badge/docker-ready-38BDF8.svg?style=flat-square&labelColor=06090E" alt="Docker Ready" />
 </p>
@@ -23,7 +23,9 @@
 ## What's New in 3.0 (Standalone Open-Source CLI & Viral Pivot)
 
 * **Unified `omnipost` CLI & Zero-Agent Execution**: No external coding agents (Antigravity/OpenCode) needed. Install with `pip install -e .` and run `omnipost post`, `omnipost doctor`, or `omnipost setup` directly from any standard shell.
-* **100% Pure Text-Only Viral Engine**: Replaces low-converting corporate AI summaries with high-density, authentic builder perspectives across all 4 channels (X, Bluesky, LinkedIn, Threads).
+* **100% Pure Text-Only 3-Beat Engine**: Replaces low-converting corporate AI summaries, bullet lists (`•`), dangling ellipses (`...`), and auto-attached card images with natural 3-beat builder copy (`Hook -> Architectural Friction -> Takeaway`) across all 4 channels (X, Bluesky, LinkedIn, Threads), with automatic Threads character-band fitting (`<= 480`).
+* **Closed-Loop CDP Analytics & Viral Radar (`omnipost analytics`, `omnipost radar`)**: Scrapes real impressions, views, likes, and replies across X, LinkedIn, Threads, and Bluesky over CDP, syncing winning hooks and anti-patterns into `references/voice-samples.md` while surfacing trending AI/automation posts on X.
+* **Smart LLM Resilience & Threads Reload Verification**: Handles `429` rate limits with `Retry-After` + exponential backoff, falls back across Gemini models on `503`/`404`, and reloads the Threads profile (`Page.reload`) on readback retries for reliable verification.
 * **3-Tier Viral Friction Sourcing**: Scrapes real developer friction from Hacker News and tech discourse, scoring every topic on a 1-10 Viral Friction Gate (Myth-Busting, Developer Pain, Debate Potential) before generation.
 * **Self-Healing Browser Lifecycle**: The CLI automatically verifies, launches, and heals the background Chrome/Edge CDP automation session with persistent session profiles.
 * **Multi-LLM Native Support**: Seamlessly configure Google Gemini, OpenAI, Anthropic Claude, OpenRouter, or 100% local Ollama/vLLM models via `.env`.
@@ -206,13 +208,18 @@ omnipost post
 omnipost post --dry-run
 
 # Turn a custom thought or article URL into multi-platform viral copy
-omnipost post --topic "Why deterministic SQLite state beats vector database microservices"
+omnipost post --topic "Why deterministic SQLite state beats vector database microservices" --archetype build_in_public
 
 # Target specific networks only
 omnipost post --platforms x,linkedin
 
-# Publish an existing draft file
+# Publish an existing draft file (or single-slot auto-fitted pipeline)
 omnipost post --draft drafts/2026-11-18.json
+python scripts/publish_now.py --single
+
+# Closed-loop CDP analytics & trending post radar
+omnipost analytics         # Scrape real views/impressions & sync winning hooks to voice-samples.md
+omnipost radar --limit 5   # Surface top 5 trending AI/automation posts on X
 
 # Check system health, accounts, and live CDP ports
 omnipost doctor
@@ -315,8 +322,10 @@ OmniPost delivers instant executive notifications via Telegram Bot API and Disco
 
 | Command | Description |
 | :--- | :--- |
-| `python scripts/pipeline.py` | Harvest, generate 4 native drafts, render visuals. |
+| `python scripts/pipeline.py` | Harvest, generate pure-text 3-beat native drafts (`generate_media=False`). |
 | `python scripts/pipeline.py --date 2026-10-31 --force` | Regenerate a specific day, overwriting existing slots. |
+| `omnipost analytics` | Collect live CDP metrics (X, LinkedIn, Threads, Bluesky) and sync `references/voice-samples.md`. |
+| `omnipost radar --limit 5` | Scan X home feed via CDP for top trending AI/automation posts. |
 | `python -m render.carousel` | Compile the 1080×1080 HTML preview and vector PDF. |
 | `python -m render.carousel --preview-only` | HTML proofing preview only, no PDF. |
 
@@ -324,6 +333,7 @@ OmniPost delivers instant executive notifications via Telegram Bot API and Disco
 
 | Command | Description |
 | :--- | :--- |
+| `python scripts/publish_now.py --single` | Synthesize 1 fresh slot on demand, auto-fit limits, and publish immediately. |
 | `python scripts/publish_now.py --text "..."` | Uniform text to every target. Must satisfy each platform's limits. |
 | `python scripts/publish_now.py --draft drafts/2026-10-31.json` | Platform-native texts from a daily draft. |
 | `python scripts/publish_now.py --draft drafts/2026-10-31.json --slot 13:00` | One specific slot from that draft. |
@@ -427,14 +437,14 @@ Dev-only: `pytest`, `pytest-asyncio`, `beautifulsoup4`.
 
 ## Test Suite & Verification
 
-362 tests across 51 suites. The suite runs on Linux and Windows against Python 3.10, 3.11, and 3.12 in CI.
+494 tests across the suite. The suite runs on Linux and Windows against Python 3.10, 3.11, and 3.12 in CI.
 
 ```bash
 python -m pytest -q
 ```
 
 ```
-362 passed, 3 warnings in 66.25s
+494 passed, 3 warnings in 382.59s
 ```
 
 ### What is covered
@@ -447,7 +457,8 @@ python -m pytest -q
 | **LinkedIn** | `test_linkedin`, `test_linkedin_carousel`, `test_linkedin_document_trigger` | ProseMirror writes, carousel payloads, document upload flow. |
 | **Bluesky** | `test_bluesky` | ATProto XRPC session, blob upload, facets. |
 | **Reliability** | `test_idempotency`, `test_retry_isolation`, `test_state_truth`, `test_state_journal`, `test_post_state_transaction`, `test_media_fail_closed`, `test_warmup_status` | Idempotency reservations, ledger truth, crash-safe writes, fail-closed media. |
-| **Content** | `test_content_integrity`, `test_platform_limits`, `test_guardrails`, `test_validator`, `test_repurposer` | Character bands per platform, guardrails, source traceability. |
+| **Content** | `test_content_integrity`, `test_platform_limits`, `test_guardrails`, `test_validator`, `test_repurposer`, `test_profile_audit` | Character bands per platform, pure-text 3-beat guardrails, CDP analytics sync, source traceability. |
+| **CLI** | `test_omnipost_cli` | `omnipost` CLI subcommands (`post`, `doctor`, `analytics`, `radar`, `browser`). |
 | **Rendering** | `test_infocard`, `test_carousel`, `test_carousel_rendering`, `test_storybook_render` | PNG infocards, vector PDF carousels. |
 | **Infra** | `test_docker_config`, `test_vps_deployment`, `test_browser_daemon`, `test_browser_remote`, `test_prereq_check` | Compose spec, systemd unit, CDP daemon, remote host translation. |
 | **E2E** | `test_integration_e2e`, `test_overhaul_e2e`, `test_multi_platform`, `test_pipeline` | Full pipeline runs with mocked adapters. |
